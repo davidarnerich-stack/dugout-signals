@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: dugout-signals
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 120 --workers 2
+    plan: starter          # $7/mo — no cold starts; use "free" to start for $0
+    envVars:
+      - key: FLASK_SECRET_KEY
+        generateValue: true   # Render auto-generates a secure random value
+      - key: APP_PASSWORD
+        sync: false           # You set this manually in Render dashboard
+      - key: SUPABASE_URL
+        value: https://bqjbswbxtyapupufoarv.supabase.co
+      - key: SUPABASE_KEY
+        sync: false           # You set this manually in Render dashboard
