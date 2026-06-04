@@ -67,9 +67,18 @@ BATTER_RE = re.compile(
     r"flies? into|grounds? into|sacrifices?|at bat)",re.I)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-def _get_paras(docx_bytes):
+def _get_paras_from_docx(docx_bytes):
     doc = Document(io.BytesIO(docx_bytes))
     return [p.text.replace("\xa0"," ").strip() for p in doc.paragraphs if p.text.strip()]
+
+def _get_paras_from_text(raw_text: str):
+    """Split raw pasted text into paragraphs, normalising whitespace."""
+    lines = []
+    for line in raw_text.replace("\xa0", " ").splitlines():
+        line = line.strip()
+        if line:
+            lines.append(line)
+    return lines
 
 def _is_narrative(paras):
     return any("PLAY-BY-PLAY" in p.upper() for p in paras[:3])
@@ -337,20 +346,41 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
-def process(sb, filename, file_bytes):
-    date, game_num = parse_filename(filename)
+def process(sb, source, game_id=None, filename=None, is_text=False):
+    """
+    Process play-by-play data.
+
+    source    : bytes (DOCX) or str (raw pasted text) depending on is_text
+    game_id   : pre-resolved game UUID (preferred)
+    filename  : legacy DOCX filename for game identity fallback
+    is_text   : True if source is a raw text string, False if DOCX bytes
+    """
     player_map = build_player_map(sb)
-    paras = _get_paras(file_bytes)
+
+    if is_text:
+        paras = _get_paras_from_text(source)
+    else:
+        paras = _get_paras_from_docx(source)
 
     pa_dicts, inning_scores = (_parse_narrative(paras) if _is_narrative(paras)
                                else _parse_gc(paras))
 
-    game_resp = (sb.table("games").select("game_id")
-                 .eq("game_date",date).eq("game_number",game_num)
-                 .eq("team_name",TEAM_NAME).execute())
-    if not game_resp.data:
-        raise ValueError(f"No game found for {date} game {game_num}. Upload Stats CSV first.")
-    game_id = game_resp.data[0]["game_id"]
+    # Resolve game_id (legacy filename path)
+    if game_id is None and filename:
+        import re as _re
+        m = _re.match(r"^(\d{4}-\d{2}-\d{2})-(.+?)_((?:Game)?(\d+))_", filename)
+        if not m:
+            raise ValueError(f"Cannot identify game from filename: {filename}")
+        date    = m.group(1)
+        game_num = int(m.group(4))
+        game_resp = (sb.table("games").select("game_id")
+                     .eq("game_date",date).eq("game_number",game_num)
+                     .eq("team_name",TEAM_NAME).execute())
+        if not game_resp.data:
+            raise ValueError(f"No game found for {date} game {game_num}. Upload Stats CSV first.")
+        game_id = game_resp.data[0]["game_id"]
+    elif game_id is None:
+        raise ValueError("Either game_id or filename must be provided")
 
     # Clear existing
     sb.table("inning_scores").delete().eq("game_id",game_id).execute()

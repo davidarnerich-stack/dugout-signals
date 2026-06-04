@@ -65,8 +65,23 @@ def _stat_dict(row, col_map, float_fields):
     return d
 
 
-def process(sb, filename, file_bytes):
-    date, game_num = parse_filename(filename)
+def process(sb, file_bytes, game_id=None, filename=None):
+    """
+    Process a stats CSV.  game_id takes priority; filename is legacy fallback.
+    """
+    if game_id is None and filename:
+        # Legacy: derive game identity from filename
+        from .common import parse_num as _pn
+        import re as _re
+        m = _re.match(r"^(\d{4}-\d{2}-\d{2})-(.+?)_((?:Game)?(\d+))_", filename)
+        if not m:
+            raise ValueError(f"Cannot identify game from filename: {filename}")
+        date    = m.group(1)
+        game_num = int(m.group(4))
+    elif game_id is not None:
+        date = game_num = None  # not needed
+    else:
+        raise ValueError("Either game_id or filename must be provided")
     text = file_bytes.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
 
@@ -79,21 +94,24 @@ def process(sb, filename, file_bytes):
             continue
         data_rows.append(r)
 
-    # Fetch or create game
-    existing = (sb.table("games").select("game_id")
-                .eq("game_date", date).eq("game_number", game_num)
-                .eq("team_name", TEAM_NAME).execute())
-    if existing.data:
-        game_id = existing.data[0]["game_id"]
-        game_action = "existing"
+    # Resolve game_id (legacy filename path)
+    if game_id is None:
+        existing = (sb.table("games").select("game_id")
+                    .eq("game_date", date).eq("game_number", game_num)
+                    .eq("team_name", TEAM_NAME).execute())
+        if existing.data:
+            game_id = existing.data[0]["game_id"]
+            game_action = "existing"
+        else:
+            g = sb.table("games").insert({
+                "game_date": date, "team_name": TEAM_NAME,
+                "game_number": game_num, "year": int(date[:4]),
+                "season": SEASON,
+            }).execute()
+            game_id = g.data[0]["game_id"]
+            game_action = "created"
     else:
-        g = sb.table("games").insert({
-            "game_date": date, "team_name": TEAM_NAME,
-            "game_number": game_num, "year": int(date[:4]),
-            "season": SEASON,
-        }).execute()
-        game_id = g.data[0]["game_id"]
-        game_action = "created"
+        game_action = "linked"
 
     players_processed = []
     for row in data_rows:
@@ -130,6 +148,6 @@ def process(sb, filename, file_bytes):
         players_processed.append(f"#{number} {first} {last}")
 
     return {
-        "message": f"Game {game_action} ({date}, game {game_num}). {len(players_processed)} players processed.",
+        "message": f"Stats {game_action} — {len(players_processed)} players processed.",
         "details": players_processed,
     }

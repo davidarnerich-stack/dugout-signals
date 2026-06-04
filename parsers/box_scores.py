@@ -91,9 +91,12 @@ def _parse_batting_column(col_text):
     return players
 
 
-def process(sb, filename, file_bytes):
-    date, game_num = parse_filename(filename)
-
+def process(sb, file_bytes, game_id=None, filename=None):
+    """
+    Process a box score PDF.
+    If game_id is provided, updates that game record.
+    If filename is provided (legacy), looks up game by filename convention.
+    """
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         raw = "\n".join(page.extract_text() or "" for page in pdf.pages)
         left0, right0 = _get_columns(pdf.pages[0])
@@ -102,13 +105,22 @@ def process(sb, filename, file_bytes):
     storm_col = left0 if is_away else right0
     opp_col   = right0 if is_away else left0
 
-    # Fetch game
-    game_resp = (sb.table("games").select("game_id")
-                 .eq("game_date", date).eq("game_number", game_num)
-                 .eq("team_name", TEAM_NAME).execute())
-    if not game_resp.data:
-        raise ValueError(f"No game found for {date} game {game_num}. Upload the Stats CSV first.")
-    game_id = game_resp.data[0]["game_id"]
+    # Resolve game_id
+    if game_id is None and filename:
+        import re as _re
+        m = _re.match(r"^(\d{4}-\d{2}-\d{2})-(.+?)_((?:Game)?(\d+))_", filename)
+        if not m:
+            raise ValueError(f"Cannot identify game from filename: {filename}")
+        date    = m.group(1)
+        game_num = int(m.group(4))
+        game_resp = (sb.table("games").select("game_id")
+                     .eq("game_date", date).eq("game_number", game_num)
+                     .eq("team_name", TEAM_NAME).execute())
+        if not game_resp.data:
+            raise ValueError(f"No game found for {date} game {game_num}.")
+        game_id = game_resp.data[0]["game_id"]
+    elif game_id is None:
+        raise ValueError("Either game_id or filename must be provided")
 
     update = {}
     if storm_runs is not None:
@@ -154,8 +166,8 @@ def process(sb, filename, file_bytes):
             }).execute()
 
     venue = "Away" if is_away else "Home"
-    score = f"Storm {storm_runs} – {opponent_name} {opp_runs}"
+    score = f"Storm {storm_runs} – {opponent_name or 'Opponent'} {opp_runs}"
     return {
-        "message": f"{venue} | {score} | {len(storm_batters)} Storm batters, {len(opp_batters)} opponent batters stored.",
+        "message": f"{venue} | {score} | {len(storm_batters)} batting order + {len(opp_batters)} opponent players stored.",
         "details": details,
     }
