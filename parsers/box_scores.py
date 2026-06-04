@@ -2,7 +2,7 @@
 import io
 import re
 import pdfplumber
-from .common import TEAM_NAME, parse_filename
+from .common import TEAM_NAME
 
 BATTER_RE = re.compile(
     r"(.+?)\s+#(\d+)\s*(?:\((\w+)\))?\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)"

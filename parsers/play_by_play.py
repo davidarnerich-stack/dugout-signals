@@ -2,7 +2,7 @@
 import io
 import re
 from docx import Document
-from .common import TEAM_NAME, parse_filename, build_player_map, resolve_player
+from .common import TEAM_NAME, build_player_map, resolve_player
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 RESULT_TYPES = {

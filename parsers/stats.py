@@ -1,7 +1,7 @@
 """Parse *_Stats.csv files and upsert to Supabase."""
 import csv
 import io
-from .common import TEAM_NAME, SEASON, parse_filename, parse_num
+from .common import TEAM_NAME, SEASON, parse_num
 
 BAT_COLS = {
     "games_played": 3, "plate_appearances": 4, "at_bats": 5,
