@@ -11,6 +11,11 @@ BAT_COLS = {
     "strikeouts_looking": 19, "hit_by_pitch": 20, "sacrifice_hits": 21,
     "sacrifice_flies": 22, "reached_on_error": 23, "fielders_choice": 24,
     "stolen_bases": 25, "stolen_base_percentage": 26, "caught_stealing": 27, "picked_off": 28,
+    # New columns
+    "quality_at_bats": 29, "hard_hit_balls": 34,
+    "left_on_base": 40, "two_out_rbi": 41, "extra_base_hits": 42, "total_bases": 43,
+    "pitches_seen": 44, "two_strike_three_plus": 46, "six_plus_pitch_pa": 48,
+    "grounded_into_double_play": 51, "grounded_into_triple_play": 52, "catcher_interference": 53,
 }
 BAT_FLOAT = {"batting_average","on_base_percentage","ops","slugging_percentage","stolen_base_percentage"}
 
@@ -22,6 +27,9 @@ PIT_COLS = {
     "walks_allowed": 68, "strikeouts": 69, "strikeouts_looking": 70,
     "hit_batters": 71, "era": 72, "whip": 73, "wild_pitches": 80,
     "batting_average_against": 81, "home_runs_allowed": 112,
+    # New columns
+    "balks": 75, "pickoffs": 76, "cs_against": 77, "stolen_bases_against": 78,
+    "leadoff_outs": 91, "one_two_three_innings": 93,
 }
 PIT_FLOAT = {"innings_pitched","era","whip","batting_average_against"}
 
@@ -30,8 +38,11 @@ FLD_COLS = {
     "fielding_percentage": 177, "errors": 178, "double_plays": 179,
     "triple_plays": 180, "passed_balls": 182, "stolen_bases_allowed": 183,
     "runners_caught_stealing": 185,
+    # New columns
+    "innings_as_catcher": 181, "stolen_base_attempts": 184,
+    "pickoffs": 187, "catcher_interference": 188,
 }
-FLD_FLOAT = {"fielding_percentage"}
+FLD_FLOAT = {"fielding_percentage", "innings_as_catcher"}
 
 POS_COLS = {"P":189,"C":190,"1B":191,"2B":192,"3B":193,"SS":194,"LF":195,"CF":196,"RF":197,"SF":198}
 
