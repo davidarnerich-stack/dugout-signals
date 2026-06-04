@@ -141,7 +141,7 @@ def extract_game_info_from_pdf(file_bytes: bytes) -> dict:
 
 def find_or_create_game(sb, game_date: str, opponent_name: str,
                          storm_runs, opponent_runs, tournament_id,
-                         game_number: int) -> str:
+                         game_number: int, game_type: str = "tournament") -> str:
     """Find an existing game or create one. Returns game_id."""
     existing = (
         sb.table("games")
@@ -153,18 +153,18 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     )
     if existing.data:
         game_id = existing.data[0]["game_id"]
-        # Update score + tournament if provided
         update = {}
         if storm_runs is not None:
-            update["team_runs"]      = storm_runs
-            update["opponent_runs"]  = opponent_runs
+            update["team_runs"]     = storm_runs
+            update["opponent_runs"] = opponent_runs
         if tournament_id:
-            update["tournament_id"]  = tournament_id
+            update["tournament_id"] = tournament_id
+        if game_type:
+            update["game_type"]     = game_type
         if update:
             sb.table("games").update(update).eq("game_id", game_id).execute()
         return game_id
 
-    # Create new
     year = int(game_date[:4]) if game_date else None
     resp = sb.table("games").insert({
         "game_date":     game_date,
@@ -176,6 +176,7 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         "team_runs":     storm_runs,
         "opponent_runs": opponent_runs,
         "tournament_id": tournament_id,
+        "game_type":     game_type,
     }).execute()
     return resp.data[0]["game_id"]
 

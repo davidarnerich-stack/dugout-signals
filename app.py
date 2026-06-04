@@ -119,6 +119,7 @@ def upload():
                                 TEAM_NAME, SEASON)
 
     files           = request.files.getlist("files")
+    game_type       = request.form.get("game_type", "tournament").strip()  # tournament|scrimmage|regular
     tournament_name = request.form.get("tournament_name", "").strip()
     game_number     = int(request.form.get("game_number", 1) or 1)
     pbp_text        = request.form.get("pbp_text", "").strip()
@@ -152,9 +153,9 @@ def upload():
         bs_name, bs_bytes = file_data["box_score"]
         try:
             info = extract_game_info_from_pdf(bs_bytes)
-            # Tournament
+            # Tournament (only relevant for tournament game type)
             tournament_id = None
-            if tournament_name:
+            if game_type == "tournament" and tournament_name:
                 tournament_id = find_or_create_tournament(sb, tournament_name)
 
             game_id = find_or_create_game(
@@ -164,7 +165,8 @@ def upload():
                 storm_runs    = info["storm_runs"],
                 opponent_runs = info["opponent_runs"],
                 tournament_id = tournament_id,
-                game_number   = game_number,
+                game_number   = game_number if game_type == "tournament" else 1,
+                game_type     = game_type,
             )
         except Exception as e:
             results.append({"filename": bs_name, "status": "error",

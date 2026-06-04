@@ -87,6 +87,16 @@
     input[type=text]:focus, input[type=number]:focus, select:focus { border-color: #38bdf8; }
     select option { background: #1e293b; }
 
+    /* ── Game type radio ── */
+    .type-opt {
+      display: flex; align-items: center; gap: .4rem;
+      font-size: .88rem; color: #94a3b8; cursor: pointer;
+      background: #0f172a; border: 1px solid #334155; border-radius: 7px;
+      padding: .45rem .85rem; transition: border-color .15s, color .15s;
+    }
+    .type-opt:has(input:checked) { border-color: #38bdf8; color: #f1f5f9; }
+    .type-opt input[type=radio] { accent-color: #38bdf8; }
+
     /* ── PBP textarea ── */
     .pbp-section { margin-top: 1rem; }
     .pbp-section label { display: block; margin-bottom: .4rem; }
@@ -183,21 +193,40 @@
       </div>
     </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label for="tournament-select">Tournament</label>
-        <select id="tournament-select">
-          <option value="">— Standalone game / no tournament —</option>
-          <option value="__new__">+ Add new tournament…</option>
-        </select>
+    <!-- Game type -->
+    <div class="field" style="margin-bottom:1rem">
+      <label>Game Type</label>
+      <div style="display:flex;gap:.75rem;margin-top:.4rem">
+        <label class="type-opt" data-type="tournament">
+          <input type="radio" name="game_type" value="tournament" checked> Tournament
+        </label>
+        <label class="type-opt" data-type="scrimmage">
+          <input type="radio" name="game_type" value="scrimmage"> Scrimmage
+        </label>
+        <label class="type-opt" data-type="regular">
+          <input type="radio" name="game_type" value="regular"> Regular Season
+        </label>
       </div>
-      <div class="field" id="new-tournament-field" style="display:none">
-        <label for="new-tournament-name">New Tournament Name</label>
-        <input type="text" id="new-tournament-name" placeholder="e.g. Ventura Breeze Tournament">
-      </div>
-      <div class="field" id="game-number-field">
-        <label for="game-number">Game # in Tournament</label>
-        <input type="number" id="game-number" min="1" value="1">
+    </div>
+
+    <!-- Tournament fields (hidden for scrimmage / regular) -->
+    <div id="tournament-fields">
+      <div class="field-row">
+        <div class="field">
+          <label for="tournament-select">Tournament</label>
+          <select id="tournament-select">
+            <option value="">— Select tournament —</option>
+            <option value="__new__">+ Add new tournament…</option>
+          </select>
+        </div>
+        <div class="field" id="new-tournament-field" style="display:none">
+          <label for="new-tournament-name">New Tournament Name</label>
+          <input type="text" id="new-tournament-name" placeholder="e.g. Ventura Breeze Tournament">
+        </div>
+        <div class="field" id="game-number-field">
+          <label for="game-number">Game # in Tournament</label>
+          <input type="number" id="game-number" min="1" value="1">
+        </div>
       </div>
     </div>
 
@@ -254,6 +283,15 @@
     } catch (e) { console.error('Could not load tournaments', e); }
   }
   loadTournaments();
+
+  // ── Game type toggle ──────────────────────────────────────────────────────
+  const tournamentFields = document.getElementById('tournament-fields');
+  document.querySelectorAll('input[name=game_type]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isTournament = radio.value === 'tournament';
+      tournamentFields.style.display = isTournament ? 'block' : 'none';
+    });
+  });
 
   // ── Tournament select logic ────────────────────────────────────────────────
   tournamentSelect.addEventListener('change', async () => {
@@ -375,14 +413,17 @@
     processBtn.innerHTML = '<span class="spinner"></span>Processing…';
     resultsDiv.innerHTML = '';
 
+    const gameType = document.querySelector('input[name=game_type]:checked')?.value || 'tournament';
     const tVal    = tournamentSelect.value;
-    const tName   = tVal === '__new__' ? newTournamentName.value.trim()
+    const tName   = gameType !== 'tournament' ? ''
+                  : tVal === '__new__' ? newTournamentName.value.trim()
                   : tVal ? tournamentSelect.options[tournamentSelect.selectedIndex].text.replace(/ \(.+\)$/, '')
                   : '';
     const gameNum = gameNumberInput.value || '1';
 
     const form = new FormData();
     selectedFiles.forEach(f => form.append('files', f));
+    form.append('game_type',       gameType);
     form.append('tournament_name', tName);
     form.append('game_number',     gameNum);
     form.append('pbp_text',        pbpText.value.trim());
