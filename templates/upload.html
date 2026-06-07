@@ -395,7 +395,8 @@
         inpDate.value     = gi.game_date || '';
         inpOpponent.value = gi.opponent_name || '';
       } else {
-        gameBanner.innerHTML = '⚠️ Could not extract game info from PDF — please check the file.';
+        const errDetail = data.game_info_error ? ` (${data.game_info_error})` : '';
+        gameBanner.innerHTML = `⚠️ Could not extract game info from PDF${errDetail} — enter details manually below.`;
         gameBanner.style.display = 'block';
         gameForm.style.display   = 'block';
       }
