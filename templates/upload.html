@@ -184,7 +184,7 @@
       <div class="field-row">
         <div class="field">
           <label for="inp-date">Game Date</label>
-          <input type="text" id="inp-date" placeholder="YYYY-MM-DD" readonly>
+          <input type="text" id="inp-date" placeholder="YYYY-MM-DD">
         </div>
         <div class="field">
           <label for="inp-opponent">Opponent</label>
@@ -246,6 +246,18 @@
 </main>
 
 <script>
+  // ── Client-side date parser from GC filename ─────────────────────────────
+  function parseDateFromGCFilename(filename) {
+    const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,
+                    Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+    const m = filename.match(/_(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)_(\d{1,2})_(\d{4})/);
+    if (!m) return null;
+    const month = months[m[1]];
+    const day   = parseInt(m[2]);
+    const year  = parseInt(m[3]);
+    return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+
   const dropZone   = document.getElementById('drop-zone');
   const fileInput  = document.getElementById('file-input');
   const fileList   = document.getElementById('file-list');
@@ -384,6 +396,10 @@
       const data = await resp.json();
       const gi   = data.game_info;
 
+      // Try to parse date from GC filename client-side as a reliable fallback
+      const boxFile  = selectedFiles.find(f => f.name.toLowerCase().endsWith('.pdf'));
+      const dateFromFilename = boxFile ? parseDateFromGCFilename(boxFile.name) : null;
+
       if (gi && gi.game_date) {
         detectedGameInfo = gi;
         const venue = gi.is_away ? 'Away' : 'Home';
@@ -395,10 +411,14 @@
         inpDate.value     = gi.game_date || '';
         inpOpponent.value = gi.opponent_name || '';
       } else {
-        const errDetail = data.game_info_error ? ` (${data.game_info_error})` : '';
-        gameBanner.innerHTML = `⚠️ Could not extract game info from PDF${errDetail} — enter details manually below.`;
+        // Auto-fill date from filename even when server extraction fails
+        const autoDate = (gi && gi.game_date) || dateFromFilename || '';
+        gameBanner.innerHTML = autoDate
+          ? `📅 Date read from filename: <strong>${autoDate}</strong> — confirm or edit the details below.`
+          : '⚠️ Could not detect game info automatically — enter details below.';
         gameBanner.style.display = 'block';
         gameForm.style.display   = 'block';
+        inpDate.value = autoDate;
       }
     } catch (err) {
       gameBanner.innerHTML = `⚠️ Detection error: ${err.message}`;
@@ -428,6 +448,8 @@
     form.append('tournament_name', tName);
     form.append('game_number',     gameNum);
     form.append('pbp_text',        pbpText.value.trim());
+    form.append('manual_date',     inpDate.value.trim());
+    form.append('manual_opponent', inpOpponent.value.trim());
 
     try {
       const resp = await fetch('/upload', { method: 'POST', body: form });

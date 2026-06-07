@@ -120,11 +120,14 @@ def upload():
                                 find_or_create_game, find_or_create_tournament,
                                 TEAM_NAME, SEASON)
 
-    files           = request.files.getlist("files")
-    game_type       = request.form.get("game_type", "tournament").strip()  # tournament|scrimmage|regular
-    tournament_name = request.form.get("tournament_name", "").strip()
-    game_number     = int(request.form.get("game_number", 1) or 1)
-    pbp_text        = request.form.get("pbp_text", "").strip()
+    files              = request.files.getlist("files")
+    game_type          = request.form.get("game_type", "tournament").strip()
+    tournament_name    = request.form.get("tournament_name", "").strip()
+    game_number        = int(request.form.get("game_number", 1) or 1)
+    pbp_text           = request.form.get("pbp_text", "").strip()
+    # Manual overrides — used when auto-detection fails
+    manual_date        = request.form.get("manual_date", "").strip()
+    manual_opponent    = request.form.get("manual_opponent", "").strip()
 
     if not files and not pbp_text:
         return jsonify([{"filename": "", "status": "error",
@@ -162,8 +165,8 @@ def upload():
 
             game_id = find_or_create_game(
                 sb,
-                game_date     = info["game_date"],
-                opponent_name = info["opponent_name"],
+                game_date     = info["game_date"]     or manual_date,
+                opponent_name = info["opponent_name"] or manual_opponent,
                 storm_runs    = info["storm_runs"],
                 opponent_runs = info["opponent_runs"],
                 tournament_id = tournament_id,
