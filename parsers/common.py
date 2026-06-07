@@ -10,7 +10,27 @@ SEASON    = "Summer 2026"
 MONTH_MAP = {
     "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
+    "Jan":1,"Feb":2,"Mar":3,"Apr":4,"Jun":6,"Jul":7,"Aug":8,
+    "Sep":9,"Oct":10,"Nov":11,"Dec":12,
 }
+
+
+def parse_date_from_gc_filename(filename: str):
+    """
+    Extract game date from a GameChanger box score filename.
+    Handles formats like: ..._Jun_6_2026.pdf  or  ..._May_31_2026.pdf
+    """
+    m = re.search(
+        r"_(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)_(\d{1,2})_(\d{4})",
+        filename
+    )
+    if m:
+        month = MONTH_MAP.get(m.group(1), 0)
+        day   = int(m.group(2))
+        year  = int(m.group(3))
+        if month:
+            return f"{year:04d}-{month:02d}-{day:02d}"
+    return None
 
 
 # ── File type detection by content ────────────────────────────────────────────
@@ -55,7 +75,7 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
 
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
-def extract_game_info_from_pdf(file_bytes: bytes) -> dict:
+def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
     """
     Parse a box score PDF and return game metadata — no filename needed.
     Returns: {game_date, opponent_name, storm_runs, opponent_runs, is_away}
@@ -127,6 +147,10 @@ def extract_game_info_from_pdf(file_bytes: bytes) -> dict:
 
     if opponent_name:
         opponent_name = re.sub(r"-\s+", "-", opponent_name).strip()
+
+    # Fallback: parse date from GC filename if content extraction failed
+    if not game_date and filename:
+        game_date = parse_date_from_gc_filename(filename)
 
     return {
         "game_date":     game_date,
