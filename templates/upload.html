@@ -16,7 +16,31 @@
       background: #000; border-bottom: 1px solid #1e293b;
       padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
     }
-    .brand img { height: 44px; width: auto; display: block; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+    }
+    .brand img {
+      height: 42px;
+      width: auto;
+      display: block;
+    }
+    .brand-name {
+      font-family: 'Orbitron', sans-serif;
+      font-size: .95rem;
+      letter-spacing: .1em;
+      line-height: 1.15;
+      display: flex;
+      flex-direction: column;
+    }
+    .brand-dugout  { color: #f1f5f9; font-weight: 700; }
+    .brand-signals {
+      color: #38bdf8;
+      font-weight: 500;
+      font-size: .72rem;
+      letter-spacing: .25em;
+    }
     .logout {
       color: #64748b; font-size: .82rem; text-decoration: none;
       border: 1px solid #334155; border-radius: 6px; padding: .3rem .7rem;
@@ -156,7 +180,13 @@
 <body>
 
 <header>
-  <div class="brand"><img src="/static/logo-banner.png" alt="Dugout Signals"></div>
+  <div class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals icon">
+    <div class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>
+      <span class="brand-signals">SIGNALS</span>
+    </div>
+  </div>
   <a href="/logout" class="logout">Sign out</a>
 </header>
 
