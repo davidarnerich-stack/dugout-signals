@@ -243,6 +243,47 @@
 
   <button id="process-btn">Upload &amp; Process</button>
   <div id="results"></div>
+
+  <!-- ── Edit existing game ── -->
+  <div style="margin-top:2.5rem">
+    <button id="edit-toggle" style="background:none;border:none;color:#475569;font-size:.85rem;
+      cursor:pointer;padding:0;text-decoration:underline;">
+      Need to fix an existing game? (wrong opponent name, TBD, etc.)
+    </button>
+  </div>
+
+  <div id="edit-panel" style="display:none;margin-top:1rem;background:#1e293b;
+    border:1px solid #334155;border-radius:12px;padding:1.25rem 1.5rem;">
+    <h3 style="font-size:.95rem;font-weight:700;color:#94a3b8;text-transform:uppercase;
+      letter-spacing:.05em;margin-bottom:1rem;">Edit Game Details</h3>
+
+    <div class="field" style="margin-bottom:1rem">
+      <label for="edit-game-select">Select Game</label>
+      <select id="edit-game-select">
+        <option value="">— Loading games… —</option>
+      </select>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="edit-opponent">Opponent Name</label>
+        <input type="text" id="edit-opponent" placeholder="e.g. 12U Whittier Silver">
+      </div>
+      <div class="field">
+        <label for="edit-score">Score (Storm – Opponent)</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input type="number" id="edit-storm-runs" min="0" placeholder="Storm" style="width:80px">
+          <span style="color:#475569">–</span>
+          <input type="number" id="edit-opp-runs" min="0" placeholder="Opp" style="width:80px">
+        </div>
+      </div>
+    </div>
+
+    <button id="edit-save-btn" style="margin-top:1rem;background:#0ea5e9;color:#fff;
+      border:none;border-radius:8px;padding:.65rem 1.5rem;font-size:.9rem;font-weight:600;
+      cursor:pointer;transition:background .15s;">Save Changes</button>
+    <span id="edit-status" style="margin-left:1rem;font-size:.85rem;color:#64748b"></span>
+  </div>
 </main>
 
 <script>
@@ -472,6 +513,83 @@
 
     processBtn.disabled = false;
     processBtn.innerHTML = 'Upload &amp; Process';
+  });
+
+  // ── Edit game panel ───────────────────────────────────────────────────────
+  const editToggle     = document.getElementById('edit-toggle');
+  const editPanel      = document.getElementById('edit-panel');
+  const editGameSelect = document.getElementById('edit-game-select');
+  const editOpponent   = document.getElementById('edit-opponent');
+  const editStormRuns  = document.getElementById('edit-storm-runs');
+  const editOppRuns    = document.getElementById('edit-opp-runs');
+  const editSaveBtn    = document.getElementById('edit-save-btn');
+  const editStatus     = document.getElementById('edit-status');
+
+  editToggle.addEventListener('click', async () => {
+    const open = editPanel.style.display !== 'none';
+    editPanel.style.display = open ? 'none' : 'block';
+    if (!open) await loadEditGames();
+  });
+
+  async function loadEditGames() {
+    try {
+      const resp = await fetch('/api/games');
+      const games = await resp.json();
+      editGameSelect.innerHTML = '<option value="">— Select a game —</option>';
+      games.forEach(g => {
+        const score  = (g.team_runs != null) ? ` ${g.team_runs}–${g.opponent_runs}` : '';
+        const result = g.result ? ` (${g.result})` : '';
+        const opt = document.createElement('option');
+        opt.value = g.game_id;
+        opt.dataset.opponent  = g.opponent_name || '';
+        opt.dataset.stormRuns = g.team_runs ?? '';
+        opt.dataset.oppRuns   = g.opponent_runs ?? '';
+        opt.textContent = `${g.game_date} · ${g.opponent_name || 'Unknown opponent'}${score}${result}`;
+        editGameSelect.appendChild(opt);
+      });
+    } catch(e) { console.error('Could not load games', e); }
+  }
+
+  editGameSelect.addEventListener('change', () => {
+    const opt = editGameSelect.options[editGameSelect.selectedIndex];
+    if (!opt.value) return;
+    editOpponent.value  = opt.dataset.opponent  || '';
+    editStormRuns.value = opt.dataset.stormRuns || '';
+    editOppRuns.value   = opt.dataset.oppRuns   || '';
+    editStatus.textContent = '';
+  });
+
+  editSaveBtn.addEventListener('click', async () => {
+    const gameId = editGameSelect.value;
+    if (!gameId) { editStatus.textContent = 'Select a game first.'; return; }
+
+    const payload = {};
+    if (editOpponent.value.trim())   payload.opponent_name  = editOpponent.value.trim();
+    if (editStormRuns.value !== '')  payload.team_runs      = parseInt(editStormRuns.value);
+    if (editOppRuns.value !== '')    payload.opponent_runs  = parseInt(editOppRuns.value);
+
+    try {
+      editSaveBtn.disabled = true;
+      editStatus.textContent = 'Saving…';
+      const resp = await fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const d = await resp.json();
+      if (d.ok) {
+        editStatus.style.color = '#86efac';
+        editStatus.textContent = '✓ Saved';
+        await loadEditGames();  // refresh dropdown
+      } else {
+        editStatus.style.color = '#fca5a5';
+        editStatus.textContent = d.error || 'Error saving';
+      }
+    } catch(e) {
+      editStatus.style.color = '#fca5a5';
+      editStatus.textContent = 'Network error';
+    }
+    editSaveBtn.disabled = false;
   });
 
   // ── Render results ────────────────────────────────────────────────────────

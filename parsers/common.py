@@ -186,6 +186,9 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         if storm_runs is not None:
             update["team_runs"]     = storm_runs
             update["opponent_runs"] = opponent_runs
+            if storm_runs > opponent_runs:  update["result"] = 'W'
+            elif storm_runs < opponent_runs: update["result"] = 'L'
+            else:                            update["result"] = 'T'
         if tournament_id:
             update["tournament_id"] = tournament_id
         if game_type:
@@ -193,6 +196,12 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         if update:
             sb.table("games").update(update).eq("game_id", game_id).execute()
         return game_id
+
+    def calc_result(sr, or_):
+        if sr is None or or_ is None: return None
+        if sr > or_:  return 'W'
+        if sr < or_:  return 'L'
+        return 'T'
 
     year = int(game_date[:4]) if game_date else None
     resp = sb.table("games").insert({
@@ -206,6 +215,7 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         "opponent_runs": opponent_runs,
         "tournament_id": tournament_id,
         "game_type":     game_type,
+        "result":        calc_result(storm_runs, opponent_runs),
     }).execute()
     return resp.data[0]["game_id"]
 

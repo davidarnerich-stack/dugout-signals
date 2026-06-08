@@ -242,5 +242,45 @@ def upload():
     return jsonify(results)
 
 
+@app.route("/api/games")
+@login_required
+def api_games():
+    """Return all games for the edit dropdown, most recent first."""
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("games")
+        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result, game_type")
+        .eq("team_name", "Storm 12U All-Stars")
+        .order("game_date", desc=True)
+        .order("game_number", desc=True)
+        .execute()
+    )
+    return jsonify(resp.data)
+
+
+@app.route("/api/games/<game_id>", methods=["PATCH"])
+@login_required
+def api_update_game(game_id):
+    """Update editable fields on an existing game record."""
+    data = request.get_json()
+    allowed = {"opponent_name", "team_runs", "opponent_runs"}
+    update  = {k: v for k, v in data.items() if k in allowed}
+
+    if not update:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    # Recalculate result if scores are present
+    sr = update.get("team_runs")
+    or_ = update.get("opponent_runs")
+    if sr is not None and or_ is not None:
+        if   sr > or_:  update["result"] = "W"
+        elif sr < or_:  update["result"] = "L"
+        else:            update["result"] = "T"
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    sb.table("games").update(update).eq("game_id", game_id).execute()
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
     app.run(debug=False)
