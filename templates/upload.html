@@ -14,8 +14,7 @@
       background: #1e293b; border-bottom: 1px solid #334155;
       padding: .9rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
     }
-    .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: -.01em; }
-    .brand span { color: #38bdf8; }
+    .brand img { height: 36px; object-fit: contain; display: block; }
     .logout {
       color: #64748b; font-size: .82rem; text-decoration: none;
       border: 1px solid #334155; border-radius: 6px; padding: .3rem .7rem;
@@ -155,7 +154,7 @@
 <body>
 
 <header>
-  <div class="brand">Dugout <span>Signals</span></div>
+  <div class="brand"><img src="/static/logo.jpg" alt="Dugout Signals"></div>
   <a href="/logout" class="logout">Sign out</a>
 </header>
 

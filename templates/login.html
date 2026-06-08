@@ -27,14 +27,12 @@
       text-align: center;
       margin-bottom: 2rem;
     }
-    .logo h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #f8fafc;
-      letter-spacing: -.02em;
+    .logo img {
+      width: 180px;
+      height: 180px;
+      object-fit: contain;
+      border-radius: 16px;
     }
-    .logo span { color: #38bdf8; }
-    .logo p { color: #94a3b8; font-size: .85rem; margin-top: .25rem; }
     label { display: block; color: #94a3b8; font-size: .8rem; font-weight: 600;
             text-transform: uppercase; letter-spacing: .05em; margin-bottom: .4rem; }
     input[type=password] {
@@ -77,8 +75,7 @@
 <body>
   <div class="card">
     <div class="logo">
-      <h1>Dugout <span>Signals</span></h1>
-      <p>Storm 12U All-Stars · Data Hub</p>
+      <img src="/static/logo.jpg" alt="Dugout Signals">
     </div>
     <form method="post">
       <label for="password">Password</label>
