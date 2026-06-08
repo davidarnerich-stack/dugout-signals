@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reports — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; min-height: 100vh; }
+    header {
+      background: #000; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.5rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; }
+
+    main { max-width: 900px; margin: 2.5rem auto; padding: 0 1.5rem; }
+    h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: .3rem; }
+    .subtitle { color: #8b949e; font-size: .88rem; margin-bottom: 2rem; }
+
+    /* ── Generate panel ── */
+    .generate-panel {
+      background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+      padding: 1.5rem; margin-bottom: 2.5rem;
+    }
+    .generate-panel h3 { font-size: .95rem; font-weight: 600; margin-bottom: 1rem; color: #f0f6fc; }
+    .gen-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
+    select {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 7px;
+      padding: .6rem .8rem; color: #f0f6fc; font-size: .9rem; outline: none;
+      transition: border-color .15s; flex: 1; min-width: 200px;
+    }
+    select:focus { border-color: #38bdf8; }
+    select option { background: #161b22; }
+    .gen-btn {
+      background: #0ea5e9; color: #fff; border: none; border-radius: 8px;
+      padding: .65rem 1.5rem; font-size: .9rem; font-weight: 600;
+      cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .gen-btn:hover:not(:disabled) { background: #0284c7; }
+    .gen-btn:disabled { background: #30363d; color: #8b949e; cursor: default; }
+    .gen-note { color: #6e7681; font-size: .78rem; margin-top: .6rem; }
+    .spinner {
+      display: none; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite;
+      vertical-align: middle; margin-right: .4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Report cards ── */
+    .reports-grid { display: flex; flex-direction: column; gap: .75rem; }
+    .report-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 1rem 1.25rem; text-decoration: none; transition: border-color .15s;
+    }
+    .report-card:hover { border-color: #38bdf8; }
+    .report-card-info { flex: 1; min-width: 0; }
+    .report-card-title { font-size: .95rem; font-weight: 600; color: #f0f6fc;
+                          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .report-card-meta { font-size: .78rem; color: #8b949e; margin-top: .25rem; }
+    .report-card-badges { display: flex; gap: .4rem; flex-shrink: 0; }
+    .badge { padding: .2rem .55rem; border-radius: 5px; font-size: .72rem; font-weight: 700; }
+    .badge-w  { background:#0d2e1a; color:#3fb950; border:1px solid #238636; }
+    .badge-l  { background:#2e0d0d; color:#f85149; border:1px solid #da3633; }
+    .badge-t  { background:#1c1a2e; color:#a371f7; border:1px solid #6e40c9; }
+    .arrow { color: #30363d; font-size: 1.1rem; }
+    .report-card:hover .arrow { color: #38bdf8; }
+
+    .empty-state { text-align: center; padding: 3rem 1rem; color: #6e7681; }
+    .gen-error { color: #f85149; font-size: .85rem; margin-top: .6rem; display: none; }
+
+    @media (max-width: 480px) {
+      header { padding: .5rem .75rem; }
+      main { padding: 0 .75rem; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/reports" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/reports" class="active">Reports</a>
+    <a href="https://upload.dugoutsignals.ai" target="_blank">Upload</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+
+<main>
+  <h2>Analysis Reports</h2>
+  <p class="subtitle">AI-generated tournament analysis for coaching staff. Confidential — do not share with players or parents.</p>
+
+  <!-- Generate new report -->
+  <div class="generate-panel">
+    <h3>Generate New Report</h3>
+    <div class="gen-row">
+      <select id="tournament-select">
+        <option value="">— Select a tournament —</option>
+        {% for t in tournaments %}
+        <option value="{{ t.tournament_id }}">{{ t.name }} ({{ t.season }})</option>
+        {% endfor %}
+      </select>
+      <button class="gen-btn" id="gen-btn" onclick="generateReport()">
+        <span class="spinner" id="gen-spinner"></span>
+        Generate Report
+      </button>
+    </div>
+    <p class="gen-note">Report generation takes 30–60 seconds. The report will be saved and available here when complete.</p>
+    <p class="gen-error" id="gen-error"></p>
+  </div>
+
+  <!-- Saved reports -->
+  {% if reports %}
+  <div class="reports-grid">
+    {% for r in reports %}
+    <a href="/reports/{{ r.report_id }}" class="report-card">
+      <div class="report-card-info">
+        <div class="report-card-title">{{ r.title }}</div>
+        <div class="report-card-meta">{{ r.season }} &nbsp;·&nbsp; {{ r.games_played }} games &nbsp;·&nbsp; Generated {{ r.generated_at[:10] }}</div>
+      </div>
+      <div class="report-card-badges">
+        <span class="badge badge-w">{{ r.wins }}W</span>
+        <span class="badge badge-l">{{ r.losses }}L</span>
+        {% if r.ties %}<span class="badge badge-t">{{ r.ties }}T</span>{% endif %}
+      </div>
+      <span class="arrow">›</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>No reports yet. Generate your first one above.</p>
+  </div>
+  {% endif %}
+</main>
+
+<script>
+async function generateReport() {
+  const sel    = document.getElementById('tournament-select');
+  const btn    = document.getElementById('gen-btn');
+  const spinner = document.getElementById('gen-spinner');
+  const errEl  = document.getElementById('gen-error');
+
+  if (!sel.value) { errEl.textContent = 'Select a tournament first.'; errEl.style.display='block'; return; }
+
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  btn.childNodes[btn.childNodes.length-1].textContent = ' Generating…';
+  errEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/reports/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tournament_id: sel.value }),
+    });
+    const data = await resp.json();
+    if (data.report_id) {
+      window.location.href = '/reports/' + data.report_id;
+    } else {
+      errEl.textContent = data.error || 'Generation failed. Check that ANTHROPIC_API_KEY is set in Render.';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  spinner.style.display = 'none';
+  btn.childNodes[btn.childNodes.length-1].textContent = ' Generate Report';
+}
+</script>
+</body>
+</html>

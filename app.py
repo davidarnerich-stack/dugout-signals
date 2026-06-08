@@ -282,5 +282,100 @@ def api_update_game(game_id):
     return jsonify({"ok": True})
 
 
+# ── Reports ───────────────────────────────────────────────────────────────────
+@app.route("/reports")
+@login_required
+def reports_list():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # All saved reports
+    saved = (
+        sb.table("reports")
+        .select("report_id,title,season,games_played,wins,losses,ties,generated_at")
+        .eq("team_name", "Storm 12U All-Stars")
+        .order("generated_at", desc=True)
+        .execute()
+    ).data
+
+    # All tournaments for the generate dropdown
+    tournaments = (
+        sb.table("tournaments")
+        .select("tournament_id,name,season")
+        .order("season", desc=True)
+        .order("name")
+        .execute()
+    ).data
+
+    return render_template("reports.html", reports=saved, tournaments=tournaments)
+
+
+@app.route("/reports/generate", methods=["POST"])
+@login_required
+def reports_generate():
+    ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not ANTHROPIC_KEY:
+        return jsonify({"error": "ANTHROPIC_API_KEY is not configured. Add it in Render environment variables."}), 500
+
+    data = request.get_json()
+    tournament_id = data.get("tournament_id")
+    if not tournament_id:
+        return jsonify({"error": "No tournament_id provided."}), 400
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    try:
+        from reports.generate import generate_full_report
+        result = generate_full_report(sb, tournament_id, ANTHROPIC_KEY)
+        d = result["data"]
+        sections = result["sections"]
+
+        title = f"{d['tournament_name']} — Performance Analysis"
+
+        # Save report to Supabase
+        import json
+        resp = sb.table("reports").insert({
+            "tournament_id":   tournament_id,
+            "tournament_name": d["tournament_name"],
+            "season":          d["season"],
+            "team_name":       d["team_name"],
+            "title":           title,
+            "sections":        json.dumps(sections),
+            "games_played":    len(d["games"]),
+            "wins":            d["wins"],
+            "losses":          d["losses"],
+            "ties":            d["ties"],
+            "runs_scored":     d["runs_scored"],
+            "runs_allowed":    d["runs_allowed"],
+            "status":          "complete",
+        }).execute()
+
+        report_id = resp.data[0]["report_id"]
+        return jsonify({"report_id": report_id})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reports/<report_id>")
+@login_required
+def report_view(report_id):
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Load saved report
+    r = sb.table("reports").select("*").eq("report_id", report_id).execute()
+    if not r.data:
+        return "Report not found", 404
+    report = r.data[0]
+
+    import json
+    sections = json.loads(report["sections"]) if isinstance(report["sections"], str) else report["sections"]
+
+    # Reload live data for tables (so edits to game data show fresh)
+    from reports.data import get_tournament_data
+    d = get_tournament_data(sb, report["tournament_id"])
+
+    return render_template("report.html", report=report, sections=sections, d=d)
+
+
 if __name__ == "__main__":
     app.run(debug=False)

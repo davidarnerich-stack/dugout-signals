@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.title }} — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; }
+
+    /* ── Header ── */
+    header {
+      background: #000; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.5rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; transition:color .15s, border-color .15s; }
+    .logout:hover { color:#f0f6fc; border-color:#8b949e; }
+
+    /* ── Layout ── */
+    .container { max-width: 960px; margin: 2.5rem auto; padding: 0 1.5rem 4rem; }
+
+    /* ── Report header ── */
+    .report-header { margin-bottom: 2rem; border-bottom: 1px solid #30363d; padding-bottom: 1.25rem; }
+    .report-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 700;
+                    color: #f0f6fc; letter-spacing: .04em; margin-bottom: .35rem; }
+    .report-meta { font-size: .85rem; color: #8b949e; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .report-meta span { display: flex; align-items: center; gap: .3rem; }
+    .record-badge {
+      display: inline-flex; gap: .5rem; margin-top: .75rem;
+      font-family: 'Orbitron', sans-serif; font-size: .8rem; letter-spacing: .08em;
+    }
+    .badge { padding: .25rem .65rem; border-radius: 5px; font-weight: 700; }
+    .badge-w  { background: #0d2e1a; color: #3fb950; border: 1px solid #238636; }
+    .badge-l  { background: #2e0d0d; color: #f85149; border: 1px solid #da3633; }
+    .badge-t  { background: #1c1a2e; color: #a371f7; border: 1px solid #6e40c9; }
+    .badge-rs { background: #161b22; color: #38bdf8; border: 1px solid #30363d; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 2.5rem; }
+    .section-title {
+      font-family: 'Orbitron', sans-serif; font-size: 1rem; font-weight: 700;
+      color: #38bdf8; letter-spacing: .08em; text-transform: uppercase;
+      padding-bottom: .5rem; border-bottom: 1px solid #21262d; margin-bottom: 1.1rem;
+    }
+    .subsection-title {
+      font-size: .88rem; font-weight: 600; color: #8b949e; text-transform: uppercase;
+      letter-spacing: .06em; margin: 1.25rem 0 .6rem;
+    }
+    p { line-height: 1.7; color: #c9d1d9; font-size: .92rem; margin-bottom: .85rem; }
+    p:last-child { margin-bottom: 0; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    thead th {
+      background: #161b22; color: #8b949e; font-weight: 600; text-transform: uppercase;
+      font-size: .72rem; letter-spacing: .05em; padding: .5rem .7rem; text-align: right;
+      border-bottom: 1px solid #30363d; white-space: nowrap;
+    }
+    thead th:first-child, thead th:nth-child(2) { text-align: left; }
+    tbody td { padding: .45rem .7rem; border-bottom: 1px solid #21262d; text-align: right; color: #c9d1d9; }
+    tbody td:first-child, tbody td:nth-child(2) { text-align: left; color: #f0f6fc; }
+    tbody tr:hover td { background: #161b22; }
+    tbody tr.totals-row td { border-top: 1px solid #30363d; font-weight: 600; color: #f0f6fc;
+                              background: #0d1117; }
+    .trend-above { color: #3fb950; }
+    .trend-below { color: #f85149; }
+    .trend-flat  { color: #8b949e; }
+    .current-tourney { color: #38bdf8; font-weight: 600; }
+
+    /* ── Priority areas ── */
+    .priority-list { counter-reset: priority; }
+    .priority-item { display: flex; gap: .75rem; margin-bottom: 1rem; }
+    .priority-num {
+      flex-shrink: 0; width: 26px; height: 26px; background: #21262d; border: 1px solid #30363d;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: .78rem; font-weight: 700; color: #38bdf8; margin-top: .15rem;
+    }
+    .priority-text { color: #c9d1d9; font-size: .9rem; line-height: 1.65; }
+    .priority-text strong { color: #f0f6fc; }
+
+    /* ── Confidence note ── */
+    .ai-note {
+      margin-top: 3rem; padding: .75rem 1rem; background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; font-size: .78rem; color: #6e7681;
+    }
+
+    @media (max-width: 480px) {
+      .container { padding: 0 .75rem 3rem; }
+      header { padding: .5rem .75rem; }
+      .brand-name { font-size: .88rem; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/reports" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/reports" class="active">Reports</a>
+    <a href="https://upload.dugoutsignals.ai" target="_blank">Upload</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+
+<div class="container">
+  <!-- Report header -->
+  <div class="report-header">
+    <div class="report-title">{{ d.tournament_name }} — Performance Analysis</div>
+    <div class="report-meta">
+      <span>{{ d.season }}</span>
+      <span>{{ d.games | length }} games</span>
+      <span>Generated {{ report.generated_at[:10] }}</span>
+    </div>
+    <div class="record-badge">
+      <span class="badge badge-w">{{ d.wins }}W</span>
+      <span class="badge badge-l">{{ d.losses }}L</span>
+      {% if d.ties %}<span class="badge badge-t">{{ d.ties }}T</span>{% endif %}
+      <span class="badge badge-rs">RS {{ d.runs_scored }} · RA {{ d.runs_allowed }}</span>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="section">
+    <div class="section-title">Summary</div>
+    {% for para in sections.summary.split('\n\n') %}
+      <p>{{ para }}</p>
+    {% endfor %}
+  </div>
+
+  <!-- Tournament Results -->
+  <div class="section">
+    <div class="section-title">Tournament Results</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Game</th><th>Opponent</th><th>Result</th><th>Score</th>
+            <th>Date</th><th>Pitchers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in d.games %}
+          <tr>
+            <td>G{{ g.game_number }}</td>
+            <td>{{ g.opponent_name }}</td>
+            <td class="{% if g.result == 'W' %}trend-above{% elif g.result == 'L' %}trend-below{% else %}trend-flat{% endif %}">
+              {{ g.result }}
+            </td>
+            <td>{{ g.team_runs }} – {{ g.opponent_runs }}</td>
+            <td>{{ g.game_date }}</td>
+            <td style="text-align:left;color:#8b949e">{{ d.pitcher_usage.get(g.game_id, '—') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Hitting -->
+  <div class="section">
+    <div class="section-title">Hitting</div>
+    <p style="color:#8b949e;font-size:.85rem">
+      Team: {{ d.team_batting.avg }} AVG / {{ d.team_batting.obp }} OBP / {{ d.team_batting.ops }} OPS
+      &nbsp;|&nbsp; BB/K: {{ d.team_batting.bb_k }}
+      &nbsp;|&nbsp; {{ d.team_batting.sb }} SB ({{ d.team_batting.sb_pct }}%)
+    </p>
+
+    <!-- Batting table -->
+    <div class="table-wrap" style="margin-top:.75rem">
+      <table>
+        <thead>
+          <tr>
+            <th>Player</th><th>AVG</th><th>OBP</th><th>OPS</th>
+            <th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+            <th>R</th><th>BB</th><th>K</th><th>SB</th><th>PA</th><th>AB</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in d.batting_stats %}
+          <tr>
+            <td>#{{ b.number }} {{ b.name }}</td>
+            <td>{{ b.avg }}</td><td>{{ b.obp }}</td><td>{{ b.ops }}</td>
+            <td>{{ b.h }}</td><td>{{ b.doubles }}</td><td>{{ b.triples }}</td>
+            <td>{{ b.hr }}</td><td>{{ b.rbi }}</td><td>{{ b.r }}</td>
+            <td>{{ b.bb }}</td><td>{{ b.k }}</td><td>{{ b.sb }}</td>
+            <td>{{ b.pa }}</td><td>{{ b.ab }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="subsection-title">Hitting Highlights</div>
+    {% for para in sections.hitting_highlights.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+
+    <div class="subsection-title">Areas to Develop</div>
+    {% for para in sections.hitting_areas.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+  </div>
+
+  <!-- Pitching -->
+  <div class="section">
+    <div class="section-title">Pitching</div>
+    <p style="color:#6e7681;font-size:.78rem">* ERA calculated on a 6-inning basis per tournament convention.</p>
+
+    <!-- Pitching summary table -->
+    <div class="table-wrap" style="margin-top:.75rem">
+      <table>
+        <thead>
+          <tr><th>Pitcher</th><th>IP</th><th>GP</th><th>BF</th><th>#P</th>
+              <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>ERA*</th><th>WHIP</th></tr>
+        </thead>
+        <tbody>
+          {% for p in d.pitching_stats %}
+          <tr>
+            <td>#{{ p.number }} {{ p.name }}</td>
+            <td>{{ p.ip }}</td><td>{{ p.gp }}</td><td>{{ p.bf }}</td><td>{{ p.pitches }}</td>
+            <td>{{ p.h }}</td><td>{{ p.r }}</td><td>{{ p.er }}</td>
+            <td>{{ p.bb }}</td><td>{{ p.k }}</td><td>{{ p.era }}</td><td>{{ p.whip }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% for p in d.pitching_stats %}
+    <div class="subsection-title">{{ p.name }} #{{ p.number }} — Game-by-Game</div>
+    <!-- Game log table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Game</th><th>Opponent</th><th>IP</th><th>BF</th><th>#P</th>
+              <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th></tr>
+        </thead>
+        <tbody>
+          {% for g in p.game_log %}
+          <tr>
+            <td>G{{ g.game_number }}</td><td>{{ g.opponent }}</td>
+            <td>{{ g.ip }}</td><td>{{ g.bf }}</td><td>{{ g.pitches }}</td>
+            <td>{{ g.h }}</td><td>{{ g.r }}</td><td>{{ g.er }}</td>
+            <td>{{ g.bb }}</td><td>{{ g.k }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% set narr = sections.pitcher_narratives.get(p.player_id, '') %}
+    {% for para in narr.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {% endfor %}
+  </div>
+
+  <!-- Fielding -->
+  <div class="section">
+    <div class="section-title">Fielding</div>
+    {% for para in sections.fielding_narrative.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+
+    <div class="table-wrap" style="margin-top:1rem">
+      <table>
+        <thead>
+          <tr><th>Player</th><th>Pos.</th><th>TC</th><th>E</th><th>FPCT</th>
+              <th>PB</th><th>SB Allowed</th><th>CS</th></tr>
+        </thead>
+        <tbody>
+          {% for f in d.fielding_stats %}
+          <tr>
+            <td>#{{ f.number }} {{ f.name }}</td><td style="text-align:left">{{ f.position }}</td>
+            <td>{{ f.tc }}</td><td>{{ f.e }}</td><td>{{ f.fpct }}</td>
+            <td>{{ f.pb if f.pb else '—' }}</td>
+            <td>{{ f.sb_allowed if f.sb_allowed else '—' }}</td>
+            <td>{{ f.cs if f.cs else '—' }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="totals-row">
+            <td>TEAM</td><td></td>
+            <td>{{ d.fielding_stats | sum(attribute='tc') }}</td>
+            <td>{{ d.team_errors }}</td>
+            <td>{{ d.team_fpct }}</td>
+            <td>—</td><td>—</td><td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Base Running -->
+  <div class="section">
+    <div class="section-title">Base Running</div>
+    {% for para in sections.base_running.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+  </div>
+
+  <!-- Spring Baseline Comparison -->
+  <div class="section">
+    <div class="section-title">Spring Season Baseline Comparison</div>
+    <p style="color:#6e7681;font-size:.78rem">
+      Sp. = Spring 2026 regular season &nbsp;|&nbsp; T. = This tournament &nbsp;|&nbsp;
+      Trend reflects direction vs. spring in context of higher All-Star competition level.
+    </p>
+    <div class="table-wrap" style="margin-top:.75rem">
+      <table>
+        <thead>
+          <tr><th>Player</th><th>Sp. AVG</th><th>T. AVG</th>
+              <th>Sp. OBP</th><th>T. OBP</th><th>Sp. OPS</th><th>T. OPS</th><th>Trend</th></tr>
+        </thead>
+        <tbody>
+          {% for b in d.batting_stats %}
+          <tr>
+            <td>#{{ b.number }} {{ b.name }}</td>
+            <td>{{ b.spring_avg }}</td><td>{{ b.avg }}</td>
+            <td>{{ b.spring_obp }}</td><td>{{ b.obp }}</td>
+            <td>{{ b.spring_ops }}</td><td>{{ b.ops }}</td>
+            <td class="{% if '↑' in b.trend %}trend-above{% elif '↓' in b.trend %}trend-below{% else %}trend-flat{% endif %}">
+              {{ b.trend }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Prior Tournament Comparison -->
+  <div class="section">
+    <div class="section-title">Prior Tournament Baseline Comparison</div>
+    <p style="color:#6e7681;font-size:.78rem">
+      Pr. = Combined prior tournament performance &nbsp;|&nbsp; T. = This tournament
+    </p>
+    <div class="table-wrap" style="margin-top:.75rem">
+      <table>
+        <thead>
+          <tr><th>Player</th><th>Pr. AVG</th><th>T. AVG</th>
+              <th>Pr. OBP</th><th>T. OBP</th><th>Pr. OPS</th><th>T. OPS</th><th>Trend</th></tr>
+        </thead>
+        <tbody>
+          {% for b in d.batting_stats %}
+          <tr>
+            <td>#{{ b.number }} {{ b.name }}</td>
+            <td>{{ b.prior_avg }}</td><td>{{ b.avg }}</td>
+            <td>{{ b.prior_obp }}</td><td>{{ b.obp }}</td>
+            <td>{{ b.prior_ops }}</td><td>{{ b.ops }}</td>
+            <td class="{% if '↑' in b.prior_trend %}trend-above{% elif '↓' in b.prior_trend %}trend-below{% else %}trend-flat{% endif %}">
+              {{ b.prior_trend }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tournament-over-Tournament -->
+  <div class="section">
+    <div class="section-title">Tournament-over-Tournament Comparison</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Tournament</th><th>Record</th><th>RS / RA</th><th>Team AVG</th></tr>
+        </thead>
+        <tbody>
+          {% for t in d.tourney_comparison %}
+          <tr {% if t.is_current %}class="current-tourney"{% endif %}>
+            <td>{{ t.name }}{% if t.is_current %} ◀{% endif %}</td>
+            <td>{{ t.record }}</td><td>{{ t.rs_ra }}</td><td>{{ t.avg }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Priority Areas -->
+  <div class="section">
+    <div class="section-title">Priority Areas</div>
+    <div class="priority-list">
+      {% set pa_text = sections.priority_areas %}
+      {% for line in pa_text.split('\n') %}
+        {% if line.strip() and line.strip()[0].isdigit() %}
+          {% set dot_pos = line.find('.') %}
+          {% set content = line[dot_pos+1:].strip() if dot_pos >= 0 else line %}
+          <div class="priority-item">
+            <div class="priority-num">{{ loop.index }}</div>
+            <div class="priority-text">{{ content | replace('**','') }}</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="ai-note">
+    ⚠ This report was generated by AI using game data from Supabase. Narrative sections reflect statistical patterns and should be reviewed by coaching staff before use. Scoring conventions (wild pitches vs. stolen bases, etc.) may vary by game scorer.
+  </div>
+</div>
+</body>
+</html>
