@@ -87,7 +87,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
         sf  = 0
         tb  = sums["total_bases"] or 0
         k   = sums["strikeouts"] or 0
-        sb  = sums["stolen_bases"] or 0
+        stl = sums["stolen_bases"] or 0      # renamed: 'sb' would shadow the Supabase client
         cs  = sums["caught_stealing"] or 0
 
         avg = round(h / ab, 3) if ab > 0 else 0.0
@@ -109,7 +109,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
             "r":             int(sums["runs_scored"]),
             "bb":            int(bb),
             "k":             int(k),
-            "sb":            int(sb),
+            "sb":            int(stl),
             "cs":            int(cs),
             "qab":           int(sums["quality_at_bats"]),
             "avg": _fmt_avg(avg), "obp": _fmt_avg(obp),
