@@ -33,24 +33,32 @@
       box-shadow: 0 24px 64px rgba(0,0,0,.6);
     }
 
-    /* ── Logo section ── */
+    /* ── Logo section ──
+       .logo-inner sets a fixed width that the image and wordmark both share,
+       so D and T of DUGOUT align exactly with the logo edges.
+    ── */
     .logo {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 1.1rem;
-      margin-bottom: 2.25rem;
+      gap: 0;                   /* tight coupling — controlled by margin-bottom on img */
+      margin-bottom: 2rem;
     }
-    .logo img {
-      width: 130px;
-      height: 130px;
-      object-fit: contain;
-      border-radius: 20px;
+    .logo-inner {
+      width: 155px;             /* image + text share this width */
+    }
+    .logo-inner img {
+      display: block;
+      width: 100%;              /* fills container width → aspect ratio preserved */
+      height: auto;             /* no letterboxing → border-radius clips real corners */
+      border-radius: 16px;
+      margin-bottom: .55rem;    /* gap between logo and wordmark */
     }
     .logo-wordmark {
       font-family: 'Orbitron', sans-serif;
       text-align: center;
       line-height: 1.2;
+      width: 100%;
     }
     .logo-dugout {
       display: block;
@@ -61,11 +69,11 @@
     }
     .logo-signals {
       display: block;
-      font-size: .85rem;
+      font-size: .8rem;
       font-weight: 600;
       letter-spacing: .35em;
       color: #38bdf8;
-      margin-top: .2rem;
+      margin-top: .15rem;
     }
 
     /* ── Form ── */
@@ -122,10 +130,12 @@
 <body>
   <div class="card">
     <div class="logo">
-      <img src="/static/logo-icon.svg" alt="Dugout Signals">
-      <div class="logo-wordmark">
-        <span class="logo-dugout">DUGOUT</span>
-        <span class="logo-signals">SIGNALS</span>
+      <div class="logo-inner">
+        <img src="/static/logo-icon.svg" alt="Dugout Signals">
+        <div class="logo-wordmark">
+          <span class="logo-dugout">DUGOUT</span>
+          <span class="logo-signals">SIGNALS</span>
+        </div>
       </div>
     </div>
     <form method="post">
