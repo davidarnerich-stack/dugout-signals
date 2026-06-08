@@ -43,6 +43,7 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
     name = filename.lower()
 
     if name.endswith(".pdf"):
+        # Try content-based detection first
         try:
             import pdfplumber
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -51,6 +52,10 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
                 return "box_score"
         except Exception:
             pass
+        # Filename fallback: GameChanger box score filenames always contain "_vs_"
+        # e.g. Storm12uSilverAllStar_vs_Ventura12UAllStars26SilverAlonzo_Jun_6_2026.pdf
+        if "_vs_" in filename:
+            return "box_score"
         return "unknown"
 
     if name.endswith(".csv"):
