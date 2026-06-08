@@ -10,10 +10,10 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a; color: #f1f5f9; min-height: 100vh;
+      background: #0d1117; color: #f0f6fc; min-height: 100vh;
     }
     header {
-      background: #000; border-bottom: 1px solid #1e293b;
+      background: #000; border-bottom: 1px solid #161b22;
       padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
     }
     .brand {
@@ -34,7 +34,7 @@
       letter-spacing: .1em;
       white-space: nowrap;
     }
-    .brand-dugout  { color: #f1f5f9; }
+    .brand-dugout  { color: #f0f6fc; }
     .brand-signals { color: #38bdf8; }
 
     /* ── Responsive header ── */
@@ -45,33 +45,33 @@
       .brand       { gap: .45rem; }
     }
     .logout {
-      color: #64748b; font-size: .82rem; text-decoration: none;
-      border: 1px solid #334155; border-radius: 6px; padding: .3rem .7rem;
+      color: #8b949e; font-size: .82rem; text-decoration: none;
+      border: 1px solid #30363d; border-radius: 6px; padding: .3rem .7rem;
       transition: color .15s, border-color .15s;
     }
-    .logout:hover { color: #f1f5f9; border-color: #64748b; }
+    .logout:hover { color: #f0f6fc; border-color: #8b949e; }
     main { max-width: 760px; margin: 2.5rem auto; padding: 0 1rem; }
     h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: .3rem; }
-    .subtitle { color: #64748b; font-size: .88rem; margin-bottom: 1.75rem; }
+    .subtitle { color: #8b949e; font-size: .88rem; margin-bottom: 1.75rem; }
 
     /* ── Drop zone ── */
     #drop-zone {
-      border: 2px dashed #334155; border-radius: 12px; padding: 2.5rem 2rem;
-      text-align: center; cursor: pointer; background: #1e293b;
+      border: 2px dashed #30363d; border-radius: 12px; padding: 2.5rem 2rem;
+      text-align: center; cursor: pointer; background: #161b22;
       transition: border-color .2s, background .2s;
     }
     #drop-zone.drag-over { border-color: #38bdf8; background: #0c2233; }
     #drop-zone .icon { font-size: 2.2rem; margin-bottom: .6rem; }
     #drop-zone p { color: #94a3b8; font-size: .95rem; }
-    #drop-zone p strong { color: #f1f5f9; }
-    #drop-zone .hint { margin-top: .4rem; font-size: .78rem; color: #475569; }
+    #drop-zone p strong { color: #f0f6fc; }
+    #drop-zone .hint { margin-top: .4rem; font-size: .78rem; color: #6e7681; }
     #file-input { display: none; }
 
     /* ── File chips ── */
     #file-list { margin-top: 1rem; display: flex; flex-direction: column; gap: .45rem; }
     .file-chip {
       display: flex; align-items: center; gap: .7rem;
-      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
       padding: .55rem .9rem; font-size: .84rem;
     }
     .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e2e8f0; }
@@ -84,7 +84,7 @@
     .ftype-pbp     { background: #3b1f5e; color: #c4b5fd; }
     .ftype-unknown { background: #3f1515; color: #fca5a5; }
     .remove-btn {
-      background: none; border: none; color: #475569; cursor: pointer;
+      background: none; border: none; color: #6e7681; cursor: pointer;
       font-size: 1rem; padding: 0; flex-shrink: 0; transition: color .15s;
     }
     .remove-btn:hover { color: #f87171; }
@@ -92,50 +92,50 @@
     /* ── Confirm panel ── */
     #confirm-panel {
       display: none; margin-top: 1.5rem;
-      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      background: #161b22; border: 1px solid #30363d; border-radius: 12px;
       padding: 1.25rem 1.5rem;
     }
     #confirm-panel h3 { font-size: .95rem; font-weight: 700; margin-bottom: 1rem; color: #94a3b8;
                         text-transform: uppercase; letter-spacing: .05em; }
     .game-banner {
-      background: #0f172a; border: 1px solid #1e3a5f; border-radius: 8px;
+      background: #0d1117; border: 1px solid #1e3a5f; border-radius: 8px;
       padding: .75rem 1rem; margin-bottom: 1.25rem; font-size: .9rem; color: #7dd3fc;
     }
-    .game-banner strong { color: #f1f5f9; }
+    .game-banner strong { color: #f0f6fc; }
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
     @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
     .field { display: flex; flex-direction: column; gap: .35rem; }
     label { font-size: .78rem; font-weight: 600; color: #94a3b8;
             text-transform: uppercase; letter-spacing: .05em; }
     input[type=text], input[type=number], select {
-      background: #0f172a; border: 1px solid #334155; border-radius: 7px;
-      padding: .6rem .8rem; color: #f1f5f9; font-size: .9rem; outline: none;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 7px;
+      padding: .6rem .8rem; color: #f0f6fc; font-size: .9rem; outline: none;
       transition: border-color .15s; width: 100%;
     }
     input[type=text]:focus, input[type=number]:focus, select:focus { border-color: #38bdf8; }
-    select option { background: #1e293b; }
+    select option { background: #161b22; }
 
     /* ── Game type radio ── */
     .type-opt {
       display: flex; align-items: center; gap: .4rem;
       font-size: .88rem; color: #94a3b8; cursor: pointer;
-      background: #0f172a; border: 1px solid #334155; border-radius: 7px;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 7px;
       padding: .45rem .85rem; transition: border-color .15s, color .15s;
     }
-    .type-opt:has(input:checked) { border-color: #38bdf8; color: #f1f5f9; }
+    .type-opt:has(input:checked) { border-color: #38bdf8; color: #f0f6fc; }
     .type-opt input[type=radio] { accent-color: #38bdf8; }
 
     /* ── PBP textarea ── */
     .pbp-section { margin-top: 1rem; }
     .pbp-section label { display: block; margin-bottom: .4rem; }
-    .pbp-hint { font-size: .76rem; color: #475569; margin-bottom: .5rem; }
+    .pbp-hint { font-size: .76rem; color: #6e7681; margin-bottom: .5rem; }
     textarea {
-      width: 100%; height: 160px; background: #0f172a; border: 1px solid #334155;
+      width: 100%; height: 160px; background: #0d1117; border: 1px solid #30363d;
       border-radius: 7px; padding: .7rem .9rem; color: #94a3b8; font-size: .82rem;
       font-family: inherit; resize: vertical; outline: none; transition: border-color .15s;
     }
     textarea:focus { border-color: #38bdf8; color: #e2e8f0; }
-    textarea::placeholder { color: #334155; }
+    textarea::placeholder { color: #30363d; }
 
     /* ── Process button ── */
     #process-btn {
@@ -145,7 +145,7 @@
       transition: background .15s;
     }
     #process-btn:hover:not(:disabled) { background: #0284c7; }
-    #process-btn:disabled { background: #334155; color: #64748b; cursor: default; }
+    #process-btn:disabled { background: #30363d; color: #8b949e; cursor: default; }
 
     /* ── Results ── */
     #results { margin-top: 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
@@ -163,13 +163,13 @@
       cursor: pointer; padding: 0; margin-top: .4rem; text-decoration: underline;
     }
     .details-list {
-      display: none; margin-top: .5rem; background: #0f172a; border-radius: 6px;
-      padding: .5rem .75rem; font-size: .78rem; color: #64748b;
+      display: none; margin-top: .5rem; background: #0d1117; border-radius: 6px;
+      padding: .5rem .75rem; font-size: .78rem; color: #8b949e;
       max-height: 180px; overflow-y: auto;
     }
     .details-list.open { display: block; }
     .details-list li { list-style: none; padding: .15rem 0;
-                       border-bottom: 1px solid #1e293b; }
+                       border-bottom: 1px solid #161b22; }
     .details-list li:last-child { border-bottom: none; }
     .spinner {
       display: inline-block; width: 16px; height: 16px;
@@ -265,7 +265,7 @@
 
     <!-- Play-by-play paste -->
     <div class="pbp-section">
-      <label for="pbp-text">Play-by-Play <span style="color:#475569;font-weight:400;text-transform:none">(optional)</span></label>
+      <label for="pbp-text">Play-by-Play <span style="color:#6e7681;font-weight:400;text-transform:none">(optional)</span></label>
       <p class="pbp-hint">
         Go to the GameChanger game page → select all the play-by-play text → copy → paste here.
         No Word document needed.
@@ -279,14 +279,14 @@
 
   <!-- ── Edit existing game ── -->
   <div style="margin-top:2.5rem">
-    <button id="edit-toggle" style="background:none;border:none;color:#475569;font-size:.85rem;
+    <button id="edit-toggle" style="background:none;border:none;color:#6e7681;font-size:.85rem;
       cursor:pointer;padding:0;text-decoration:underline;">
       Need to fix an existing game? (wrong opponent name, TBD, etc.)
     </button>
   </div>
 
-  <div id="edit-panel" style="display:none;margin-top:1rem;background:#1e293b;
-    border:1px solid #334155;border-radius:12px;padding:1.25rem 1.5rem;">
+  <div id="edit-panel" style="display:none;margin-top:1rem;background:#161b22;
+    border:1px solid #30363d;border-radius:12px;padding:1.25rem 1.5rem;">
     <h3 style="font-size:.95rem;font-weight:700;color:#94a3b8;text-transform:uppercase;
       letter-spacing:.05em;margin-bottom:1rem;">Edit Game Details</h3>
 
@@ -306,7 +306,7 @@
         <label for="edit-score">Score (Storm – Opponent)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <input type="number" id="edit-storm-runs" min="0" placeholder="Storm" style="width:80px">
-          <span style="color:#475569">–</span>
+          <span style="color:#6e7681">–</span>
           <input type="number" id="edit-opp-runs" min="0" placeholder="Opp" style="width:80px">
         </div>
       </div>
@@ -315,7 +315,7 @@
     <button id="edit-save-btn" style="margin-top:1rem;background:#0ea5e9;color:#fff;
       border:none;border-radius:8px;padding:.65rem 1.5rem;font-size:.9rem;font-weight:600;
       cursor:pointer;transition:background .15s;">Save Changes</button>
-    <span id="edit-status" style="margin-left:1rem;font-size:.85rem;color:#64748b"></span>
+    <span id="edit-status" style="margin-left:1rem;font-size:.85rem;color:#8b949e"></span>
   </div>
 </main>
 
