@@ -50,6 +50,10 @@
       transition: color .15s, border-color .15s;
     }
     .logout:hover { color: #f0f6fc; border-color: #8b949e; }
+    .nav-links { display:flex; gap:1.5rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
 
     /* ── Bottom nav (mobile only) ── */
     .bottom-nav {
@@ -69,6 +73,7 @@
                       stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     @media (max-width: 640px) {
       .bottom-nav { display: flex; }
+      .nav-links { display: none; }
       body { padding-bottom: 64px; }
     }
 
@@ -211,7 +216,12 @@
       <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
     </span>
   </div>
-  <a href="/logout" class="logout">Sign out</a>
+  <nav class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/reports">Reports</a>
+    <a href="https://upload.dugoutsignals.ai" class="active" target="_blank">Upload</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
 </header>
 
 <!-- Bottom nav (mobile) -->
