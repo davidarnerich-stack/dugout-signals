@@ -220,6 +220,25 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     return resp.data[0]["game_id"]
 
 
+def find_game(sb, game_date: str, opponent_name: str):
+    """
+    Look up an existing game *without* creating one — mirrors the match logic in
+    find_or_create_game so the preview reflects exactly what the write will hit.
+    Returns game_id or None.
+    """
+    if not (game_date and opponent_name):
+        return None
+    resp = (
+        sb.table("games")
+        .select("game_id")
+        .eq("game_date",     game_date)
+        .eq("opponent_name", opponent_name)
+        .eq("team_name",     TEAM_NAME)
+        .execute()
+    )
+    return resp.data[0]["game_id"] if resp.data else None
+
+
 def find_or_create_tournament(sb, name: str) -> str:
     """Find or create a tournament by name. Returns tournament_id."""
     existing = (

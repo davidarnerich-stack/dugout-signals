@@ -129,6 +129,36 @@
       padding: .75rem 1rem; margin-bottom: 1.25rem; font-size: .9rem; color: #7dd3fc;
     }
     .game-banner strong { color: #f0f6fc; }
+
+    /* ── Pitcher / batter preview ── */
+    #preview-box {
+      display: none; margin-bottom: 1.25rem;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+      padding: .85rem 1rem;
+    }
+    #preview-box .preview-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: #8b949e; margin-bottom: .6rem;
+    }
+    .pitcher-row {
+      display: flex; align-items: baseline; gap: .5rem;
+      font-size: .85rem; color: #e2e8f0; padding: .25rem 0;
+      border-bottom: 1px solid #161b22;
+    }
+    .pitcher-row:last-child { border-bottom: none; }
+    .pitcher-row .pnum { color: #38bdf8; font-weight: 700; flex-shrink: 0; min-width: 2.2rem; }
+    .pitcher-row .pname { font-weight: 600; flex: 1; }
+    .pitcher-row .pstat { color: #8b949e; font-size: .78rem; }
+    .preview-batters { margin-top: .55rem; font-size: .8rem; color: #94a3b8; }
+
+    /* ── Overwrite warning ── */
+    .overwrite-warn {
+      display: none; margin-bottom: 1.25rem;
+      background: #3a2a08; border: 1px solid #9a6b00; border-radius: 8px;
+      padding: .8rem 1rem; font-size: .86rem; color: #fcd34d; line-height: 1.45;
+    }
+    .overwrite-warn strong { color: #fde68a; }
+
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
     @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
     .field { display: flex; flex-direction: column; gap: .35rem; }
@@ -265,6 +295,15 @@
     <h3>Confirm Game Details</h3>
 
     <div id="game-banner" class="game-banner" style="display:none"></div>
+
+    <div id="overwrite-warn" class="overwrite-warn"></div>
+
+    <div id="preview-box">
+      <div class="preview-label">Found in file</div>
+      <div id="preview-pitchers"></div>
+      <div id="preview-batters" class="preview-batters"></div>
+    </div>
+
     <div id="game-form" style="display:none">
       <div class="field-row">
         <div class="field">
@@ -400,9 +439,14 @@
   const gameForm           = document.getElementById('game-form');
   const inpDate            = document.getElementById('inp-date');
   const inpOpponent        = document.getElementById('inp-opponent');
+  const overwriteWarn      = document.getElementById('overwrite-warn');
+  const previewBox         = document.getElementById('preview-box');
+  const previewPitchers    = document.getElementById('preview-pitchers');
+  const previewBatters     = document.getElementById('preview-batters');
 
   let selectedFiles = [];
   let detectedGameInfo = null;
+  let alreadyExists = false;
   let tournaments = [];
 
   // ── Load tournaments on page load ──────────────────────────────────────────
@@ -500,56 +544,110 @@
   dropZone.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
   fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
 
-  // ── Step 1: detect game info from uploaded files (no DB writes) ────────────
+  // ── Process-button helpers (overwrite arming) ─────────────────────────────
+  function resetProcessButton() {
+    alreadyExists = false;
+    overwriteWarn.style.display = 'none';
+    processBtn.style.background = '';
+    processBtn.innerHTML = 'Upload &amp; Process';
+  }
+
+  function armOverwrite(detail) {
+    alreadyExists = true;
+    overwriteWarn.innerHTML =
+      `<strong>⚠ This game already has data.</strong> ${detail || 'Uploading will overwrite existing stats for this game.'}`;
+    overwriteWarn.style.display = 'block';
+    processBtn.style.background = '#b45309';
+    processBtn.innerHTML = 'Confirm &amp; Overwrite';
+  }
+
+  // ── Render the pitcher / batter preview from the CSV ──────────────────────
+  function renderPreview(data) {
+    const pitchers = (data && data.pitchers) || [];
+    const batters  = (data && data.batters_count) || 0;
+    if (!pitchers.length && !batters) { previewBox.style.display = 'none'; return; }
+
+    previewPitchers.innerHTML = pitchers.map(p => {
+      const stat = [
+        p.ip != null ? `${p.ip} IP` : null,
+        p.bf != null ? `${p.bf} BF` : null,
+        p.pitches != null ? `${p.pitches} P` : null,
+        p.s_pct != null ? `${p.s_pct}% S` : null,
+        p.fps_pct != null ? `${p.fps_pct}% FPS` : null,
+      ].filter(Boolean).join(' · ');
+      return `<div class="pitcher-row">
+                <span class="pnum">#${p.number}</span>
+                <span class="pname">${p.name}</span>
+                <span class="pstat">${stat}</span>
+              </div>`;
+    }).join('');
+    previewBatters.textContent = batters
+      ? `${batters} batter${batters !== 1 ? 's' : ''} will also be imported.`
+      : '';
+    previewBox.style.display = 'block';
+  }
+
+  // ── Step 1: detect game info + preview from uploaded files (no DB writes) ──
   async function runDetect() {
     confirmPanel.style.display = 'block';
     processBtn.style.display   = 'block';
     gameBanner.style.display   = 'none';
     gameForm.style.display     = 'none';
+    previewBox.style.display   = 'none';
     detectedGameInfo = null;
+    resetProcessButton();
 
     const hasPDF = selectedFiles.some(f => f.name.toLowerCase().endsWith('.pdf'));
+
+    const form = new FormData();
+    selectedFiles.forEach(f => form.append('files', f));
+    let data;
+    try {
+      const resp = await fetch('/api/detect', { method: 'POST', body: form });
+      data = await resp.json();
+    } catch (err) {
+      gameBanner.innerHTML = `⚠️ Detection error: ${err.message}`;
+      gameBanner.style.display = 'block';
+      return;
+    }
+
+    // Pitcher / batter preview (works with or without a box score)
+    renderPreview(data);
+
     if (!hasPDF) {
       gameBanner.innerHTML = '⚠️ No box score PDF detected — game date and opponent will need to be entered manually after upload.';
       gameBanner.style.display = 'block';
       return;
     }
 
-    const form = new FormData();
-    selectedFiles.forEach(f => form.append('files', f));
-    try {
-      const resp = await fetch('/api/detect', { method: 'POST', body: form });
-      const data = await resp.json();
-      const gi   = data.game_info;
+    const gi = data.game_info;
+    // Try to parse date from GC filename client-side as a reliable fallback
+    const boxFile  = selectedFiles.find(f => f.name.toLowerCase().endsWith('.pdf'));
+    const dateFromFilename = boxFile ? parseDateFromGCFilename(boxFile.name) : null;
 
-      // Try to parse date from GC filename client-side as a reliable fallback
-      const boxFile  = selectedFiles.find(f => f.name.toLowerCase().endsWith('.pdf'));
-      const dateFromFilename = boxFile ? parseDateFromGCFilename(boxFile.name) : null;
-
-      if (gi && gi.game_date) {
-        detectedGameInfo = gi;
-        const venue = gi.is_away ? 'Away' : 'Home';
-        const score = (gi.storm_runs != null)
-          ? ` · Storm ${gi.storm_runs} – ${gi.opponent_name || 'Opponent'} ${gi.opponent_runs}`
-          : '';
-        gameBanner.innerHTML = `<strong>Game detected:</strong> 📅 ${gi.game_date} · ${venue} vs ${gi.opponent_name || '?'}${score}`;
-        gameBanner.style.display = 'block';
-        inpDate.value     = gi.game_date || '';
-        inpOpponent.value = gi.opponent_name || '';
-      } else {
-        // Auto-fill date from filename even when server extraction fails
-        const autoDate = (gi && gi.game_date) || dateFromFilename || '';
-        gameBanner.innerHTML = autoDate
-          ? `📅 Date read from filename: <strong>${autoDate}</strong> — confirm or edit the details below.`
-          : '⚠️ Could not detect game info automatically — enter details below.';
-        gameBanner.style.display = 'block';
-        gameForm.style.display   = 'block';
-        inpDate.value = autoDate;
-      }
-    } catch (err) {
-      gameBanner.innerHTML = `⚠️ Detection error: ${err.message}`;
+    if (gi && gi.game_date) {
+      detectedGameInfo = gi;
+      const venue = gi.is_away ? 'Away' : 'Home';
+      const score = (gi.storm_runs != null)
+        ? ` · Storm ${gi.storm_runs} – ${gi.opponent_name || 'Opponent'} ${gi.opponent_runs}`
+        : '';
+      gameBanner.innerHTML = `<strong>Game detected:</strong> 📅 ${gi.game_date} · ${venue} vs ${gi.opponent_name || '?'}${score}`;
       gameBanner.style.display = 'block';
+      inpDate.value     = gi.game_date || '';
+      inpOpponent.value = gi.opponent_name || '';
+    } else {
+      // Auto-fill date from filename even when server extraction fails
+      const autoDate = (gi && gi.game_date) || dateFromFilename || '';
+      gameBanner.innerHTML = autoDate
+        ? `📅 Date read from filename: <strong>${autoDate}</strong> — confirm or edit the details below.`
+        : '⚠️ Could not detect game info automatically — enter details below.';
+      gameBanner.style.display = 'block';
+      gameForm.style.display   = 'block';
+      inpDate.value = autoDate;
     }
+
+    // Duplicate detection → require explicit confirm before overwriting
+    if (data.already_exists) armOverwrite(data.conflict_detail);
   }
 
   // ── Step 2: process files ─────────────────────────────────────────────────
@@ -589,6 +687,8 @@
         renderFileList();
         confirmPanel.style.display = 'none';
         processBtn.style.display   = 'none';
+        previewBox.style.display   = 'none';
+        resetProcessButton();
         await loadTournaments();  // refresh dropdown with any new tournament
       }
     } catch (err) {
@@ -597,7 +697,8 @@
     }
 
     processBtn.disabled = false;
-    processBtn.innerHTML = 'Upload &amp; Process';
+    // Restore the correct label (overwrite stays armed if the game still has data)
+    processBtn.innerHTML = alreadyExists ? 'Confirm &amp; Overwrite' : 'Upload &amp; Process';
   });
 
   // ── Edit game panel ───────────────────────────────────────────────────────

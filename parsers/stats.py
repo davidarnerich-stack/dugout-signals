@@ -27,11 +27,25 @@ PIT_COLS = {
     "walks_allowed": 68, "strikeouts": 69, "strikeouts_looking": 70,
     "hit_batters": 71, "era": 72, "whip": 73, "wild_pitches": 80,
     "batting_average_against": 81, "home_runs_allowed": 112,
-    # New columns
     "balks": 75, "pickoffs": 76, "cs_against": 77, "stolen_bases_against": 78,
     "leadoff_outs": 91, "one_two_three_innings": 93,
+    # Pitch-quality columns added June 2026 (indices header-verified vs Storm CSV)
+    "p_per_ip": 88, "fip": 95, "strike_pct": 96, "fps_pct": 97,
+    "fpso_pct": 98, "fpsw_pct": 99, "fpsh_pct": 100, "bb_per_inn": 101,
+    "zero_bb_inn": 102, "sm_pct": 106, "k_per_bf": 107, "k_per_bb": 108,
 }
-PIT_FLOAT = {"innings_pitched","era","whip","batting_average_against"}
+PIT_FLOAT = {
+    "innings_pitched", "era", "whip", "batting_average_against",
+    "p_per_ip", "fip", "strike_pct", "fps_pct", "fpso_pct", "fpsw_pct",
+    "fpsh_pct", "bb_per_inn", "sm_pct", "k_per_bf", "k_per_bb",
+}
+
+# Rate/percentage stats GameChanger writes as 0.00 when there's no data — store
+# those as NULL. zero_bb_inn and k_per_bf are excluded: 0 is a real value there.
+PIT_NULL_IF_ZERO = {
+    "strike_pct", "fps_pct", "fpso_pct", "fpsw_pct", "fpsh_pct",
+    "sm_pct", "k_per_bb", "bb_per_inn", "p_per_ip", "fip",
+}
 
 FLD_COLS = {
     "total_chances": 174, "assists": 175, "putouts": 176,
@@ -63,6 +77,64 @@ def _stat_dict(row, col_map, float_fields):
         if val is not None:
             d[field] = val
     return d
+
+
+def _pitching_dict(row):
+    """
+    Build the pitching_stats payload, including the June-2026 pitch-quality
+    columns, NULL rules, and the two derived raw counts GameChanger doesn't
+    export.  Every managed key is emitted (None included) so an UPSERT cleanly
+    overwrites stale values on re-upload.
+    """
+    d = {}
+    for field, col in PIT_COLS.items():
+        val = parse_num(row[col], as_float=(field in PIT_FLOAT))
+        # GameChanger writes 0.00 for these rate stats when there's no data.
+        if field in PIT_NULL_IF_ZERO and val == 0:
+            val = None
+        d[field] = val
+
+    # K/BB is undefined when no walks were issued.
+    if not d.get("walks_allowed"):
+        d["k_per_bb"] = None
+
+    # GC exports the percentages but not the raw strike counts — derive them.
+    tp, sp = d.get("total_pitches"), d.get("strike_pct")
+    bf, fp = d.get("batters_faced"), d.get("fps_pct")
+    d["strikes_thrown"]      = round(tp * sp / 100) if (tp and sp) else None
+    d["first_pitch_strikes"] = round(bf * fp / 100) if (bf and fp) else None
+    return d
+
+
+def preview(file_bytes):
+    """
+    Parse a stats CSV for the upload preview — no DB access, no writes.
+    Returns {pitchers: [...], batters_count: N} for the confirmation screen.
+    """
+    text = file_bytes.decode("utf-8-sig")
+    rows = list(csv.reader(io.StringIO(text)))
+
+    pitchers, batters_count = [], 0
+    for r in rows[2:]:
+        r += [""] * (200 - len(r))
+        number = r[0].strip().strip('"')
+        last   = r[1].strip().strip('"')
+        first  = r[2].strip().strip('"')
+        if number in ("", "Totals", "Glossary") or not last:
+            continue
+        batters_count += 1
+        ip = parse_num(r[PIT_COLS["innings_pitched"]], as_float=True)
+        if ip and ip > 0:
+            pitchers.append({
+                "number":  number,
+                "name":    f"{first} {last}".strip(),
+                "ip":      r[PIT_COLS["innings_pitched"]].strip(),
+                "bf":      parse_num(r[PIT_COLS["batters_faced"]]),
+                "pitches": parse_num(r[PIT_COLS["total_pitches"]]),
+                "s_pct":   parse_num(r[PIT_COLS["strike_pct"]], as_float=True),
+                "fps_pct": parse_num(r[PIT_COLS["fps_pct"]],    as_float=True),
+            })
+    return {"pitchers": pitchers, "batters_count": batters_count}
 
 
 def process(sb, file_bytes, game_id=None, filename=None):
@@ -134,17 +206,23 @@ def process(sb, file_bytes, game_id=None, filename=None):
 
         base = {"game_id": game_id, "player_id": player_id}
 
-        if not sb.table("batting_stats").select("stat_id").eq("game_id", game_id).eq("player_id", player_id).execute().data:
-            sb.table("batting_stats").insert({**base, **_stat_dict(row, BAT_COLS, BAT_FLOAT)}).execute()
+        sb.table("batting_stats").upsert(
+            {**base, **_stat_dict(row, BAT_COLS, BAT_FLOAT)},
+            on_conflict="game_id,player_id",
+        ).execute()
 
         ip = parse_num(row[PIT_COLS["innings_pitched"]], as_float=True)
         if ip and ip > 0:
-            if not sb.table("pitching_stats").select("stat_id").eq("game_id", game_id).eq("player_id", player_id).execute().data:
-                sb.table("pitching_stats").insert({**base, **_stat_dict(row, PIT_COLS, PIT_FLOAT)}).execute()
+            sb.table("pitching_stats").upsert(
+                {**base, **_pitching_dict(row)},
+                on_conflict="game_id,player_id",
+            ).execute()
 
-        if not sb.table("fielding_stats").select("stat_id").eq("game_id", game_id).eq("player_id", player_id).execute().data:
-            sb.table("fielding_stats").insert({**base, "position": _primary_position(row),
-                                               **_stat_dict(row, FLD_COLS, FLD_FLOAT)}).execute()
+        sb.table("fielding_stats").upsert(
+            {**base, "position": _primary_position(row),
+             **_stat_dict(row, FLD_COLS, FLD_FLOAT)},
+            on_conflict="game_id,player_id",
+        ).execute()
         players_processed.append(f"#{number} {first} {last}")
 
     return {

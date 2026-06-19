@@ -76,16 +76,20 @@ def api_next_game(tournament_id):
 @login_required
 def api_detect():
     """
-    Step 1: inspect uploaded files and extract game info from the box score.
-    Returns detected file types + extracted game metadata.  No DB writes.
+    Step 1: inspect uploaded files, extract game info from the box score, parse
+    the stats CSV for a pitcher/batter preview, and check whether the matched
+    game already has stats (duplicate detection).  No DB writes.
     """
-    from parsers.common import detect_file_type, extract_game_info_from_pdf
+    from parsers.common import (detect_file_type, extract_game_info_from_pdf,
+                                find_game)
 
     files   = request.files.getlist("files")
-    result  = {"files": [], "game_info": None}
-    box_bytes = None
-
+    result  = {"files": [], "game_info": None,
+               "pitchers": [], "batters_count": 0,
+               "already_exists": False, "conflict_detail": None}
+    box_bytes = stats_bytes = None
     box_filename = ""
+
     for f in files:
         fb    = f.read()
         ftype = detect_file_type(f.filename, fb)
@@ -93,12 +97,48 @@ def api_detect():
         if ftype == "box_score":
             box_bytes    = fb
             box_filename = f.filename
+        elif ftype == "stats":
+            stats_bytes  = fb
 
+    game_info = None
     if box_bytes:
         try:
-            result["game_info"] = extract_game_info_from_pdf(box_bytes, filename=box_filename)
+            game_info = extract_game_info_from_pdf(box_bytes, filename=box_filename)
+            result["game_info"] = game_info
         except Exception as e:
             result["game_info_error"] = str(e)
+
+    # Pitcher/batter preview straight from the CSV (no DB)
+    if stats_bytes:
+        try:
+            from parsers.stats import preview as stats_preview
+            pv = stats_preview(stats_bytes)
+            result["pitchers"]      = pv["pitchers"]
+            result["batters_count"] = pv["batters_count"]
+        except Exception as e:
+            result["stats_error"] = str(e)
+
+    # Duplicate detection — does the matched game already have stats?
+    if game_info:
+        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+        game_id = find_game(sb, game_info.get("game_date"),
+                            game_info.get("opponent_name"))
+        if game_id:
+            result["game_id"] = game_id
+            pit = (sb.table("pitching_stats").select("stat_id", count="exact")
+                   .eq("game_id", game_id).execute())
+            bat = (sb.table("batting_stats").select("stat_id", count="exact")
+                   .eq("game_id", game_id).execute())
+            pit_n, bat_n = pit.count or 0, bat.count or 0
+            # already_exists keys on pitching_stats rows (per spec §5c)
+            if pit_n > 0:
+                result["already_exists"]  = True
+                result["conflict_detail"] = (
+                    f"This game already has pitching stats for {pit_n} "
+                    f"pitcher{'s' if pit_n != 1 else ''} and batting stats for "
+                    f"{bat_n} player{'s' if bat_n != 1 else ''}. "
+                    f"Uploading will overwrite existing data."
+                )
 
     return jsonify(result)
 
