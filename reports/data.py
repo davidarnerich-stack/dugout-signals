@@ -168,7 +168,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
                 "er":   row.get("earned_runs", 0),
                 "bb":   row.get("walks_allowed", 0),
                 "k":    row.get("strikeouts", 0),
-                "fps_pct": row.get("era"),  # stored as era temporarily
+                "fps_pct": row.get("fps_pct"),
             })
 
     # Tournament totals per pitcher
