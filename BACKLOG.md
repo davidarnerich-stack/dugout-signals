@@ -2,21 +2,6 @@
 
 Future features identified but intentionally out of scope so far. Newest first.
 
-## Batting-stat column audit + backfill
-**Status:** Not started · **Origin:** June 2026 pitching audit
-
-The June 2026 audit found GameChanger was exporting **14 pitching columns** the
-upload pipeline never saved (strike %, first-pitch-strike %, FIP, etc.). Those
-are now captured (see `parsers/stats.py` `PIT_COLS` / `_pitching_dict`).
-
-The **same gap almost certainly exists on the hitting side.** GameChanger's CSV
-exports batting columns that `batting_stats` may not be capturing. Do for batting
-what we did for pitching:
-1. Diff the batting headers in a real Storm CSV against the columns written in
-   `parsers/stats.py` `BAT_COLS`.
-2. Add any missing columns to the `batting_stats` table + `BAT_COLS` map.
-3. Backfill historical games.
-
 ## Opponent strike-% benchmarking
 **Status:** Not started · **Origin:** June 2026 pitching audit
 
@@ -34,8 +19,17 @@ they actually face. Likely shape:
 ---
 
 ### Related notes (from the June 2026 briefing, §8)
-- `v_player_stats` view computes `fps_pct` as a *batter* stat (pitches seen
-  starting with a strike), not a pitcher stat — name is misleading. Consider
-  renaming to `batter_fps_pct` and adding a pitcher-side `pitcher_fps_pct` that
-  reads from `pitching_stats.fps_pct`.
 - Season-over-season report (All-Stars 2025 vs 2026) — needs 2025 data imported first.
+
+### Resolved
+- **[DS-38](https://dugoutsignals.atlassian.net/browse/DS-38)** — `fps_pct` in the pitching game log was
+  reading `era` instead of the real column; `v_player_stats.fps_pct` was also
+  ambiguous (batter stat, misleadingly named). Fixed: `data.py` now reads
+  `pitching_stats.fps_pct` directly, and `v_player_stats` exposes
+  `batter_fps_pct` / `pitcher_fps_pct` separately.
+
+### Superseded
+- ~~Batting-stat column audit + backfill~~ → folded into
+  **[DS-43](https://dugoutsignals.atlassian.net/browse/DS-43)** — Capture all
+  columns from GameChanger's per-game Stats CSV export (covers batting,
+  the full pitch-type breakdown, and fielding, not just batting).
