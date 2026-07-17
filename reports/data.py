@@ -3,10 +3,7 @@ Pull all data needed to generate a tournament analysis report.
 Returns a structured dict that gets passed to the AI and rendered into tables.
 """
 
-TEAM_NAME = "Storm 12U All-Stars"
-
-
-def get_tournament_data(sb, tournament_id: str) -> dict:
+def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
     """
     Return a complete data payload for one tournament.
     All numbers come from Supabase — nothing calculated here.
@@ -21,7 +18,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
         sb.table("games")
         .select("game_id,game_date,game_number,opponent_name,team_runs,opponent_runs,result")
         .eq("tournament_id", tournament_id)
-        .eq("team_name", TEAM_NAME)
+        .eq("team_name", team_name)
         .order("game_date")
         .order("game_number")
         .execute()
@@ -45,7 +42,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
             .eq("game_id", g["game_id"])
             .execute()
         )
-        players_resp = sb.table("players").select("player_id,first_name,last_name,number").eq("team_name", TEAM_NAME).execute()
+        players_resp = sb.table("players").select("player_id,first_name,last_name,number").eq("team_name", team_name).execute()
         pid_to_name = {p["player_id"]: f"{p['first_name'][0]}. {p['last_name']} #{p['number']}" for p in players_resp.data}
         pitchers = [f"{pid_to_name.get(p['player_id'], '?')} {p['innings_pitched']} IP" for p in ps.data if p["innings_pitched"] and float(p["innings_pitched"]) > 0]
         pitcher_usage[g["game_id"]] = ", ".join(pitchers)
@@ -73,7 +70,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
             bat_by_player[pid][f] += (row.get(f) or 0)
 
     # Attach player info and calculate rates
-    players_resp = sb.table("players").select("*").eq("team_name", TEAM_NAME).execute()
+    players_resp = sb.table("players").select("*").eq("team_name", team_name).execute()
     pid_to_player = {p["player_id"]: p for p in players_resp.data}
 
     batting_stats = []
@@ -295,7 +292,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
     prev_games_resp = (
         sb.table("games")
         .select("game_id,game_date")
-        .eq("team_name", TEAM_NAME)
+        .eq("team_name", team_name)
         .eq("game_type", "tournament")
         .lt("game_date", tournament.get("start_date", "2099-01-01"))
         .execute()
@@ -305,7 +302,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
     prev_games_resp = (
         sb.table("games")
         .select("game_id")
-        .eq("team_name", TEAM_NAME)
+        .eq("team_name", team_name)
         .eq("game_type", "tournament")
         .lt("game_date", first_game_date)
         .execute()
@@ -366,7 +363,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
             sb.table("games")
             .select("game_id,team_runs,opponent_runs,result")
             .eq("tournament_id", t_item["tournament_id"])
-            .eq("team_name", TEAM_NAME)
+            .eq("team_name", team_name)
             .execute()
         ).data
         if not t_games:
@@ -394,7 +391,7 @@ def get_tournament_data(sb, tournament_id: str) -> dict:
         "tournament":         tournament,
         "tournament_name":    tournament.get("name", "Tournament"),
         "season":             tournament.get("season", "Summer 2026"),
-        "team_name":          TEAM_NAME,
+        "team_name":          team_name,
         "record":             f"{wins}–{losses}{'–'+str(ties) if ties else ''}",
         "wins": wins, "losses": losses, "ties": ties,
         "runs_scored": rs, "runs_allowed": ra,

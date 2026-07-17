@@ -155,13 +155,13 @@ Be specific to the data. No generic coaching platitudes.
 """)
 
 
-def generate_full_report(sb, tournament_id: str, anthropic_key: str) -> dict:
+def generate_full_report(sb, tournament_id: str, anthropic_key: str, team_name: str) -> dict:
     """
     Generate all narrative sections and return a dict of section text + data.
     Raises if ANTHROPIC_API_KEY is not set.
     """
     from .data import get_tournament_data
-    data = get_tournament_data(sb, tournament_id)
+    data = get_tournament_data(sb, tournament_id, team_name)
 
     client = anthropic.Anthropic(api_key=anthropic_key)
 

@@ -10,6 +10,10 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key   = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
 APP_PASSWORD     = os.environ.get("APP_PASSWORD",     "storm2026")
+# Stub until DS-14 (Auth and Account Management) establishes team_name per
+# coach account. Every query/insert below reads team_name from the session,
+# not this constant — this is just what login currently seeds it with.
+DEFAULT_TEAM_NAME = os.environ.get("TEAM_NAME",       "Storm 12U All-Stars")
 SUPABASE_URL     = os.environ.get("SUPABASE_URL",     "https://bqjbswbxtyapupufoarv.supabase.co")
 SUPABASE_KEY     = os.environ.get("SUPABASE_KEY",     "")
 MAX_FILE_MB      = 20
@@ -30,6 +34,7 @@ def login():
     if request.method == "POST":
         if request.form.get("password") == APP_PASSWORD:
             session["authenticated"] = True
+            session["team_name"]     = DEFAULT_TEAM_NAME
             return redirect(url_for("index"))
         flash("Wrong password.")
     return render_template("login.html")
@@ -68,7 +73,7 @@ def api_tournaments():
 def api_next_game(tournament_id):
     from parsers.common import next_game_number
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return jsonify({"next": next_game_number(sb, tournament_id)})
+    return jsonify({"next": next_game_number(sb, tournament_id, session["team_name"])})
 
 
 # ── API: detect — read files, extract game info, no DB writes ──────────────────
@@ -122,7 +127,7 @@ def api_detect():
     if game_info:
         sb = create_client(SUPABASE_URL, SUPABASE_KEY)
         game_id = find_game(sb, game_info.get("game_date"),
-                            game_info.get("opponent_name"))
+                            game_info.get("opponent_name"), session["team_name"])
         if game_id:
             result["game_id"] = game_id
             pit = (sb.table("pitching_stats").select("stat_id", count="exact")
@@ -158,8 +163,9 @@ def upload():
     """
     from parsers.common import (detect_file_type, extract_game_info_from_pdf,
                                 find_or_create_game, find_or_create_tournament,
-                                TEAM_NAME, SEASON)
+                                SEASON)
 
+    team_name          = session["team_name"]
     files              = request.files.getlist("files")
     game_type          = request.form.get("game_type", "tournament").strip()
     tournament_name    = request.form.get("tournament_name", "").strip()
@@ -211,6 +217,7 @@ def upload():
                 opponent_runs = info["opponent_runs"],
                 tournament_id = tournament_id,
                 game_number   = game_number if game_type == "tournament" else 1,
+                team_name     = team_name,
                 game_type     = game_type,
             )
         except Exception as e:
@@ -223,7 +230,7 @@ def upload():
         bs_name, bs_bytes = file_data["box_score"]
         try:
             from parsers.box_scores import process as bs_process
-            r = bs_process(sb, bs_bytes, game_id=game_id)
+            r = bs_process(sb, bs_bytes, team_name, game_id=game_id)
             results.append({"filename": bs_name, "status": "success",
                              "message": r["message"], "details": r.get("details", [])})
         except Exception as e:
@@ -239,7 +246,7 @@ def upload():
         else:
             try:
                 from parsers.stats import process as st_process
-                r = st_process(sb, st_bytes, game_id=game_id)
+                r = st_process(sb, st_bytes, team_name, game_id=game_id)
                 results.append({"filename": st_name, "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -254,7 +261,7 @@ def upload():
         else:
             try:
                 from parsers.play_by_play import process as pb_process
-                r = pb_process(sb, pb_bytes, game_id=game_id, is_text=False)
+                r = pb_process(sb, pb_bytes, team_name, game_id=game_id, is_text=False)
                 results.append({"filename": pb_name, "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -268,7 +275,7 @@ def upload():
         else:
             try:
                 from parsers.play_by_play import process as pb_process
-                r = pb_process(sb, pbp_text, game_id=game_id, is_text=True)
+                r = pb_process(sb, pbp_text, team_name, game_id=game_id, is_text=True)
                 results.append({"filename": "play-by-play (pasted)", "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -290,7 +297,7 @@ def api_games():
     resp = (
         sb.table("games")
         .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result, game_type")
-        .eq("team_name", "Storm 12U All-Stars")
+        .eq("team_name", session["team_name"])
         .order("game_date", desc=True)
         .order("game_number", desc=True)
         .execute()
@@ -332,7 +339,7 @@ def reports_list():
     saved = (
         sb.table("reports")
         .select("report_id,title,season,games_played,wins,losses,ties,generated_at")
-        .eq("team_name", "Storm 12U All-Stars")
+        .eq("team_name", session["team_name"])
         .order("generated_at", desc=True)
         .execute()
     ).data
@@ -365,7 +372,7 @@ def reports_generate():
 
     try:
         from reports.generate import generate_full_report
-        result = generate_full_report(sb, tournament_id, ANTHROPIC_KEY)
+        result = generate_full_report(sb, tournament_id, ANTHROPIC_KEY, session["team_name"])
         d = result["data"]
         sections = result["sections"]
 
@@ -401,8 +408,11 @@ def reports_generate():
 def report_view(report_id):
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Load saved report
-    r = sb.table("reports").select("*").eq("report_id", report_id).execute()
+    # Load saved report — scoped to the coach's own team
+    r = (sb.table("reports").select("*")
+         .eq("report_id", report_id)
+         .eq("team_name", session["team_name"])
+         .execute())
     if not r.data:
         return "Report not found", 404
     report = r.data[0]
@@ -412,7 +422,7 @@ def report_view(report_id):
 
     # Reload live data for tables (so edits to game data show fresh)
     from reports.data import get_tournament_data
-    d = get_tournament_data(sb, report["tournament_id"])
+    d = get_tournament_data(sb, report["tournament_id"], report["team_name"])
 
     return render_template("report.html", report=report, sections=sections, d=d)
 

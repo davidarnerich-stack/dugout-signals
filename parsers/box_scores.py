@@ -2,7 +2,6 @@
 import io
 import re
 import pdfplumber
-from .common import TEAM_NAME
 
 BATTER_RE = re.compile(
     r"(.+?)\s+#(\d+)\s*(?:\((\w+)\))?\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)"
@@ -91,7 +90,7 @@ def _parse_batting_column(col_text):
     return players
 
 
-def process(sb, file_bytes, game_id=None, filename=None):
+def process(sb, file_bytes, team_name, game_id=None, filename=None):
     """
     Process a box score PDF.
     If game_id is provided, updates that game record.
@@ -115,7 +114,7 @@ def process(sb, file_bytes, game_id=None, filename=None):
         game_num = int(m.group(4))
         game_resp = (sb.table("games").select("game_id")
                      .eq("game_date", date).eq("game_number", game_num)
-                     .eq("team_name", TEAM_NAME).execute())
+                     .eq("team_name", team_name).execute())
         if not game_resp.data:
             raise ValueError(f"No game found for {date} game {game_num}.")
         game_id = game_resp.data[0]["game_id"]
@@ -137,7 +136,7 @@ def process(sb, file_bytes, game_id=None, filename=None):
 
     for batter in storm_batters:
         player_resp = (sb.table("players").select("player_id")
-                       .eq("number", batter["number"]).eq("team_name", TEAM_NAME).execute())
+                       .eq("number", batter["number"]).eq("team_name", team_name).execute())
         if not player_resp.data:
             continue
         player_id = player_resp.data[0]["player_id"]

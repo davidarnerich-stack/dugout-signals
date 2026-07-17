@@ -2,7 +2,7 @@
 import io
 import re
 from docx import Document
-from .common import TEAM_NAME, build_player_map, resolve_player
+from .common import build_player_map, resolve_player
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 RESULT_TYPES = {
@@ -346,7 +346,7 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
-def process(sb, source, game_id=None, filename=None, is_text=False):
+def process(sb, source, team_name, game_id=None, filename=None, is_text=False):
     """
     Process play-by-play data.
 
@@ -355,7 +355,7 @@ def process(sb, source, game_id=None, filename=None, is_text=False):
     filename  : legacy DOCX filename for game identity fallback
     is_text   : True if source is a raw text string, False if DOCX bytes
     """
-    player_map = build_player_map(sb)
+    player_map = build_player_map(sb, team_name)
 
     if is_text:
         paras = _get_paras_from_text(source)
@@ -375,7 +375,7 @@ def process(sb, source, game_id=None, filename=None, is_text=False):
         game_num = int(m.group(4))
         game_resp = (sb.table("games").select("game_id")
                      .eq("game_date",date).eq("game_number",game_num)
-                     .eq("team_name",TEAM_NAME).execute())
+                     .eq("team_name",team_name).execute())
         if not game_resp.data:
             raise ValueError(f"No game found for {date} game {game_num}. Upload Stats CSV first.")
         game_id = game_resp.data[0]["game_id"]

@@ -32,6 +32,7 @@ Copy the two commands GitHub shows you ("push an existing repository") and run t
    - **Plan**: Starter ($7/mo) — avoids cold starts
 4. Under **Environment Variables**, add these manually:
    - `APP_PASSWORD` → choose your password (e.g. `Storm2026!`)
+   - `TEAM_NAME` → the team this login is scoped to (e.g. `Storm 12U All-Stars`) — until DS-14 (per-coach accounts) ships, this is the one team every login sees
    - `SUPABASE_KEY` → paste your Supabase anon key
    - `SUPABASE_URL` is already set in render.yaml
 5. Click **Create Web Service**
