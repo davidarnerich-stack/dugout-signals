@@ -26,7 +26,11 @@ they actually face. Likely shape:
   reading `era` instead of the real column; `v_player_stats.fps_pct` was also
   ambiguous (batter stat, misleadingly named). Fixed: `data.py` now reads
   `pitching_stats.fps_pct` directly, and `v_player_stats` exposes
-  `batter_fps_pct` / `pitcher_fps_pct` separately.
+  `batter_fps_pct` / `pitcher_fps_pct` separately. The 2 existing reports were
+  regenerated 2026-07-18 (new report_ids — old links no longer resolve).
+  Note: `fps_pct` isn't actually rendered anywhere in `report.html` or the AI
+  narrative prompts today, so this was a data-layer fix with no visible UI
+  change — worth surfacing once a pitching-detail Story wants it.
 
 ### Superseded
 - ~~Batting-stat column audit + backfill~~ → folded into
