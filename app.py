@@ -25,6 +25,9 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if not session.get("authenticated"):
             return redirect(url_for("login"))
+        # Self-heal sessions issued before team_name existed in the session
+        # (e.g. a browser still logged in from before this was added).
+        session.setdefault("team_name", DEFAULT_TEAM_NAME)
         return f(*args, **kwargs)
     return decorated
 
