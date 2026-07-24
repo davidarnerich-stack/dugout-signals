@@ -8,8 +8,6 @@ services:
     envVars:
       - key: FLASK_SECRET_KEY
         generateValue: true   # Render auto-generates a secure random value
-      - key: APP_PASSWORD
-        sync: false           # You set this manually in Render dashboard
       - key: SUPABASE_URL
         value: https://bqjbswbxtyapupufoarv.supabase.co
       - key: SUPABASE_KEY
