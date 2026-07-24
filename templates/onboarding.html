@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Set Up Your Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2330;
+    --border:    #30363d;
+    --accent:    #38bdf8;
+    --btn:       #0ea5e9;
+    --btn-hover: #0284c7;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --error:     #f85149;
+    --font-head: 'Orbitron', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --radius-sm: 6px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; }
+  .frame { max-width: 390px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding: 32px 24px 48px; }
+  .logo-block { padding: 32px 0 28px; display: flex; justify-content: center; }
+  .logo-block img { width: 160px; height: auto; }
+  .tagline {
+    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-top: -18px; margin-bottom: 32px;
+  }
+  .screen-heading {
+    font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text);
+    line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 28px; }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px;
+  }
+  .field input, .field select {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-body);
+    font-size: 15px; padding: 13px 16px; outline: none; transition: border-color 0.15s;
+    appearance: none; -webkit-appearance: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input.error, .field select.error { border-color: var(--error); }
+  .field input.optional-field { border-style: dashed; }
+  .field-error {
+    font-size: 12px; color: var(--error); margin-top: 6px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .field-error::before { content: '⚠'; font-size: 11px; }
+  .optional-badge {
+    display: inline-block; font-size: 9px; font-weight: 600; color: var(--muted);
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 6px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: '▾'; position: absolute; right: 14px; top: 15px; color: var(--muted);
+    pointer-events: none; font-size: 12px;
+  }
+  .select-wrap select { padding-right: 36px; }
+  .sport-label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px;
+  }
+  .sport-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .sport-option { position: relative; }
+  .sport-option input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .sport-option label {
+    display: block; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--muted); font-family: var(--font-body);
+    font-size: 14px; font-weight: 600; padding: 13px; cursor: pointer; text-align: center;
+    text-transform: none; letter-spacing: normal; transition: all 0.15s;
+  }
+  .sport-option input:checked + label {
+    background: rgba(56, 189, 248, 0.08); border-color: var(--accent); color: var(--accent);
+  }
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 24px 0 20px; }
+  .section-divider-label {
+    font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 18px;
+  }
+  .conditional-field { margin-top: 10px; display: none; }
+  .conditional-field.visible { display: block; }
+  .btn-primary {
+    width: 100%; background: var(--btn); border: none; border-radius: var(--radius-sm);
+    color: #fff; font-family: var(--font-head); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.07em; padding: 16px; cursor: pointer; transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--btn-hover); }
+  .general-error {
+    background: rgba(248, 81, 73, 0.08); border: 1px solid rgba(248, 81, 73, 0.3);
+    color: var(--error); border-radius: var(--radius-sm); padding: 12px 14px;
+    font-size: 13px; margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="logo-block">
+    <img src="{{ url_for('static', filename='Logo_Dugout-Signals__baseball-softball_.svg') }}" alt="Dugout Signals">
+  </div>
+  <p class="tagline">AI-powered coaching intelligence</p>
+
+  <h1 class="screen-heading">Set up your team.</h1>
+  <p class="screen-sub">Tell us about your team so your reports and signals are calibrated for your players.</p>
+
+  {% if errors.get('_general') %}
+    <div class="general-error">{{ errors['_general'] }}</div>
+  {% endif %}
+
+  <form method="post" novalidate id="onboarding-form">
+    <div class="field">
+      <label for="team_name">Team Name</label>
+      <input type="text" id="team_name" name="team_name" placeholder="e.g. Storm 12U All-Stars"
+             value="{{ form.get('team_name', '') }}"
+             class="{{ 'error' if errors.get('team_name') else '' }}">
+      {% if errors.get('team_name') %}<p class="field-error">{{ errors['team_name'] }}</p>{% endif %}
+    </div>
+
+    <span class="sport-label">Sport</span>
+    <div class="sport-toggle">
+      <div class="sport-option">
+        <input type="radio" id="sport-baseball" name="sport" value="Baseball"
+               {{ 'checked' if form.get('sport') == 'Baseball' else '' }}>
+        <label for="sport-baseball">⚾ Baseball</label>
+      </div>
+      <div class="sport-option">
+        <input type="radio" id="sport-softball" name="sport" value="Softball"
+               {{ 'checked' if form.get('sport') == 'Softball' else '' }}>
+        <label for="sport-softball">🥎 Softball</label>
+      </div>
+    </div>
+    {% if errors.get('sport') %}<p class="field-error" style="margin-bottom:20px;">{{ errors['sport'] }}</p>{% endif %}
+
+    <div class="field">
+      <label for="governing_body">Governing Body</label>
+      <div class="select-wrap">
+        <select id="governing_body" name="governing_body"
+                class="{{ 'error' if errors.get('governing_body') else '' }}">
+          <option value="">Select governing body…</option>
+        </select>
+      </div>
+      {% if errors.get('governing_body') %}<p class="field-error">{{ errors['governing_body'] }}</p>{% endif %}
+    </div>
+
+    <div class="field">
+      <label for="season">Season</label>
+      <div class="select-wrap">
+        <select id="season" name="season" class="{{ 'error' if errors.get('season') else '' }}">
+          {% for s in season_options %}
+            <option value="{{ s }}" {{ 'selected' if form.get('season', default_season) == s else '' }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if errors.get('season') %}<p class="field-error">{{ errors['season'] }}</p>{% endif %}
+    </div>
+
+    <div class="field">
+      <label for="age_level">Age Level</label>
+      <div class="select-wrap">
+        <select id="age_level" name="age_level" class="{{ 'error' if errors.get('age_level') else '' }}">
+          <option value="">Select age level…</option>
+          {% for a in age_level_options %}
+            <option value="{{ a }}" {{ 'selected' if form.get('age_level') == a else '' }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if errors.get('age_level') %}<p class="field-error">{{ errors['age_level'] }}</p>{% endif %}
+    </div>
+
+    <div class="field">
+      <label for="league_name">League Name <span class="optional-badge">Optional</span></label>
+      <input type="text" id="league_name" name="league_name" class="optional-field"
+             placeholder="e.g. West Covina Little League" value="{{ form.get('league_name', '') }}">
+    </div>
+
+    <hr class="section-divider">
+    <p class="section-divider-label">One quick question</p>
+
+    <div class="field">
+      <label for="source">How did you hear about Dugout Signals? <span class="optional-badge">Optional</span></label>
+      <div class="select-wrap">
+        <select id="source" name="source">
+          <option value="">Select one…</option>
+          {% for h in heard_about_options %}
+            <option value="{{ h }}" {{ 'selected' if form.get('source') == h else '' }}>{{ h }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field conditional-field" id="source-other-wrap">
+        <input type="text" id="source_other_text" name="source_other_text"
+               placeholder="Tell us where you found us…" value="{{ form.get('source_other_text', '') }}">
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary">Take Me to My Dashboard</button>
+  </form>
+</div>
+<script>
+  var GOVERNING_BODY_OPTIONS = {{ governing_body_options | tojson }};
+  var submittedSport = {{ form.get('sport', '') | tojson }};
+  var submittedGoverningBody = {{ form.get('governing_body', '') | tojson }};
+
+  function populateGoverningBody() {
+    var sport = document.querySelector('input[name=sport]:checked');
+    var select = document.getElementById('governing_body');
+    var current = select.value || submittedGoverningBody;
+    select.innerHTML = '<option value="">Select governing body…</option>';
+    if (!sport) return;
+    var options = GOVERNING_BODY_OPTIONS[sport.value] || [];
+    options.forEach(function (opt) {
+      var el = document.createElement('option');
+      el.value = opt;
+      el.textContent = opt;
+      if (opt === current) el.selected = true;
+      select.appendChild(el);
+    });
+  }
+
+  document.querySelectorAll('input[name=sport]').forEach(function (radio) {
+    radio.addEventListener('change', populateGoverningBody);
+  });
+  populateGoverningBody();
+
+  var sourceSelect = document.getElementById('source');
+  var sourceOtherWrap = document.getElementById('source-other-wrap');
+  function toggleSourceOther() {
+    sourceOtherWrap.classList.toggle('visible', sourceSelect.value === 'Other');
+  }
+  sourceSelect.addEventListener('change', toggleSourceOther);
+  toggleSourceOther();
+</script>
+</body>
+</html>

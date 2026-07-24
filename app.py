@@ -1,5 +1,6 @@
 """Dugout Signals — file upload web app."""
 import os
+from datetime import datetime
 from functools import wraps
 
 from flask import (Flask, session, redirect, url_for, request,
@@ -31,6 +32,25 @@ MAX_FILE_MB      = 20
 def get_anon_client():
     """Supabase client using the anon key, for self-service Auth operations."""
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+
+# DS-53: Team Setup Wizard — field option sets and season default logic.
+GOVERNING_BODY_OPTIONS = {
+    "Baseball": ["Little League Baseball", "USSSA", "Other"],
+    "Softball": ["Little League Softball", "USA Softball", "USSSA", "Other"],
+}
+AGE_LEVEL_OPTIONS   = ["8U", "9U", "10U", "11U", "12U", "14U"]
+SEASON_OPTIONS      = ["Spring 2026", "Summer 2026", "Fall 2026", "Spring 2027", "Summer 2027"]
+HEARD_ABOUT_OPTIONS = ["Word of mouth", "Google Search", "Reddit", "Social Media", "QR Code", "Other"]
+
+
+def default_season():
+    month, year = datetime.now().month, datetime.now().year
+    if month <= 5:
+        return f"Spring {year}"
+    if month <= 8:
+        return f"Summer {year}"
+    return f"Fall {year}"
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -177,8 +197,96 @@ def auth_callback_session():
     session["coach_id"]       = user.id
     session["coach_email"]    = user.email
     session["email_verified"] = True
-    # /onboarding doesn't exist yet (DS-53) — this will resolve once it ships.
-    return jsonify({"redirect": "/onboarding"})
+    return jsonify({"redirect": url_for("onboarding")})
+
+
+# ── DS-53: Team Setup Wizard ────────────────────────────────────────────────────
+def _render_onboarding(errors, form):
+    return render_template(
+        "onboarding.html",
+        governing_body_options=GOVERNING_BODY_OPTIONS,
+        age_level_options=AGE_LEVEL_OPTIONS,
+        season_options=SEASON_OPTIONS,
+        heard_about_options=HEARD_ABOUT_OPTIONS,
+        default_season=default_season(),
+        errors=errors,
+        form=form,
+    )
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    # Only a coach who's been through signup + email verification gets here.
+    # Full protected-route enforcement for every page is DS-54's job.
+    if not session.get("coach_id"):
+        return redirect(url_for("signup"))
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    def has_team():
+        resp = (
+            sb.table("teams").select("id")
+            .eq("coach_id", session["coach_id"]).limit(1).execute()
+        )
+        return bool(resp.data)
+
+    if has_team():
+        return redirect("/dashboard")
+
+    if request.method == "POST":
+        form           = request.form
+        team_name      = (form.get("team_name") or "").strip()
+        sport          = form.get("sport") or ""
+        age_level      = form.get("age_level") or ""
+        governing_body = form.get("governing_body") or ""
+        season         = form.get("season") or ""
+        league_name    = (form.get("league_name") or "").strip() or None
+        source         = form.get("source") or ""
+        source_other   = (form.get("source_other_text") or "").strip() or None
+
+        errors = {}
+        if not team_name:
+            errors["team_name"] = "Team name is required."
+        if sport not in GOVERNING_BODY_OPTIONS:
+            errors["sport"] = "Please select a sport."
+        if age_level not in AGE_LEVEL_OPTIONS:
+            errors["age_level"] = "Please select an age level."
+        if governing_body not in GOVERNING_BODY_OPTIONS.get(sport, []):
+            errors["governing_body"] = "Please select a governing body."
+        if season not in SEASON_OPTIONS:
+            errors["season"] = "Please select a season."
+
+        if errors:
+            return _render_onboarding(errors, form)
+
+        try:
+            # Re-check immediately before insert — guards a double-submit race,
+            # same single-team-per-coach limit as the GET guard above.
+            if has_team():
+                return redirect("/dashboard")
+
+            sb.table("teams").insert({
+                "coach_id":       session["coach_id"],
+                "team_name":      team_name,
+                "sport":          sport,
+                "age_level":      age_level,
+                "governing_body": governing_body,
+                "season":         season,
+                "league_name":    league_name,
+            }).execute()
+
+            if source:
+                sb.auth.admin.update_user_by_id(session["coach_id"], {
+                    "user_metadata": {"source": source, "source_other_text": source_other},
+                })
+        except Exception:
+            errors["_general"] = "Something went wrong creating your team. Please try again."
+            return _render_onboarding(errors, form)
+
+        session["team_name"] = team_name  # keeps the DS-36 stub consistent until DS-54's cutover
+        return redirect("/dashboard")
+
+    return _render_onboarding({}, {})
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
