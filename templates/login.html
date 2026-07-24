@@ -1,154 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dugout Signals</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* ── 3-level palette ────────────────────────────────────────────────────
-       bg:      #0d1117  near-black, neutral (no blue cast)
-       surface: #161b22  card — one clear step lighter
-       border:  #30363d  clean separator
-       accent:  #38bdf8  sky blue — pops against the neutral darks
-    ── */
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0d1117;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 14px;
-      padding: 2.5rem 2rem 2rem;
-      width: 100%;
-      max-width: 360px;
-      box-shadow: 0 24px 64px rgba(0,0,0,.6);
-    }
-
-    /* ── Logo section ──
-       .logo-inner sets a fixed width that the image and wordmark both share,
-       so D and T of DUGOUT align exactly with the logo edges.
-    ── */
-    .logo {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0;                   /* tight coupling — controlled by margin-bottom on img */
-      margin-bottom: 2rem;
-    }
-    .logo-inner {
-      width: 155px;             /* image + text share this width */
-    }
-    .logo-inner img {
-      display: block;
-      width: 100%;              /* fills container width → aspect ratio preserved */
-      height: auto;             /* no letterboxing → border-radius clips real corners */
-      border-radius: 16px;
-      margin-bottom: .55rem;    /* gap between logo and wordmark */
-    }
-    .logo-wordmark {
-      font-family: 'Orbitron', sans-serif;
-      text-align: center;
-      line-height: 1.2;
-      width: 100%;
-    }
-    .logo-dugout {
-      display: block;
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: .12em;
-      color: #f0f6fc;
-    }
-    .logo-signals {
-      display: block;
-      font-size: .8rem;
-      font-weight: 600;
-      letter-spacing: .35em;
-      color: #38bdf8;
-      margin-top: .15rem;
-    }
-
-    /* ── Form ── */
-    label {
-      display: block;
-      color: #8b949e;
-      font-size: .75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin-bottom: .4rem;
-    }
-    input[type=password] {
-      width: 100%;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: .7rem 1rem;
-      color: #f0f6fc;
-      font-size: 1rem;
-      outline: none;
-      transition: border-color .15s, box-shadow .15s;
-    }
-    input[type=password]:focus {
-      border-color: #38bdf8;
-      box-shadow: 0 0 0 3px rgba(56,189,248,.12);
-    }
-    button {
-      width: 100%;
-      margin-top: 1.2rem;
-      background: #0ea5e9;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: .75rem;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background .15s;
-      letter-spacing: .02em;
-    }
-    button:hover { background: #0284c7; }
-    .error {
-      margin-top: 1rem;
-      background: #1a0a0a;
-      border: 1px solid #6b1a1a;
-      color: #fca5a5;
-      border-radius: 6px;
-      padding: .6rem .8rem;
-      font-size: .85rem;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Log In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --accent:    #38bdf8;
+    --btn:       #0ea5e9;
+    --btn-hover: #0284c7;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --error:     #f85149;
+    --font-head: 'Orbitron', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --radius-sm: 6px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; }
+  .frame { max-width: 390px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding: 32px 24px 48px; }
+  .logo-block { padding: 32px 0 28px; display: flex; justify-content: center; }
+  .logo-block img { width: 160px; height: auto; }
+  .tagline {
+    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-top: -18px; margin-bottom: 32px;
+  }
+  .screen-heading {
+    font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text);
+    line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 28px; }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px;
+  }
+  .field-wrap { position: relative; }
+  .field input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-body);
+    font-size: 15px; padding: 13px 16px; outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field input.error { border-color: var(--error); }
+  .pw-toggle {
+    position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--muted); font-size: 11px;
+    font-family: var(--font-body); font-weight: 600; cursor: pointer; padding: 4px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .field input[type="password"] { padding-right: 60px; }
+  .field-error {
+    font-size: 12px; color: var(--error); margin-top: 6px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .field-error::before { content: '⚠'; font-size: 11px; }
+  .btn-primary {
+    width: 100%; background: var(--btn); border: none; border-radius: var(--radius-sm);
+    color: #fff; font-family: var(--font-head); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.07em; padding: 16px; cursor: pointer; transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--btn-hover); }
+  .footer-link { text-align: center; margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .footer-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .footer-link a:hover { text-decoration: underline; }
+</style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">
-      <div class="logo-inner">
-        <img src="/static/logo-icon.svg" alt="Dugout Signals">
-        <div class="logo-wordmark">
-          <span class="logo-dugout">DUGOUT</span>
-          <span class="logo-signals">SIGNALS</span>
-        </div>
-      </div>
-    </div>
-    <form method="post">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password"
-             placeholder="Enter password" autofocus autocomplete="current-password">
-      <button type="submit">Sign In</button>
-      {% with messages = get_flashed_messages() %}
-        {% if messages %}
-          <div class="error">{{ messages[0] }}</div>
-        {% endif %}
-      {% endwith %}
-    </form>
+<div class="frame">
+  <div class="logo-block">
+    <img src="{{ url_for('static', filename='Logo_Dugout-Signals__baseball-softball_.svg') }}" alt="Dugout Signals">
   </div>
+  <p class="tagline">AI-powered coaching intelligence</p>
+
+  <h1 class="screen-heading">Welcome back.</h1>
+  <p class="screen-sub">Log in to see your team's stats, insights, and signals.</p>
+
+  <form method="post" novalidate>
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" placeholder="coach@example.com"
+             value="{{ email or '' }}" class="{{ 'error' if error else '' }}"
+             autocomplete="email" required>
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <div class="field-wrap">
+        <input type="password" id="password" name="password"
+               class="{{ 'error' if error else '' }}"
+               autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" onclick="togglePw()">Show</button>
+      </div>
+      {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+    </div>
+
+    <button type="submit" class="btn-primary">Log In</button>
+  </form>
+
+  <div class="footer-link">
+    New to Dugout Signals? <a href="{{ url_for('signup') }}">Create an account</a>
+  </div>
+</div>
+<script>
+  function togglePw() {
+    var input = document.getElementById('password');
+    var btn = document.querySelector('.pw-toggle');
+    if (input.type === 'password') { input.type = 'text'; btn.textContent = 'Hide'; }
+    else { input.type = 'password'; btn.textContent = 'Show'; }
+  }
+</script>
 </body>
 </html>

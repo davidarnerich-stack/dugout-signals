@@ -1,21 +1,20 @@
 """Dugout Signals — file upload web app."""
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (Flask, session, redirect, url_for, request,
-                   render_template, flash, jsonify)
+                   render_template, jsonify)
 from supabase import create_client
 from supabase_auth.errors import AuthApiError
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key   = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
-APP_PASSWORD     = os.environ.get("APP_PASSWORD",     "storm2026")
-# Stub until DS-14 (Auth and Account Management) establishes team_name per
-# coach account. Every query/insert below reads team_name from the session,
-# not this constant — this is just what login currently seeds it with.
-DEFAULT_TEAM_NAME = os.environ.get("TEAM_NAME",       "Storm 12U All-Stars")
+# Flask session cookies are browser-session-only by default (die when the
+# browser closes). DS-54 AC #3 requires staying logged in across browser
+# restarts, so sessions marked permanent get a real expiry instead.
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 SUPABASE_URL     = os.environ.get("SUPABASE_URL",     "https://bqjbswbxtyapupufoarv.supabase.co")
 SUPABASE_KEY     = os.environ.get("SUPABASE_KEY",     "")
 # Publishable/anon key — safe to expose, used only for self-service Auth
@@ -54,33 +53,107 @@ def default_season():
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
-def login_required(f):
+def _sync_team_session(coach_id):
+    """Populate session team_name from the coach's team record, if any."""
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("teams").select("id, team_name")
+        .eq("coach_id", coach_id).limit(1).execute()
+    )
+    if resp.data:
+        session["team_name"] = resp.data[0]["team_name"]
+
+
+def get_authenticated_client():
+    """Validates (and refreshes, if needed) the current session's Supabase
+    Auth tokens. Returns (client, user), or (None, None) if there's no valid
+    session. Persists refreshed tokens back into the Flask session."""
+    access_token  = session.get("access_token")
+    refresh_token = session.get("refresh_token")
+    if not access_token or not refresh_token:
+        return None, None
+
+    client = get_anon_client()
+    try:
+        auth_resp = client.auth.set_session(access_token, refresh_token)
+    except AuthApiError:
+        return None, None
+    if not auth_resp.user:
+        return None, None
+
+    current = client.auth.get_session()
+    if current:
+        session["access_token"]  = current.access_token
+        session["refresh_token"] = current.refresh_token
+
+    return client, auth_resp.user
+
+
+def auth_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("authenticated"):
+        _, user = get_authenticated_client()
+        if not user:
+            session.clear()
             return redirect(url_for("login"))
-        # Self-heal sessions issued before team_name existed in the session
-        # (e.g. a browser still logged in from before this was added).
-        session.setdefault("team_name", DEFAULT_TEAM_NAME)
+        session["coach_id"]    = user.id
+        session["coach_email"] = user.email
+        if not session.get("team_name"):
+            _sync_team_session(user.id)
+        if not session.get("team_name"):
+            # Verified and logged in, but never finished team setup.
+            return redirect(url_for("onboarding"))
         return f(*args, **kwargs)
     return decorated
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    error = None
+    email = ""
     if request.method == "POST":
-        if request.form.get("password") == APP_PASSWORD:
-            session["authenticated"] = True
-            session["team_name"]     = DEFAULT_TEAM_NAME
-            return redirect(url_for("index"))
-        flash("Wrong password.")
-    return render_template("login.html")
+        email    = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+        try:
+            resp = get_anon_client().auth.sign_in_with_password({
+                "email": email, "password": password,
+            })
+        except AuthApiError:
+            error = "Incorrect email or password."
+        else:
+            session.permanent         = True
+            session["access_token"]  = resp.session.access_token
+            session["refresh_token"] = resp.session.refresh_token
+            session["coach_id"]      = resp.user.id
+            session["coach_email"]   = resp.user.email
+            _sync_team_session(resp.user.id)
+            return redirect("/dashboard")
+    return render_template("login.html", error=error, email=email)
 
 
 @app.route("/logout")
 def logout():
+    access_token  = session.get("access_token")
+    refresh_token = session.get("refresh_token")
+    if access_token and refresh_token:
+        try:
+            client = get_anon_client()
+            client.auth.set_session(access_token, refresh_token)
+            client.auth.sign_out()
+        except AuthApiError:
+            pass
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.after_request
+def add_no_cache_headers(response):
+    # Prevents the browser back button from showing cached authenticated
+    # pages after logout (DS-54 AC #6).
+    if not request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # ── DS-52: Supabase Auth signup + email verification ───────────────────────────
@@ -194,6 +267,9 @@ def auth_callback_session():
         return jsonify({"redirect": url_for("verify_email")})
 
     session.pop("pending_email", None)
+    session.permanent          = True
+    session["access_token"]   = auth_resp.session.access_token
+    session["refresh_token"]  = auth_resp.session.refresh_token
     session["coach_id"]       = user.id
     session["coach_email"]    = user.email
     session["email_verified"] = True
@@ -291,14 +367,14 @@ def onboarding():
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
 @app.route("/")
-@login_required
+@auth_required
 def index():
     return render_template("upload.html")
 
 
 # ── API: tournaments ───────────────────────────────────────────────────────────
 @app.route("/api/tournaments")
-@login_required
+@auth_required
 def api_tournaments():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     resp = (
@@ -312,7 +388,7 @@ def api_tournaments():
 
 
 @app.route("/api/tournaments/<tournament_id>/next_game")
-@login_required
+@auth_required
 def api_next_game(tournament_id):
     from parsers.common import next_game_number
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -321,7 +397,7 @@ def api_next_game(tournament_id):
 
 # ── API: detect — read files, extract game info, no DB writes ──────────────────
 @app.route("/api/detect", methods=["POST"])
-@login_required
+@auth_required
 def api_detect():
     """
     Step 1: inspect uploaded files, extract game info from the box score, parse
@@ -393,7 +469,7 @@ def api_detect():
 
 # ── API: upload — process all files and write to DB ───────────────────────────
 @app.route("/upload", methods=["POST"])
-@login_required
+@auth_required
 def upload():
     """
     Step 2: process files with confirmed metadata and write to Supabase.
@@ -533,7 +609,7 @@ def upload():
 
 
 @app.route("/api/games")
-@login_required
+@auth_required
 def api_games():
     """Return all games for the edit dropdown, most recent first."""
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -549,7 +625,7 @@ def api_games():
 
 
 @app.route("/api/games/<game_id>", methods=["PATCH"])
-@login_required
+@auth_required
 def api_update_game(game_id):
     """Update editable fields on an existing game record."""
     data = request.get_json()
@@ -574,7 +650,7 @@ def api_update_game(game_id):
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 @app.route("/reports")
-@login_required
+@auth_required
 def reports_list():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -600,7 +676,7 @@ def reports_list():
 
 
 @app.route("/reports/generate", methods=["POST"])
-@login_required
+@auth_required
 def reports_generate():
     ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     if not ANTHROPIC_KEY:
@@ -647,7 +723,7 @@ def reports_generate():
 
 
 @app.route("/reports/<report_id>")
-@login_required
+@auth_required
 def report_view(report_id):
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
