@@ -373,6 +373,7 @@ def onboarding():
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
 @app.route("/")
+@app.route("/upload", methods=["GET"])
 @auth_required
 def index():
     return render_template("upload.html")
