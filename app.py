@@ -757,5 +757,11 @@ def report_view(report_id):
     return render_template("report.html", report=report, sections=sections, d=d)
 
 
+# ── Errors ─────────────────────────────────────────────────────────────────────
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("404.html"), 404
+
+
 if __name__ == "__main__":
     app.run(debug=False)

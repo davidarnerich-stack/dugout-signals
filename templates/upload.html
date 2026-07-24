@@ -247,24 +247,28 @@
     </span>
   </div>
   <nav class="nav-links">
-    <a href="/dashboard">Dashboard</a>
+    <!-- Dashboard: hidden until DS-17 ships the real page (DS-47). Re-enable by uncommenting: -->
+    <!-- <a href="/dashboard">Dashboard</a> -->
     <a href="/reports">Reports</a>
-    <a href="https://upload.dugoutsignals.ai" class="active" target="_blank">Upload</a>
+    <a href="/" class="active">Upload</a>
     <a href="/logout" class="logout">Sign out</a>
   </nav>
 </header>
 
 <!-- Bottom nav (mobile) -->
 <nav class="bottom-nav">
+  <!-- Dashboard: hidden until DS-17 ships the real page (DS-47). Re-enable by uncommenting: -->
+  <!--
   <a href="/dashboard">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     Dashboard
   </a>
+  -->
   <a href="/reports">
     <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
     Reports
   </a>
-  <a href="https://upload.dugoutsignals.ai" class="active" target="_blank">
+  <a href="/" class="active">
     <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
     Upload
   </a>
