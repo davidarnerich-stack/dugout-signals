@@ -137,7 +137,7 @@ def preview(file_bytes):
     return {"pitchers": pitchers, "batters_count": batters_count}
 
 
-def process(sb, file_bytes, team_name, game_id=None, filename=None):
+def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     """
     Process a stats CSV.  game_id takes priority; filename is legacy fallback.
     """
@@ -170,13 +170,13 @@ def process(sb, file_bytes, team_name, game_id=None, filename=None):
     if game_id is None:
         existing = (sb.table("games").select("game_id")
                     .eq("game_date", date).eq("game_number", game_num)
-                    .eq("team_name", team_name).execute())
+                    .eq("team_id", team_id).execute())
         if existing.data:
             game_id = existing.data[0]["game_id"]
             game_action = "existing"
         else:
             g = sb.table("games").insert({
-                "game_date": date, "team_name": team_name,
+                "game_date": date, "team_id": team_id, "team_name": team_name,
                 "game_number": game_num, "year": int(date[:4]),
                 "season": SEASON,
             }).execute()
@@ -194,17 +194,17 @@ def process(sb, file_bytes, team_name, game_id=None, filename=None):
             continue
 
         existing_p = (sb.table("players").select("player_id")
-                      .eq("number", number).eq("team_name", team_name).execute())
+                      .eq("number", number).eq("team_id", team_id).execute())
         if existing_p.data:
             player_id = existing_p.data[0]["player_id"]
         else:
             p = sb.table("players").insert({
                 "number": number, "first_name": first,
-                "last_name": last, "team_name": team_name,
+                "last_name": last, "team_id": team_id, "team_name": team_name,
             }).execute()
             player_id = p.data[0]["player_id"]
 
-        base = {"game_id": game_id, "player_id": player_id}
+        base = {"game_id": game_id, "player_id": player_id, "team_id": team_id}
 
         sb.table("batting_stats").upsert(
             {**base, **_stat_dict(row, BAT_COLS, BAT_FLOAT)},

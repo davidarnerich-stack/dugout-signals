@@ -169,7 +169,7 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
 
 def find_or_create_game(sb, game_date: str, opponent_name: str,
                          storm_runs, opponent_runs, tournament_id,
-                         game_number: int, team_name: str,
+                         game_number: int, team_id: str, team_name: str,
                          game_type: str = "tournament") -> str:
     """Find an existing game or create one. Returns game_id."""
     existing = (
@@ -177,7 +177,7 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         .select("game_id")
         .eq("game_date",     game_date)
         .eq("opponent_name", opponent_name)
-        .eq("team_name",     team_name)
+        .eq("team_id",       team_id)
         .execute()
     )
     if existing.data:
@@ -206,6 +206,7 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     year = int(game_date[:4]) if game_date else None
     resp = sb.table("games").insert({
         "game_date":     game_date,
+        "team_id":       team_id,
         "team_name":     team_name,
         "opponent_name": opponent_name,
         "game_number":   game_number,
@@ -220,7 +221,7 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     return resp.data[0]["game_id"]
 
 
-def find_game(sb, game_date: str, opponent_name: str, team_name: str):
+def find_game(sb, game_date: str, opponent_name: str, team_id: str):
     """
     Look up an existing game *without* creating one — mirrors the match logic in
     find_or_create_game so the preview reflects exactly what the write will hit.
@@ -233,39 +234,42 @@ def find_game(sb, game_date: str, opponent_name: str, team_name: str):
         .select("game_id")
         .eq("game_date",     game_date)
         .eq("opponent_name", opponent_name)
-        .eq("team_name",     team_name)
+        .eq("team_id",       team_id)
         .execute()
     )
     return resp.data[0]["game_id"] if resp.data else None
 
 
-def find_or_create_tournament(sb, name: str) -> str:
-    """Find or create a tournament by name. Returns tournament_id."""
+def find_or_create_tournament(sb, name: str, team_id: str) -> str:
+    """Find or create a tournament by name, scoped to the coach's team.
+    Returns tournament_id."""
     existing = (
         sb.table("tournaments")
         .select("tournament_id")
-        .eq("name",   name)
-        .eq("season", SEASON)
+        .eq("name",    name)
+        .eq("season",  SEASON)
+        .eq("team_id", team_id)
         .execute()
     )
     if existing.data:
         return existing.data[0]["tournament_id"]
 
     resp = sb.table("tournaments").insert({
-        "name":   name,
-        "season": SEASON,
-        "year":   2026,
+        "name":    name,
+        "season":  SEASON,
+        "year":    2026,
+        "team_id": team_id,
     }).execute()
     return resp.data[0]["tournament_id"]
 
 
-def next_game_number(sb, tournament_id: str, team_name: str) -> int:
+def next_game_number(sb, tournament_id: str, team_id: str) -> int:
     """Return the next available game number within a tournament."""
     resp = (
         sb.table("games")
         .select("game_number")
         .eq("tournament_id", tournament_id)
-        .eq("team_name",     team_name)
+        .eq("team_id",       team_id)
         .execute()
     )
     if not resp.data:
@@ -275,11 +279,11 @@ def next_game_number(sb, tournament_id: str, team_name: str) -> int:
 
 # ── Player helpers ────────────────────────────────────────────────────────────
 
-def build_player_map(sb, team_name: str):
+def build_player_map(sb, team_id: str):
     resp = (
         sb.table("players")
         .select("player_id,first_name,last_name,number")
-        .eq("team_name", team_name)
+        .eq("team_id", team_id)
         .execute()
     )
     pmap = {}

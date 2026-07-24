@@ -346,7 +346,7 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
-def process(sb, source, team_name, game_id=None, filename=None, is_text=False):
+def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text=False):
     """
     Process play-by-play data.
 
@@ -355,7 +355,7 @@ def process(sb, source, team_name, game_id=None, filename=None, is_text=False):
     filename  : legacy DOCX filename for game identity fallback
     is_text   : True if source is a raw text string, False if DOCX bytes
     """
-    player_map = build_player_map(sb, team_name)
+    player_map = build_player_map(sb, team_id)
 
     if is_text:
         paras = _get_paras_from_text(source)
@@ -375,7 +375,7 @@ def process(sb, source, team_name, game_id=None, filename=None, is_text=False):
         game_num = int(m.group(4))
         game_resp = (sb.table("games").select("game_id")
                      .eq("game_date",date).eq("game_number",game_num)
-                     .eq("team_name",team_name).execute())
+                     .eq("team_id",team_id).execute())
         if not game_resp.data:
             raise ValueError(f"No game found for {date} game {game_num}. Upload Stats CSV first.")
         game_id = game_resp.data[0]["game_id"]
@@ -407,13 +407,16 @@ def process(sb, source, team_name, game_id=None, filename=None, is_text=False):
         txt=" ".join(filter(None,[pa.get("pitch_sequence"),pa.get("narrative")]))
         all_bre.extend(_base_running_events(txt,pa_id,game_id,player_map))
 
+    for bre in all_bre:
+        bre["team_id"] = team_id
+
     for i in range(0,len(all_bre),BATCH):
         sb.table("base_running_events").insert(all_bre[i:i+BATCH]).execute()
 
     is_rows=[]
     for (inn,half,team),runs in inning_scores.items():
         if inn and inn>0:
-            is_rows.append({"game_id":game_id,"inning":inn,"half_inning":half,
+            is_rows.append({"game_id":game_id,"team_id":team_id,"inning":inn,"half_inning":half,
                             "team":team,"runs":max(0,runs)})
     if is_rows:
         sb.table("inning_scores").insert(is_rows).execute()

@@ -3,7 +3,7 @@ Pull all data needed to generate a tournament analysis report.
 Returns a structured dict that gets passed to the AI and rendered into tables.
 """
 
-def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
+def get_tournament_data(sb, tournament_id: str, team_id: str, team_name: str) -> dict:
     """
     Return a complete data payload for one tournament.
     All numbers come from Supabase — nothing calculated here.
@@ -18,7 +18,7 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
         sb.table("games")
         .select("game_id,game_date,game_number,opponent_name,team_runs,opponent_runs,result")
         .eq("tournament_id", tournament_id)
-        .eq("team_name", team_name)
+        .eq("team_id", team_id)
         .order("game_date")
         .order("game_number")
         .execute()
@@ -42,7 +42,7 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
             .eq("game_id", g["game_id"])
             .execute()
         )
-        players_resp = sb.table("players").select("player_id,first_name,last_name,number").eq("team_name", team_name).execute()
+        players_resp = sb.table("players").select("player_id,first_name,last_name,number").eq("team_id", team_id).execute()
         pid_to_name = {p["player_id"]: f"{p['first_name'][0]}. {p['last_name']} #{p['number']}" for p in players_resp.data}
         pitchers = [f"{pid_to_name.get(p['player_id'], '?')} {p['innings_pitched']} IP" for p in ps.data if p["innings_pitched"] and float(p["innings_pitched"]) > 0]
         pitcher_usage[g["game_id"]] = ", ".join(pitchers)
@@ -70,7 +70,7 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
             bat_by_player[pid][f] += (row.get(f) or 0)
 
     # Attach player info and calculate rates
-    players_resp = sb.table("players").select("*").eq("team_name", team_name).execute()
+    players_resp = sb.table("players").select("*").eq("team_id", team_id).execute()
     pid_to_player = {p["player_id"]: p for p in players_resp.data}
 
     batting_stats = []
@@ -262,13 +262,6 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
     # ── Spring baseline ───────────────────────────────────────────────────
     spring_resp = (
         sb.table("player_season_stats")
-        .select("*")
-        .eq("season", "Spring 2026")
-        .eq("team_name" if False else "season", "Spring 2026")  # re-query properly
-        .execute()
-    )
-    spring_resp = (
-        sb.table("player_season_stats")
         .select("player_id,batting_average,on_base_percentage,ops,stolen_bases,stolen_base_percentage")
         .eq("season", "Spring 2026")
         .execute()
@@ -289,20 +282,12 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
         b["trend"] = "↑ Above" if diff > 0.03 else ("↓ Below" if diff < -0.03 else "→ Flat")
 
     # ── Previous tournament data ──────────────────────────────────────────
-    prev_games_resp = (
-        sb.table("games")
-        .select("game_id,game_date")
-        .eq("team_name", team_name)
-        .eq("game_type", "tournament")
-        .lt("game_date", tournament.get("start_date", "2099-01-01"))
-        .execute()
-    )
-    # Fallback: get all games not in this tournament and before the first game
+    # (all games not in this tournament, before its first game)
     first_game_date = games[0]["game_date"] if games else "2099-01-01"
     prev_games_resp = (
         sb.table("games")
         .select("game_id")
-        .eq("team_name", team_name)
+        .eq("team_id", team_id)
         .eq("game_type", "tournament")
         .lt("game_date", first_game_date)
         .execute()
@@ -355,6 +340,7 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
         sb.table("tournaments")
         .select("tournament_id,name")
         .eq("season", tournament.get("season", "Summer 2026"))
+        .eq("team_id", team_id)
         .execute()
     )
     tourney_comparison = []
@@ -363,7 +349,7 @@ def get_tournament_data(sb, tournament_id: str, team_name: str) -> dict:
             sb.table("games")
             .select("game_id,team_runs,opponent_runs,result")
             .eq("tournament_id", t_item["tournament_id"])
-            .eq("team_name", team_name)
+            .eq("team_id", team_id)
             .execute()
         ).data
         if not t_games:

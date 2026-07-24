@@ -54,13 +54,18 @@ def default_season():
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 def _sync_team_session(coach_id):
-    """Populate session team_name from the coach's team record, if any."""
+    """Populate session team_id/team_name from the coach's team record, if any.
+
+    team_id is the real scoping key every query/parser filters by; team_name
+    is carried alongside purely for display (page headers, report narrative).
+    """
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     resp = (
         sb.table("teams").select("id, team_name")
         .eq("coach_id", coach_id).limit(1).execute()
     )
     if resp.data:
+        session["team_id"]   = resp.data[0]["id"]
         session["team_name"] = resp.data[0]["team_name"]
 
 
@@ -341,7 +346,7 @@ def onboarding():
             if has_team():
                 return redirect("/dashboard")
 
-            sb.table("teams").insert({
+            insert_resp = sb.table("teams").insert({
                 "coach_id":       session["coach_id"],
                 "team_name":      team_name,
                 "sport":          sport,
@@ -359,7 +364,8 @@ def onboarding():
             errors["_general"] = "Something went wrong creating your team. Please try again."
             return _render_onboarding(errors, form)
 
-        session["team_name"] = team_name  # keeps the DS-36 stub consistent until DS-54's cutover
+        session["team_id"]   = insert_resp.data[0]["id"]
+        session["team_name"] = team_name
         return redirect("/dashboard")
 
     return _render_onboarding({}, {})
@@ -392,7 +398,7 @@ def api_tournaments():
 def api_next_game(tournament_id):
     from parsers.common import next_game_number
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return jsonify({"next": next_game_number(sb, tournament_id, session["team_name"])})
+    return jsonify({"next": next_game_number(sb, tournament_id, session["team_id"])})
 
 
 # ── API: detect — read files, extract game info, no DB writes ──────────────────
@@ -446,7 +452,7 @@ def api_detect():
     if game_info:
         sb = create_client(SUPABASE_URL, SUPABASE_KEY)
         game_id = find_game(sb, game_info.get("game_date"),
-                            game_info.get("opponent_name"), session["team_name"])
+                            game_info.get("opponent_name"), session["team_id"])
         if game_id:
             result["game_id"] = game_id
             pit = (sb.table("pitching_stats").select("stat_id", count="exact")
@@ -484,6 +490,7 @@ def upload():
                                 find_or_create_game, find_or_create_tournament,
                                 SEASON)
 
+    team_id            = session["team_id"]
     team_name          = session["team_name"]
     files              = request.files.getlist("files")
     game_type          = request.form.get("game_type", "tournament").strip()
@@ -526,7 +533,7 @@ def upload():
             # Tournament (only relevant for tournament game type)
             tournament_id = None
             if game_type == "tournament" and tournament_name:
-                tournament_id = find_or_create_tournament(sb, tournament_name)
+                tournament_id = find_or_create_tournament(sb, tournament_name, team_id)
 
             game_id = find_or_create_game(
                 sb,
@@ -536,6 +543,7 @@ def upload():
                 opponent_runs = info["opponent_runs"],
                 tournament_id = tournament_id,
                 game_number   = game_number if game_type == "tournament" else 1,
+                team_id       = team_id,
                 team_name     = team_name,
                 game_type     = game_type,
             )
@@ -549,7 +557,7 @@ def upload():
         bs_name, bs_bytes = file_data["box_score"]
         try:
             from parsers.box_scores import process as bs_process
-            r = bs_process(sb, bs_bytes, team_name, game_id=game_id)
+            r = bs_process(sb, bs_bytes, team_id, team_name, game_id=game_id)
             results.append({"filename": bs_name, "status": "success",
                              "message": r["message"], "details": r.get("details", [])})
         except Exception as e:
@@ -565,7 +573,7 @@ def upload():
         else:
             try:
                 from parsers.stats import process as st_process
-                r = st_process(sb, st_bytes, team_name, game_id=game_id)
+                r = st_process(sb, st_bytes, team_id, team_name, game_id=game_id)
                 results.append({"filename": st_name, "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -580,7 +588,7 @@ def upload():
         else:
             try:
                 from parsers.play_by_play import process as pb_process
-                r = pb_process(sb, pb_bytes, team_name, game_id=game_id, is_text=False)
+                r = pb_process(sb, pb_bytes, team_id, team_name, game_id=game_id, is_text=False)
                 results.append({"filename": pb_name, "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -594,7 +602,7 @@ def upload():
         else:
             try:
                 from parsers.play_by_play import process as pb_process
-                r = pb_process(sb, pbp_text, team_name, game_id=game_id, is_text=True)
+                r = pb_process(sb, pbp_text, team_id, team_name, game_id=game_id, is_text=True)
                 results.append({"filename": "play-by-play (pasted)", "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -616,7 +624,7 @@ def api_games():
     resp = (
         sb.table("games")
         .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result, game_type")
-        .eq("team_name", session["team_name"])
+        .eq("team_id", session["team_id"])
         .order("game_date", desc=True)
         .order("game_number", desc=True)
         .execute()
@@ -658,7 +666,7 @@ def reports_list():
     saved = (
         sb.table("reports")
         .select("report_id,title,season,games_played,wins,losses,ties,generated_at")
-        .eq("team_name", session["team_name"])
+        .eq("team_id", session["team_id"])
         .order("generated_at", desc=True)
         .execute()
     ).data
@@ -667,6 +675,7 @@ def reports_list():
     tournaments = (
         sb.table("tournaments")
         .select("tournament_id,name,season")
+        .eq("team_id", session["team_id"])
         .order("season", desc=True)
         .order("name")
         .execute()
@@ -691,7 +700,8 @@ def reports_generate():
 
     try:
         from reports.generate import generate_full_report
-        result = generate_full_report(sb, tournament_id, ANTHROPIC_KEY, session["team_name"])
+        result = generate_full_report(sb, tournament_id, ANTHROPIC_KEY,
+                                       session["team_id"], session["team_name"])
         d = result["data"]
         sections = result["sections"]
 
@@ -703,6 +713,7 @@ def reports_generate():
             "tournament_id":   tournament_id,
             "tournament_name": d["tournament_name"],
             "season":          d["season"],
+            "team_id":         session["team_id"],
             "team_name":       d["team_name"],
             "title":           title,
             "sections":        json.dumps(sections),
@@ -730,7 +741,7 @@ def report_view(report_id):
     # Load saved report — scoped to the coach's own team
     r = (sb.table("reports").select("*")
          .eq("report_id", report_id)
-         .eq("team_name", session["team_name"])
+         .eq("team_id", session["team_id"])
          .execute())
     if not r.data:
         return "Report not found", 404
@@ -741,7 +752,7 @@ def report_view(report_id):
 
     # Reload live data for tables (so edits to game data show fresh)
     from reports.data import get_tournament_data
-    d = get_tournament_data(sb, report["tournament_id"], report["team_name"])
+    d = get_tournament_data(sb, report["tournament_id"], session["team_id"], report["team_name"])
 
     return render_template("report.html", report=report, sections=sections, d=d)
 
