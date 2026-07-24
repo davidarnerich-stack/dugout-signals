@@ -82,6 +82,16 @@
     }
     p { line-height: 1.7; color: #c9d1d9; font-size: .92rem; margin-bottom: .85rem; }
     p:last-child { margin-bottom: 0; }
+    /* Markdown-rendered narrative can, in principle, include these even though the
+       system prompt discourages it — styled so they don't look broken if it does. */
+    strong { color: #f0f6fc; font-weight: 600; }
+    h1, h2, h3, h4, h5, h6 {
+      font-family: 'Orbitron', sans-serif; color: #38bdf8; font-size: .92rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+      margin: 1.1rem 0 .5rem;
+    }
+    .section ol, .section ul { padding-left: 1.4rem; margin-bottom: .85rem; color: #c9d1d9; }
+    .section li { line-height: 1.7; font-size: .92rem; margin-bottom: .3rem; }
 
     /* ── Tables ── */
     .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
@@ -186,9 +196,7 @@
   <!-- Summary -->
   <div class="section">
     <div class="section-title">Summary</div>
-    {% for para in sections.summary.split('\n\n') %}
-      <p>{{ para }}</p>
-    {% endfor %}
+    {{ sections.summary | safe }}
   </div>
 
   <!-- Tournament Results -->
@@ -255,10 +263,10 @@
     </div>
 
     <div class="subsection-title">Hitting Highlights</div>
-    {% for para in sections.hitting_highlights.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {{ sections.hitting_highlights | safe }}
 
     <div class="subsection-title">Areas to Develop</div>
-    {% for para in sections.hitting_areas.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {{ sections.hitting_areas | safe }}
   </div>
 
   <!-- Pitching -->
@@ -307,15 +315,14 @@
         </tbody>
       </table>
     </div>
-    {% set narr = sections.pitcher_narratives.get(p.player_id, '') %}
-    {% for para in narr.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {{ sections.pitcher_narratives.get(p.player_id, '') | safe }}
     {% endfor %}
   </div>
 
   <!-- Fielding -->
   <div class="section">
     <div class="section-title">Fielding</div>
-    {% for para in sections.fielding_narrative.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {{ sections.fielding_narrative | safe }}
 
     <div class="table-wrap" style="margin-top:1rem">
       <table>
@@ -348,7 +355,7 @@
   <!-- Base Running -->
   <div class="section">
     <div class="section-title">Base Running</div>
-    {% for para in sections.base_running.split('\n\n') %}<p>{{ para }}</p>{% endfor %}
+    {{ sections.base_running | safe }}
   </div>
 
   <!-- Spring Baseline Comparison -->
@@ -432,16 +439,11 @@
   <div class="section">
     <div class="section-title">Priority Areas</div>
     <div class="priority-list">
-      {% set pa_text = sections.priority_areas %}
-      {% for line in pa_text.split('\n') %}
-        {% if line.strip() and line.strip()[0].isdigit() %}
-          {% set dot_pos = line.find('.') %}
-          {% set content = line[dot_pos+1:].strip() if dot_pos >= 0 else line %}
-          <div class="priority-item">
-            <div class="priority-num">{{ loop.index }}</div>
-            <div class="priority-text">{{ content | replace('**','') }}</div>
-          </div>
-        {% endif %}
+      {% for item in sections.priority_areas %}
+        <div class="priority-item">
+          <div class="priority-num">{{ loop.index }}</div>
+          <div class="priority-text">{{ item | safe }}</div>
+        </div>
       {% endfor %}
     </div>
   </div>

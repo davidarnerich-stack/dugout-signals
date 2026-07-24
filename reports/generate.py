@@ -4,9 +4,32 @@ Each section is generated separately so partial failures don't break the report.
 """
 
 import os
+import re
 import anthropic
+import markdown as _markdown_lib
 
 MODEL = "claude-opus-4-5"
+
+
+def _to_html(text: str) -> str:
+    """Render Claude's output through a real markdown parser. Claude isn't
+    reliably forbidden from using markdown syntax (headers, bold, numbered
+    lists) in its prose, so section text is rendered as HTML instead of
+    dropped in as literal text — DS-50."""
+    return _markdown_lib.markdown(text)
+
+
+def _priority_items(text: str) -> list:
+    """Split the priority-areas numbered list into individual items, each
+    markdown-rendered (so a '**Label**' prefix becomes real <strong>, not a
+    literal '**' — this is what report.html's priority-item cards render)."""
+    items = []
+    for line in text.strip().splitlines():
+        line = line.strip()
+        m = re.match(r"^\d+\.\s*(.+)$", line)
+        if m:
+            items.append(_markdown_lib.markdown(m.group(1)))
+    return items
 
 SYSTEM = """You are an analytical assistant for a competitive youth softball coaching staff.
 You write direct, data-driven scouting reports in the style of a professional analytics department.
@@ -167,26 +190,33 @@ def generate_full_report(sb, tournament_id: str, anthropic_key: str, team_id: st
 
     sections = {}
 
-    # Generate each narrative section (each is independent — partial failures are caught)
+    # Generate each narrative section (each is independent — partial failures are caught).
+    # priority_areas is rendered as a list of items (not one HTML blob) so
+    # report.html's numbered priority-item cards keep working.
     for section_name, fn, args in [
         ("summary",              generate_summary,              (client, data)),
         ("hitting_highlights",   generate_hitting_highlights,   (client, data)),
         ("hitting_areas",        generate_hitting_areas,        (client, data)),
         ("fielding_narrative",   generate_fielding_narrative,   (client, data)),
         ("base_running",         generate_base_running_narrative, (client, data)),
-        ("priority_areas",       generate_priority_areas,       (client, data)),
     ]:
         try:
-            sections[section_name] = fn(*args)
+            sections[section_name] = _to_html(fn(*args))
         except Exception as e:
-            sections[section_name] = f"[Generation error: {e}]"
+            sections[section_name] = f"<p>[Generation error: {e}]</p>"
+
+    try:
+        sections["priority_areas"] = _priority_items(generate_priority_areas(client, data))
+    except Exception as e:
+        sections["priority_areas"] = [f"[Generation error: {e}]"]
 
     # Pitcher narratives
     sections["pitcher_narratives"] = {}
     for pitcher in data["pitching_stats"]:
         try:
-            sections["pitcher_narratives"][pitcher["player_id"]] = generate_pitching_narrative(client, pitcher, data)
+            sections["pitcher_narratives"][pitcher["player_id"]] = _to_html(
+                generate_pitching_narrative(client, pitcher, data))
         except Exception as e:
-            sections["pitcher_narratives"][pitcher["player_id"]] = f"[Generation error: {e}]"
+            sections["pitcher_narratives"][pitcher["player_id"]] = f"<p>[Generation error: {e}]</p>"
 
     return {"data": data, "sections": sections}
