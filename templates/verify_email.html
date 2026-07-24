@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Check Your Inbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d; --accent: #38bdf8;
+    --text: #e6edf3; --muted: #8b949e;
+    --font-head: 'Orbitron', sans-serif; --font-body: 'Inter', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; }
+  .frame { max-width: 390px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding: 32px 24px 48px; }
+  .logo-block { padding: 32px 0 28px; display: flex; justify-content: center; }
+  .logo-block img { width: 160px; height: auto; }
+  .tagline {
+    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-top: -18px; margin-bottom: 32px;
+  }
+  .screen-heading {
+    font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text);
+    line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 28px; }
+  .email-highlight { color: var(--accent); font-weight: 600; }
+  .resend-link { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .resend-link a, .resend-form button {
+    color: var(--accent); text-decoration: none; font-weight: 500;
+    background: none; border: none; font-family: var(--font-body); font-size: 13px; cursor: pointer; padding: 0;
+  }
+  .resend-link a:hover, .resend-form button:hover { text-decoration: underline; }
+  .footer-link { text-align: center; margin-top: 40px; font-size: 13px; color: var(--muted); }
+  .footer-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .footer-link a:hover { text-decoration: underline; }
+  .resent-note { margin-top: 24px; font-size: 13px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="logo-block">
+    <img src="{{ url_for('static', filename='Logo_Dugout-Signals__baseball-softball_.svg') }}" alt="Dugout Signals">
+  </div>
+  <p class="tagline">AI-powered coaching intelligence</p>
+
+  <h1 class="screen-heading">Check your inbox.</h1>
+  <p class="screen-sub">We sent a confirmation link to<br><span class="email-highlight">{{ email }}</span></p>
+  <p class="screen-sub" style="margin-top: -12px;">Click the link to continue setting up your account. It may take a minute to arrive.</p>
+
+  {% if resent %}
+    <p class="resent-note">Sent again — check your inbox.</p>
+  {% else %}
+    <form class="resend-form" method="post" action="{{ url_for('verify_email_resend') }}">
+      <p class="resend-link">Didn't get it? <button type="submit">Resend the email</button></p>
+    </form>
+  {% endif %}
+
+  <div class="footer-link">
+    Wrong email? <a href="{{ url_for('signup') }}">Go back and start over</a>
+  </div>
+</div>
+</body>
+</html>

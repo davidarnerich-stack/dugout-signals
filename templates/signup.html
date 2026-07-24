@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Create Account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --accent:    #38bdf8;
+    --btn:       #0ea5e9;
+    --btn-hover: #0284c7;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --error:     #f85149;
+    --font-head: 'Orbitron', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --radius-sm: 6px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+  }
+  .frame {
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 32px 24px 48px;
+  }
+  .logo-block { padding: 32px 0 28px; display: flex; justify-content: center; }
+  .logo-block img { width: 160px; height: auto; }
+  .tagline {
+    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-top: -18px; margin-bottom: 32px;
+  }
+  .screen-heading {
+    font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text);
+    line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 28px; }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px;
+  }
+  .field-wrap { position: relative; }
+  .field input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-body);
+    font-size: 15px; padding: 13px 16px; outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field input.error { border-color: var(--error); }
+  .pw-toggle {
+    position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--muted); font-size: 11px;
+    font-family: var(--font-body); font-weight: 600; cursor: pointer; padding: 4px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .field input[type="password"] { padding-right: 60px; }
+  .field-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .field-error {
+    font-size: 12px; color: var(--error); margin-top: 6px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .field-error::before { content: '⚠'; font-size: 11px; }
+  .btn-primary {
+    width: 100%; background: var(--btn); border: none; border-radius: var(--radius-sm);
+    color: #fff; font-family: var(--font-head); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.07em; padding: 16px; cursor: pointer; transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--btn-hover); }
+  .footer-link { text-align: center; margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .footer-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .footer-link a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="logo-block">
+    <img src="{{ url_for('static', filename='Logo_Dugout-Signals__baseball-softball_.svg') }}" alt="Dugout Signals">
+  </div>
+  <p class="tagline">AI-powered coaching intelligence</p>
+
+  <h1 class="screen-heading">Create your account.</h1>
+  <p class="screen-sub">Your team's stats, insights, and signals — all in one place.</p>
+
+  <form method="post" novalidate>
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" placeholder="coach@example.com"
+             value="{{ email or '' }}"
+             class="{{ 'error' if error_field == 'email' else '' }}"
+             autocomplete="email" required>
+      {% if error_field == 'email' %}
+        <p class="field-error">{{ error_message }}</p>
+      {% endif %}
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <div class="field-wrap">
+        <input type="password" id="password" name="password"
+               class="{{ 'error' if error_field == 'password' else '' }}"
+               autocomplete="new-password" required>
+        <button type="button" class="pw-toggle" onclick="togglePw()">Show</button>
+      </div>
+      {% if error_field == 'password' %}
+        <p class="field-error">{{ error_message }}</p>
+      {% else %}
+        <p class="field-hint">At least 8 characters</p>
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn-primary">Create Account</button>
+  </form>
+
+  <div class="footer-link">
+    Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+  </div>
+</div>
+<script>
+  function togglePw() {
+    var input = document.getElementById('password');
+    var btn = document.querySelector('.pw-toggle');
+    if (input.type === 'password') { input.type = 'text'; btn.textContent = 'Hide'; }
+    else { input.type = 'password'; btn.textContent = 'Show'; }
+  }
+</script>
+</body>
+</html>

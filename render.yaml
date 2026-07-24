@@ -14,3 +14,9 @@ services:
         value: https://bqjbswbxtyapupufoarv.supabase.co
       - key: SUPABASE_KEY
         sync: false           # You set this manually in Render dashboard
+      - key: SUPABASE_ANON_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxamJzd2J4dHlhcHVwdWZvYXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0ODk2MzMsImV4cCI6MjA3MjA2NTYzM30.LBHDFQy1Nvr_0yvd2reub6VLsvrxKKvYzVaQCl64LNE
+        # Publishable key — safe to commit, used only for Auth (signup/resend/session)
+      - key: SITE_URL
+        value: https://app.dugoutsignals.ai
+        # Base URL for Supabase email-confirmation redirect links (DS-52)

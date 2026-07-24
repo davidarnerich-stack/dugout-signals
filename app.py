@@ -5,6 +5,7 @@ from functools import wraps
 from flask import (Flask, session, redirect, url_for, request,
                    render_template, flash, jsonify)
 from supabase import create_client
+from supabase_auth.errors import AuthApiError
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -16,7 +17,20 @@ APP_PASSWORD     = os.environ.get("APP_PASSWORD",     "storm2026")
 DEFAULT_TEAM_NAME = os.environ.get("TEAM_NAME",       "Storm 12U All-Stars")
 SUPABASE_URL     = os.environ.get("SUPABASE_URL",     "https://bqjbswbxtyapupufoarv.supabase.co")
 SUPABASE_KEY     = os.environ.get("SUPABASE_KEY",     "")
+# Publishable/anon key — safe to expose, used only for self-service Auth
+# operations (signup, resend, session exchange), never for data queries.
+SUPABASE_ANON_KEY = os.environ.get(
+    "SUPABASE_ANON_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxamJzd2J4dHlhcHVwdWZvYXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0ODk2MzMsImV4cCI6MjA3MjA2NTYzM30.LBHDFQy1Nvr_0yvd2reub6VLsvrxKKvYzVaQCl64LNE",
+)
+# Base URL used to build Supabase Auth email-confirmation redirect links.
+SITE_URL         = os.environ.get("SITE_URL",         "https://app.dugoutsignals.ai")
 MAX_FILE_MB      = 20
+
+
+def get_anon_client():
+    """Supabase client using the anon key, for self-service Auth operations."""
+    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -47,6 +61,124 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+# ── DS-52: Supabase Auth signup + email verification ───────────────────────────
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    # Already authenticated + verified coaches don't need to sign up again.
+    # /dashboard doesn't exist yet (DS-17) — this will resolve once it ships.
+    if session.get("email_verified"):
+        return redirect("/dashboard")
+
+    if request.method == "POST":
+        email    = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        if len(password) < 8:
+            return render_template(
+                "signup.html", email=email,
+                error_field="password",
+                error_message="Password must be at least 8 characters.",
+            )
+
+        redirect_to = f"{SITE_URL}/auth/callback"
+        try:
+            resp = get_anon_client().auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {"email_redirect_to": redirect_to},
+            })
+        except AuthApiError as e:
+            if e.code == "user_already_exists":
+                return render_template(
+                    "signup.html", email=email,
+                    error_field="email",
+                    error_message="An account with this email already exists — try logging in.",
+                )
+            return render_template(
+                "signup.html", email=email,
+                error_field="email",
+                error_message="Something went wrong creating your account. Please try again.",
+            )
+
+        # Supabase doesn't raise an error for an email that's already registered
+        # (anti-enumeration behavior) — it returns a 200 with a synthetic user
+        # whose identities list is empty instead. Must check for that explicitly.
+        if resp.user is not None and not resp.user.identities:
+            return render_template(
+                "signup.html", email=email,
+                error_field="email",
+                error_message="An account with this email already exists — try logging in.",
+            )
+
+        session["pending_email"] = email
+        return redirect(url_for("verify_email"))
+
+    return render_template("signup.html", email=None, error_field=None, error_message=None)
+
+
+@app.route("/verify-email")
+def verify_email():
+    email = session.get("pending_email")
+    if not email:
+        return redirect(url_for("signup"))
+    return render_template("verify_email.html", email=email, resent=False)
+
+
+@app.route("/verify-email/resend", methods=["POST"])
+def verify_email_resend():
+    email = session.get("pending_email")
+    if not email:
+        return redirect(url_for("signup"))
+    redirect_to = f"{SITE_URL}/auth/callback"
+    try:
+        get_anon_client().auth.resend({
+            "type": "signup",
+            "email": email,
+            "options": {"email_redirect_to": redirect_to},
+        })
+        resent = True
+    except AuthApiError:
+        resent = False
+    return render_template("verify_email.html", email=email, resent=resent)
+
+
+@app.route("/auth/callback", methods=["GET"])
+def auth_callback():
+    # Supabase redirects here after email confirmation with the session
+    # tokens in the URL fragment (never sent to the server) — this page's
+    # inline script reads them and exchanges them via POST below.
+    return render_template("auth_callback.html")
+
+
+@app.route("/auth/callback", methods=["POST"])
+def auth_callback_session():
+    data          = request.get_json(silent=True) or {}
+    access_token  = data.get("access_token")
+    refresh_token = data.get("refresh_token")
+    if not access_token or not refresh_token:
+        return jsonify({"redirect": url_for("signup")}), 400
+
+    try:
+        auth_resp = get_anon_client().auth.set_session(access_token, refresh_token)
+    except AuthApiError:
+        return jsonify({"redirect": url_for("signup")}), 400
+
+    user = auth_resp.user
+    if not user:
+        return jsonify({"redirect": url_for("signup")}), 400
+
+    if not user.email_confirmed_at:
+        session["pending_email"] = user.email
+        return jsonify({"redirect": url_for("verify_email")})
+
+    session.pop("pending_email", None)
+    session["coach_id"]       = user.id
+    session["coach_email"]    = user.email
+    session["email_verified"] = True
+    # /onboarding doesn't exist yet (DS-53) — this will resolve once it ships.
+    return jsonify({"redirect": "/onboarding"})
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────

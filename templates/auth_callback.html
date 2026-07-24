@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Confirming…</title>
+<style>
+  body {
+    background: #0d1117; color: #8b949e; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center;
+  }
+</style>
+</head>
+<body>
+<p>Confirming your account&hellip;</p>
+<script>
+  (function () {
+    var params = new URLSearchParams(window.location.hash.slice(1));
+    var accessToken = params.get('access_token');
+    var refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) {
+      window.location = '/signup';
+      return;
+    }
+    fetch('/auth/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) { window.location = data.redirect || '/signup'; })
+      .catch(function () { window.location = '/signup'; });
+  })();
+</script>
+</body>
+</html>
