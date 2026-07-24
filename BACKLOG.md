@@ -2,6 +2,16 @@
 
 Future features identified but intentionally out of scope so far. Newest first.
 
+## Staging environment for Supabase migrations
+**Status:** Not started · **Origin:** DS-55 (2026-07-23)
+
+DS-55 (teams table + RLS) shipped directly against production — there is no
+staging DB to test schema/RLS changes against before they go live. Fine for
+now (small solo build, migrations were additive), but risk grows as auth,
+billing, and multi-coach data isolation land. Flagged explicitly in DS-55's
+own requirements as a follow-on infra item, not something to solve within
+that story.
+
 ## Opponent strike-% benchmarking
 **Status:** Not started · **Origin:** June 2026 pitching audit
 
