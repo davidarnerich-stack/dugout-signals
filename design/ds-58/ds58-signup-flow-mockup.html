@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dugout Signals — Signup Flow Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2330;
+    --border:    #30363d;
+    --accent:    #38bdf8;
+    --btn:       #0ea5e9;
+    --btn-hover: #0284c7;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --error:     #f85149;
+    --warn:      #d29922;
+    --font-head: 'Orbitron', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --radius:    10px;
+    --radius-sm: 6px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+  }
+
+  /* SWITCHER */
+  .switcher {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: #090d12;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 2px;
+    padding: 8px 12px;
+    overflow-x: auto;
+  }
+  .switcher button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .switcher button.active,
+  .switcher button:hover {
+    background: var(--surface2);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .screen { display: none; padding-top: 52px; min-height: 100vh; }
+  .screen.active { display: block; }
+
+  .frame {
+    max-width: 390px;
+    margin: 24px auto;
+    background: var(--bg);
+    min-height: calc(100vh - 100px);
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px 48px;
+  }
+
+  /* LOGO */
+  .logo-block {
+    padding: 32px 0 28px;
+    display: flex;
+    justify-content: center;
+  }
+  .logo-block img {
+    width: 160px;
+    height: auto;
+  }
+
+  /* TAGLINE */
+  .tagline {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: -18px;
+    margin-bottom: 32px;
+  }
+
+  /* HEADINGS */
+  .screen-heading {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .screen-sub {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.55;
+    margin-bottom: 28px;
+  }
+
+  /* FIELDS */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 7px;
+  }
+  .field-wrap { position: relative; }
+  .field input,
+  .field select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 15px;
+    padding: 13px 16px;
+    outline: none;
+    transition: border-color 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .field input:focus,
+  .field select:focus { border-color: var(--accent); }
+  .field input.error { border-color: var(--error); }
+  .field input.optional-field { border-style: dashed; }
+
+  .pw-toggle {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .field input[type="password"] { padding-right: 60px; }
+
+  .field-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .field-error {
+    font-size: 12px;
+    color: var(--error);
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .field-error::before { content: '⚠'; font-size: 11px; }
+
+  .optional-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: '▾';
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    font-size: 12px;
+  }
+  .select-wrap select { padding-right: 36px; }
+
+  /* SPORT TOGGLE */
+  .sport-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 8px;
+  }
+  .sport-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .sport-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .sport-btn.active {
+    background: rgba(56, 189, 248, 0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* DIVIDER */
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0 20px;
+  }
+  .section-divider-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 18px;
+  }
+
+  /* CTA */
+  .btn-primary {
+    width: 100%;
+    background: var(--btn);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-family: var(--font-head);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    padding: 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--btn-hover); }
+
+  /* FOOTER LINKS */
+  .footer-link {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .footer-link a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .footer-link a:hover { text-decoration: underline; }
+
+  /* VERIFY EMAIL */
+  .email-highlight {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .resend-link {
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .resend-link a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  /* INBOX ILLUSTRATION */
+  .inbox-visual {
+    width: 72px;
+    height: 72px;
+    background: rgba(56,189,248,0.08);
+    border: 1px solid rgba(56,189,248,0.25);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 0 28px;
+    font-size: 30px;
+  }
+
+  /* EMPTY STATE */
+  .welcome-heading {
+    font-family: var(--font-head);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.35;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .welcome-heading span { color: var(--accent); }
+
+  .sport-logo {
+    display: flex;
+    justify-content: center;
+    margin: 28px 0 24px;
+  }
+  .sport-logo img {
+    width: 100px;
+    height: auto;
+    opacity: 0.85;
+  }
+
+  .step-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 8px 0 32px;
+  }
+  .step-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .step-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    flex-shrink: 0;
+    margin-top: 1px;
+    font-family: var(--font-head);
+  }
+
+  .how-to-link {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .how-to-link a {
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 1px;
+  }
+  .how-to-link a:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ERROR VARIANT LABEL */
+  .variant-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--warn);
+    background: rgba(210,153,34,0.08);
+    border: 1px solid rgba(210,153,34,0.25);
+    border-radius: 4px;
+    padding: 3px 8px;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+
+  .conditional-field {
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<nav class="switcher">
+  <button class="active" onclick="show('s1a')">1A · Signup</button>
+  <button onclick="show('s1b')">1B · Signup Errors</button>
+  <button onclick="show('s2')">2 · Verify Email</button>
+  <button onclick="show('s3')">3 · Team Setup</button>
+  <button onclick="show('s3b')">3B · Team Setup Error</button>
+  <button onclick="show('s4b')">4B · Dashboard (Baseball)</button>
+  <button onclick="show('s4s')">4S · Dashboard (Softball)</button>
+</nav>
+
+<!-- SCREEN 1A — SIGNUP CLEAN -->
+<div id="s1a" class="screen active">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="screen-heading">Create your account.</h1>
+    <p class="screen-sub">Your team's stats, insights, and signals — all in one place.</p>
+
+    <div class="field">
+      <label>Email</label>
+      <input type="email" placeholder="coach@example.com">
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <div class="field-wrap">
+        <input type="password" value="••••••••••">
+        <button class="pw-toggle">Show</button>
+      </div>
+      <p class="field-hint">At least 8 characters</p>
+    </div>
+
+    <button class="btn-primary">Create Account</button>
+
+    <div class="footer-link">
+      Already have an account? <a href="#">Log in</a>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN 1B — SIGNUP ERRORS -->
+<div id="s1b" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="screen-heading">Create your account.</h1>
+    <p class="screen-sub">Your team's stats, insights, and signals — all in one place.</p>
+
+    <div class="variant-label">Error — Email Already Registered</div>
+
+    <div class="field">
+      <label>Email</label>
+      <input type="email" value="coach@gmail.com" class="error">
+      <p class="field-error">An account with this email already exists — try logging in.</p>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="field-wrap">
+        <input type="password" value="••••••••••">
+        <button class="pw-toggle">Show</button>
+      </div>
+    </div>
+    <button class="btn-primary">Create Account</button>
+    <div class="footer-link">Already have an account? <a href="#">Log in</a></div>
+
+    <hr style="border-color: var(--border); margin: 36px 0 24px;">
+
+    <div class="variant-label">Error — Password Too Short</div>
+
+    <div class="field">
+      <label>Email</label>
+      <input type="email" value="coach@gmail.com">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="field-wrap">
+        <input type="password" value="•••••" class="error">
+        <button class="pw-toggle">Show</button>
+      </div>
+      <p class="field-error">Password must be at least 8 characters.</p>
+    </div>
+    <button class="btn-primary">Create Account</button>
+    <div class="footer-link">Already have an account? <a href="#">Log in</a></div>
+  </div>
+</div>
+
+<!-- SCREEN 2 — VERIFY EMAIL -->
+<div id="s2" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="screen-heading">Check your inbox.</h1>
+    <p class="screen-sub">We sent a confirmation link to<br><span class="email-highlight">coach@gmail.com</span></p>
+    <p class="screen-sub" style="margin-top: -12px;">Click the link to continue setting up your account. It may take a minute to arrive.</p>
+
+    <div class="resend-link">
+      Didn't get it? <a href="#">Resend the email</a>
+    </div>
+
+    <div class="footer-link" style="margin-top: 40px;">
+      Wrong email? <a href="#">Go back and start over</a>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN 3 — TEAM SETUP WIZARD -->
+<div id="s3" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="screen-heading">Set up your team.</h1>
+    <p class="screen-sub">Tell us about your team so your reports and signals are calibrated for your players.</p>
+
+    <div class="field">
+      <label>Team Name</label>
+      <input type="text" placeholder="e.g. Storm 12U All-Stars">
+    </div>
+
+    <span class="sport-label">Sport</span>
+    <div class="sport-toggle">
+      <button class="sport-btn active">⚾ Baseball</button>
+      <button class="sport-btn">🥎 Softball</button>
+    </div>
+
+    <div class="field">
+      <label>Governing Body</label>
+      <div class="select-wrap">
+        <select>
+          <option value="">Select governing body…</option>
+          <option selected>Little League</option>
+          <option>USSSA</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Conditional: shown when Other selected -->
+    <div class="field conditional-field" style="margin-top:-10px;">
+      <input type="text" placeholder="Enter governing body name…">
+    </div>
+
+    <div class="field">
+      <label>Season</label>
+      <div class="select-wrap">
+        <select>
+          <option>Spring 2026</option>
+          <option selected>Summer 2026</option>
+          <option>Fall 2026</option>
+          <option>Spring 2027</option>
+          <option>Summer 2027</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Age Level</label>
+      <div class="select-wrap">
+        <select>
+          <option value="">Select age level…</option>
+          <option>8U</option>
+          <option>9U</option>
+          <option>10U</option>
+          <option>11U</option>
+          <option selected>12U</option>
+          <option>14U</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>League Name <span class="optional-badge">Optional</span></label>
+      <input type="text" class="optional-field" placeholder="e.g. West Covina Little League">
+    </div>
+
+    <hr class="section-divider">
+    <p class="section-divider-label">One quick question</p>
+
+    <div class="field">
+      <label>How did you hear about Dugout Signals? <span class="optional-badge">Optional</span></label>
+      <div class="select-wrap">
+        <select>
+          <option value="">Select one…</option>
+          <option>Word of mouth</option>
+          <option>Google Search</option>
+          <option>Reddit</option>
+          <option>Social Media</option>
+          <option>QR Code</option>
+          <option selected>Other</option>
+        </select>
+      </div>
+      <div class="conditional-field" style="margin-top:10px;">
+        <input type="text" placeholder="Tell us where you found us…">
+      </div>
+    </div>
+
+    <button class="btn-primary">Take Me to My Dashboard</button>
+  </div>
+</div>
+
+<!-- SCREEN 3B — TEAM SETUP WIZARD, VALIDATION ERROR -->
+<div id="s3b" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="screen-heading">Set up your team.</h1>
+    <p class="screen-sub">Tell us about your team so your reports and signals are calibrated for your players.</p>
+
+    <div class="variant-label">Error — Required Field Missing</div>
+
+    <div class="field">
+      <label>Team Name</label>
+      <input type="text" placeholder="e.g. Storm 12U All-Stars" class="error">
+      <p class="field-error">Team name is required.</p>
+    </div>
+
+    <span class="sport-label">Sport</span>
+    <div class="sport-toggle">
+      <button class="sport-btn active">⚾ Baseball</button>
+      <button class="sport-btn">🥎 Softball</button>
+    </div>
+
+    <div class="field">
+      <label>Governing Body</label>
+      <div class="select-wrap">
+        <select>
+          <option value="" selected>Select governing body…</option>
+          <option>Little League</option>
+          <option>USSSA</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Season</label>
+      <div class="select-wrap">
+        <select>
+          <option>Spring 2026</option>
+          <option selected>Summer 2026</option>
+          <option>Fall 2026</option>
+          <option>Spring 2027</option>
+          <option>Summer 2027</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Age Level</label>
+      <div class="select-wrap">
+        <select>
+          <option value="" selected>Select age level…</option>
+          <option>8U</option>
+          <option>9U</option>
+          <option>10U</option>
+          <option>11U</option>
+          <option>12U</option>
+          <option>14U</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>League Name <span class="optional-badge">Optional</span></label>
+      <input type="text" class="optional-field" placeholder="e.g. West Covina Little League">
+    </div>
+
+    <hr class="section-divider">
+    <p class="section-divider-label">One quick question</p>
+
+    <div class="field">
+      <label>How did you hear about Dugout Signals? <span class="optional-badge">Optional</span></label>
+      <div class="select-wrap">
+        <select>
+          <option value="" selected>Select one…</option>
+          <option>Word of mouth</option>
+          <option>Google Search</option>
+          <option>Reddit</option>
+          <option>Social Media</option>
+          <option>QR Code</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn-primary">Take Me to My Dashboard</button>
+  </div>
+</div>
+
+<!-- SCREEN 4B — DASHBOARD EMPTY STATE (BASEBALL) -->
+<div id="s4b" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__baseball_-transparent.svg" alt="Dugout Signals Baseball">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="welcome-heading">Welcome to Dugout Signals,<br><span>Storm 12U All-Stars.</span></h1>
+
+    <p class="screen-sub" style="text-align:center; margin-bottom: 28px;">Your dashboard comes alive after your first upload. It takes about 60 seconds.</p>
+
+    <ul class="step-list">
+      <li>
+        <div class="step-num">1</div>
+        <span>After your next game, export the Stats CSV and box score PDF from GameChanger.</span>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <span>Upload them here — Dugout Signals handles the rest.</span>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <span>Your first game report will be waiting when you come back.</span>
+      </li>
+    </ul>
+
+    <button class="btn-primary">Upload Your First Game</button>
+
+    <div class="how-to-link">
+      <a href="#">How to export from GameChanger →</a>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN 4S — DASHBOARD EMPTY STATE (SOFTBALL) -->
+<div id="s4s" class="screen">
+  <div class="frame">
+    <div class="logo-block">
+      <img src="Logo_Dugout-Signals__softball_-transparent.svg" alt="Dugout Signals Softball">
+    </div>
+    <p class="tagline">AI-powered coaching intelligence</p>
+
+    <h1 class="welcome-heading">Welcome to Dugout Signals,<br><span>Fire 12U All-Stars.</span></h1>
+
+    <p class="screen-sub" style="text-align:center; margin-bottom: 28px;">Your dashboard comes alive after your first upload. It takes about 60 seconds.</p>
+
+    <ul class="step-list">
+      <li>
+        <div class="step-num">1</div>
+        <span>After your next game, export the Stats CSV and box score PDF from GameChanger.</span>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <span>Upload them here — Dugout Signals handles the rest.</span>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <span>Your first game report will be waiting when you come back.</span>
+      </li>
+    </ul>
+
+    <button class="btn-primary">Upload Your First Game</button>
+
+    <div class="how-to-link">
+      <a href="#">How to export from GameChanger →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.switcher button').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    const ids = ['s1a','s1b','s2','s3','s3b','s4b','s4s'];
+    const idx = ids.indexOf(id);
+    document.querySelectorAll('.switcher button')[idx].classList.add('active');
+  }
+</script>
+</body>
+</html>
