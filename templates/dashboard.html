@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+    header.app-header {
+      background: #000; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.25rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; }
+
+    .bottom-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+      background: #0d1117; border-top: 1px solid #30363d; z-index: 100;
+    }
+    .bottom-nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; text-decoration: none; color: #8b949e;
+      font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      transition: color .15s, background .15s; -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-nav a + a { border-left: 1px solid #21262d; }
+    .bottom-nav a:hover, .bottom-nav a.active { color: #38bdf8; background: rgba(56,189,248,.06); }
+    .bottom-nav svg { width: 22px; height: 22px; stroke: currentColor; fill: none;
+                      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 640px) {
+      .bottom-nav { display: flex; }
+      .nav-links { display: none; }
+      body { padding-bottom: 64px; }
+    }
+
+    .stage { display: flex; justify-content: center; padding: 0 20px; }
+    .card { width: 100%; max-width: 480px; padding: 40px 0 56px; }
+    @media (min-width: 640px) {
+      .stage { padding: 48px 24px 72px; }
+      .card {
+        background: #161b22; border: 1px solid #30363d; border-radius: 16px;
+        padding: 40px 36px;
+      }
+    }
+
+    .logo-block { display: flex; justify-content: center; margin-bottom: 8px; }
+    .logo-block img { width: 140px; height: auto; }
+    .sport-pill-row { display: flex; justify-content: center; margin-bottom: 26px; }
+    .sport-pill {
+      font-family: 'Orbitron', sans-serif; font-size: 9px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: #38bdf8; background: rgba(56,189,248,.08);
+      border: 1px solid rgba(56,189,248,.28); border-radius: 20px; padding: 5px 13px;
+    }
+
+    h1 {
+      font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 700; color: #e6edf3;
+      line-height: 1.35; letter-spacing: -.01em; text-align: center; margin-bottom: 8px;
+    }
+    h1 .team-name { color: #38bdf8; }
+    .subtext { font-size: 14px; color: #8b949e; line-height: 1.55; text-align: center; margin-bottom: 28px; }
+
+    .steps { list-style: none; display: flex; flex-direction: column; gap: 14px; margin: 0 0 32px; }
+    .steps li { display: flex; align-items: flex-start; gap: 14px; font-size: 14px; color: #8b949e; line-height: 1.45; }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 50%; background: #1c2330; border: 1px solid #30363d;
+      display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+      color: #38bdf8; flex-shrink: 0; margin-top: 1px; font-family: 'Orbitron', sans-serif;
+    }
+
+    .btn-primary {
+      display: block; width: 100%; background: #0ea5e9; border: none; border-radius: 6px;
+      color: #fff; font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700;
+      letter-spacing: .07em; padding: 16px; cursor: pointer; text-transform: uppercase;
+      text-align: center; text-decoration: none; transition: background .15s, transform .1s;
+    }
+    .btn-primary:hover { background: #0284c7; }
+    .btn-primary:active { transform: scale(.96); }
+
+    .export-link { text-align: center; margin-top: 16px; font-size: 13px; }
+    .export-link a { color: #8b949e; text-decoration: none; border-bottom: 1px dashed #30363d; padding-bottom: 1px; }
+    .export-link a:hover { color: #38bdf8; border-color: #38bdf8; }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <a href="/dashboard" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/dashboard" class="active">Dashboard</a>
+    <a href="/roster">Roster</a>
+    <a href="/reports">Reports</a>
+    <a href="/">Upload</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+
+<nav class="bottom-nav">
+  <a href="/dashboard" class="active">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Dashboard
+  </a>
+  <a href="/roster">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Roster
+  </a>
+  <a href="/reports">
+    <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+    Reports
+  </a>
+  <a href="/">
+    <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+    Upload
+  </a>
+  <a href="/logout">
+    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Sign out
+  </a>
+</nav>
+
+<div class="stage">
+  <div class="card">
+    <div class="logo-block">
+      <img src="{{ url_for('static', filename=logo_file) }}" alt="Dugout Signals">
+    </div>
+    <div class="sport-pill-row">
+      <span class="sport-pill">{{ sport }}</span>
+    </div>
+
+    <h1>Welcome to Dugout Signals,<br><span class="team-name">{{ team_name }}.</span></h1>
+    <p class="subtext">Your dashboard comes alive after your first upload. It takes about 60 seconds.</p>
+
+    <ul class="steps">
+      <li><span class="step-num">1</span><span>After your next game, export the Stats CSV and box score PDF from GameChanger.</span></li>
+      <li><span class="step-num">2</span><span>Upload them here — Dugout Signals handles the rest.</span></li>
+      <li><span class="step-num">3</span><span>Your first game report will be waiting when you come back.</span></li>
+    </ul>
+
+    <a href="/upload" class="btn-primary">Upload Your First Game</a>
+    <div class="export-link"><a href="#">How to export from GameChanger →</a></div>
+  </div>
+</div>
+</body>
+</html>

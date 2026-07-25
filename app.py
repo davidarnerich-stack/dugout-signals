@@ -180,7 +180,8 @@ def add_no_cache_headers(response):
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     # Already authenticated + verified coaches don't need to sign up again.
-    # /dashboard doesn't exist yet (DS-17) — this will resolve once it ships.
+    # /dashboard now resolves for every coach (DS-60) — empty state or a
+    # redirect to /reports if they already have games.
     if session.get("email_verified"):
         return redirect("/dashboard")
 
@@ -401,6 +402,36 @@ def onboarding():
 @auth_required
 def index():
     return render_template("upload.html")
+
+
+# ── DS-60: Dashboard (empty state only — DS-17 AC #3 carve-out) ────────────────
+DASHBOARD_LOGO_BY_SPORT = {
+    "Softball": "Logo_Dugout-Signals__softball_-transparent.svg",
+    "Baseball": "Logo_Dugout-Signals__baseball_-transparent.svg",
+}
+
+
+@app.route("/dashboard")
+@auth_required
+def dashboard():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    game_count = (
+        sb.table("games").select("game_id", count="exact")
+        .eq("team_id", session["team_id"]).execute()
+    ).count or 0
+
+    # Populated dashboard (AC #1/#2/#4) isn't scoped yet — DS-17 epic, future
+    # sprint. Interim fallback so a coach with games never hits a dead end.
+    if game_count > 0:
+        return redirect("/reports")
+
+    sport = session.get("sport") or "Baseball"
+    return render_template(
+        "dashboard.html",
+        team_name=session.get("team_name") or "your team",
+        sport=sport,
+        logo_file=DASHBOARD_LOGO_BY_SPORT.get(sport, DASHBOARD_LOGO_BY_SPORT["Baseball"]),
+    )
 
 
 # ── DS-56: Roster ────────────────────────────────────────────────────────────
