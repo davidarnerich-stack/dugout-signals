@@ -397,6 +397,182 @@ def get_tournament_data(sb, tournament_id: str, team_id: str, team_name: str) ->
     }
 
 
+def _team_batting_line(sb, game_ids: list) -> dict:
+    """Team-level batting rate stats across a set of games. Used for the
+    single-game report's last-3-games / season-to-date trend comparisons."""
+    if not game_ids:
+        return {"avg": "—", "obp": "—", "ops": "—", "games": 0}
+    rows = sb.table("batting_stats").select("at_bats,hits,walks,hit_by_pitch,total_bases").in_("game_id", game_ids).execute().data
+    ab = sum(r.get("at_bats") or 0 for r in rows)
+    h  = sum(r.get("hits") or 0 for r in rows)
+    bb = sum(r.get("walks") or 0 for r in rows)
+    hbp = sum(r.get("hit_by_pitch") or 0 for r in rows)
+    tb = sum(r.get("total_bases") or 0 for r in rows)
+    avg = round(h / ab, 3) if ab else 0.0
+    obp_den = ab + bb + hbp
+    obp = round((h + bb + hbp) / obp_den, 3) if obp_den else 0.0
+    slg = round(tb / ab, 3) if ab else 0.0
+    return {"avg": _fmt_avg(avg), "obp": _fmt_avg(obp), "ops": _fmt_avg(round(obp + slg, 3)), "games": len(game_ids)}
+
+
+def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict:
+    """
+    Return a complete data payload for one game — header block (structured,
+    never AI-generated), season context (this game's ordinal position plus
+    last-3-games / season-to-date aggregates for trend narration), and this
+    game's batting/pitching/fielding/baserunning detail. All numbers come
+    from Supabase; the AI layer (reports/generate.py) only writes the
+    narrative around them.
+    """
+    from collections import defaultdict
+
+    g = sb.table("games").select("*").eq("game_id", game_id).eq("team_id", team_id).execute()
+    if not g.data:
+        raise ValueError(f"Game {game_id} not found for this team.")
+    game = g.data[0]
+
+    bat_rows = sb.table("batting_stats").select("*").eq("game_id", game_id).execute().data
+    pit_rows = sb.table("pitching_stats").select("*").eq("game_id", game_id).execute().data
+    fld_rows = sb.table("fielding_stats").select("*").eq("game_id", game_id).execute().data
+    players_resp = sb.table("players").select("*").eq("team_id", team_id).execute()
+    pid_to_player = {p["player_id"]: p for p in players_resp.data}
+
+    def name_of(pid):
+        p = pid_to_player.get(pid, {})
+        return f"{p.get('first_name','?')} {p.get('last_name','?')}", p.get("number")
+
+    batting_stats = []
+    for row in bat_rows:
+        name, number = name_of(row["player_id"])
+        ab, h  = row.get("at_bats") or 0, row.get("hits") or 0
+        bb, hbp = row.get("walks") or 0, row.get("hit_by_pitch") or 0
+        tb = row.get("total_bases") or 0
+        avg = round(h / ab, 3) if ab else 0.0
+        obp_den = ab + bb + hbp
+        obp = round((h + bb + hbp) / obp_den, 3) if obp_den else 0.0
+        slg = round(tb / ab, 3) if ab else 0.0
+        batting_stats.append({
+            "player_id": row["player_id"], "number": number, "name": name,
+            "ab": ab, "h": h, "doubles": row.get("doubles") or 0,
+            "triples": row.get("triples") or 0, "hr": row.get("home_runs") or 0,
+            "rbi": row.get("runs_batted_in") or 0, "r": row.get("runs_scored") or 0,
+            "bb": bb, "k": row.get("strikeouts") or 0, "sb": row.get("stolen_bases") or 0,
+            "cs": row.get("caught_stealing") or 0, "roe": row.get("reached_on_error") or 0,
+            "avg": _fmt_avg(avg), "obp": _fmt_avg(obp), "slg": _fmt_avg(slg),
+            "ops": _fmt_avg(round(obp + slg, 3)),
+        })
+    batting_stats.sort(key=lambda x: x["number"] or 99)
+
+    pitching_stats = []
+    for row in pit_rows:
+        name, number = name_of(row["player_id"])
+        ip, er = row.get("innings_pitched") or 0, row.get("earned_runs") or 0
+        bb, h  = row.get("walks_allowed") or 0, row.get("hits_allowed") or 0
+        era  = round(er * 6 / ip, 2) if ip else 0
+        whip = round((bb + h) / ip, 2) if ip else 0
+        pitching_stats.append({
+            "player_id": row["player_id"], "number": number, "name": name,
+            "ip": ip, "h": h, "r": row.get("runs_allowed") or 0, "er": er,
+            "bb": bb, "k": row.get("strikeouts") or 0, "era": era, "whip": whip,
+        })
+    pitching_stats.sort(key=lambda x: -(x["ip"] or 0))
+
+    fielding_stats = []
+    for row in fld_rows:
+        name, number = name_of(row["player_id"])
+        tc, e = row.get("total_chances") or 0, row.get("errors") or 0
+        fpct = round((tc - e) / tc, 3) if tc else 1.0
+        fielding_stats.append({
+            "player_id": row["player_id"], "number": number, "name": name,
+            "position": row.get("position") or "—", "tc": tc, "e": e,
+            "fpct": _fmt_avg(fpct), "pb": row.get("passed_balls") or 0,
+            "sb_allowed": row.get("stolen_bases_allowed") or 0,
+        })
+    fielding_stats.sort(key=lambda x: x["number"] or 99)
+
+    # ── Header block (structured, never AI-generated) ───────────────────
+    team_h = sum(b["h"] for b in batting_stats)
+    team_e = sum(f["e"] for f in fielding_stats)
+    # Opponent H/E aren't tracked as their own stat rows anywhere in this
+    # schema — derived instead from what our own stats already capture
+    # about them: hits our pitchers allowed = opponent hits; times our
+    # batters reached on an opponent error = opponent errors. Both are
+    # available from the CSV alone, no play-by-play required.
+    opp_h = sum(p["h"] for p in pitching_stats)
+    opp_e = sum(b["roe"] for b in batting_stats)
+
+    # Inning-by-inning line score is only ever populated by the play-by-play
+    # parser (the box score PDF parser doesn't extract per-inning detail) —
+    # so this is the one header_block piece that degrades without PBP.
+    inning_rows = (
+        sb.table("inning_scores").select("inning,team,runs")
+        .eq("game_id", game_id).order("inning").execute()
+    ).data
+    has_line_score = bool(inning_rows)
+    max_inning = max((r["inning"] for r in inning_rows), default=0)
+
+    def cells_for(side):
+        by_inning = {}
+        for r in inning_rows:
+            if r["team"] == side:
+                by_inning[r["inning"]] = by_inning.get(r["inning"], 0) + (r["runs"] or 0)
+        return [by_inning.get(i, "") for i in range(1, max_inning + 1)]
+
+    opponent_name = game.get("opponent_name") or "Opponent"
+    header_block = {
+        "has_line_score": has_line_score,
+        "line_header": [str(i) for i in range(1, max_inning + 1)],
+        "visitor": {
+            "label": opponent_name, "short": opponent_name.split()[0] if opponent_name else "Opp",
+            "cells": cells_for("opponent"), "r": game.get("opponent_runs") or 0, "h": opp_h, "e": opp_e,
+        },
+        "home": {
+            "label": team_name, "short": team_name.split()[0] if team_name else "Team",
+            "cells": cells_for("storm"), "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
+        },
+    }
+
+    # ── Play-by-play presence + baserunning ─────────────────────────────
+    pa_count = (
+        sb.table("plate_appearances").select("pa_id", count="exact")
+        .eq("game_id", game_id).execute()
+    ).count or 0
+    has_pbp = pa_count > 0
+
+    bre_rows = sb.table("base_running_events").select("event_type").eq("game_id", game_id).execute().data
+    sb_count = sum(1 for e in bre_rows if e["event_type"] == "stolen_base")
+    cs_count = sum(1 for e in bre_rows if e["event_type"] == "caught_stealing")
+
+    # ── Season context ───────────────────────────────────────────────────
+    prior_games_resp = (
+        sb.table("games").select("game_id,game_date,result,team_runs,opponent_runs")
+        .eq("team_id", team_id).lt("game_date", game["game_date"])
+        .order("game_date").execute()
+    )
+    prior_games = prior_games_resp.data
+    game_number_in_season = len(prior_games) + 1
+
+    season_game_ids = [g2["game_id"] for g2 in prior_games] + [game_id]
+    last3_game_ids = season_game_ids[-3:]
+    season_to_date = _team_batting_line(sb, season_game_ids)
+    last3 = _team_batting_line(sb, last3_game_ids)
+
+    return {
+        "game": game,
+        "team_name": team_name,
+        "game_number_in_season": game_number_in_season,
+        "header_block": header_block,
+        "batting_stats": batting_stats,
+        "pitching_stats": pitching_stats,
+        "fielding_stats": fielding_stats,
+        "has_pbp": has_pbp,
+        "sb_count": sb_count, "cs_count": cs_count,
+        "team_h": team_h, "team_e": team_e,
+        "season_to_date": season_to_date,
+        "last3": last3,
+    }
+
+
 def _fmt_avg(val) -> str:
     """Format .333 style — omit leading zero."""
     try:

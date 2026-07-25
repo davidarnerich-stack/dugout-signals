@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.title }} — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #e6edf3; -webkit-font-smoothing: antialiased; }
+
+    /* ── Shared app header (matches Roster/Reports/Upload) ── */
+    header.app-header {
+      background: #000; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.5rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; }
+    .bottom-nav {
+      display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+      background: #0d1117; border-top: 1px solid #30363d; z-index: 100;
+    }
+    .bottom-nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; text-decoration: none; color: #8b949e;
+      font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .bottom-nav a + a { border-left: 1px solid #21262d; }
+    .bottom-nav a:hover, .bottom-nav a.active { color: #38bdf8; background: rgba(56,189,248,.06); }
+    .bottom-nav svg { width: 22px; height: 22px; stroke: currentColor; fill: none;
+                      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 640px) {
+      .bottom-nav { display: flex; }
+      .nav-links { display: none; }
+      body { padding-bottom: 64px; }
+    }
+
+    /* ── Reading column (report pages only — NOT the roster's grid treatment) ── */
+    .col { width: 100%; max-width: 672px; margin: 0 auto; padding: 0 24px 64px; }
+
+    .report-tag {
+      display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: #38bdf8; background: rgba(56,189,248,.08);
+      border: 1px solid rgba(56,189,248,.28); border-radius: 5px; padding: 3px 9px;
+      margin: 20px 0 12px;
+    }
+    .game-title { font-family: 'Orbitron', sans-serif; font-size: 23px; font-weight: 700;
+                  color: #e6edf3; line-height: 1.2; letter-spacing: -.01em; margin-bottom: 7px; }
+    .game-meta { font-size: 13px; color: #8b949e; line-height: 1.5; margin-bottom: 16px; }
+
+    /* ── Header block: box score + line score ── */
+    .box-score { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; margin-bottom: 22px; }
+    .box-score-top { padding: 20px 18px 16px; }
+    .bs-row { display: flex; align-items: center; justify-content: space-between; }
+    .bs-team-label { font-size: 15px; font-weight: 600; color: #c9d1d9; }
+    .bs-team-runs { font-family: 'Orbitron', sans-serif; font-size: 30px; font-weight: 700; color: #8b949e; line-height: 1; }
+    .bs-final-row { display: flex; align-items: center; gap: 10px; margin: 9px 0; }
+    .bs-final-badge { font-size: 9px; font-weight: 700; letter-spacing: .16em; color: #8b949e;
+                       border: 1px solid #30363d; border-radius: 4px; padding: 2px 8px; }
+    .bs-hr { flex: 1; height: 1px; background: #30363d; }
+    .bs-home-label { display: flex; align-items: center; gap: 8px; }
+    .bs-home-bar { width: 4px; height: 22px; border-radius: 2px; background: #38bdf8; display: inline-block; }
+    .bs-home-name { font-size: 15px; font-weight: 700; color: #e6edf3; }
+    .bs-home-runs { font-family: 'Orbitron', sans-serif; font-size: 30px; font-weight: 700; color: #38bdf8; line-height: 1; }
+
+    .line-score { border-top: 1px solid #30363d; background: #0d1117; padding: 12px 14px 14px; overflow-x: auto; }
+    .line-grid { display: grid; row-gap: 9px; align-items: center; min-width: 340px; }
+    .line-grid .lbl { font-size: 11.5px; font-weight: 600; color: #8b949e; }
+    .line-grid .lbl.home { color: #38bdf8; font-weight: 700; }
+    .line-grid .hdr { font-size: 10px; color: #8b949e; text-align: center; font-weight: 600; }
+    .line-grid .hdr.rhe { font-weight: 700; }
+    .line-grid .cell { font-size: 13px; color: #c9d1d9; text-align: center; font-variant-numeric: tabular-nums; }
+    .line-grid .cell.total { color: #e6edf3; font-weight: 700; }
+    .line-grid .cell.total.home { color: #38bdf8; }
+
+    .no-line-score { padding: 12px 18px 14px; border-top: 1px solid #30363d; background: #0d1117;
+                      font-size: 12px; color: #6e7681; }
+
+    /* ── The Story ── */
+    .story-label { font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #8b949e; margin-bottom: 9px; }
+    .story-text { font-size: 19px; font-weight: 600; line-height: 1.4; color: #e6edf3; letter-spacing: -.01em; margin-bottom: 8px; }
+
+    /* ── Sections ── */
+    .section-h2 { font-family: 'Orbitron', sans-serif; font-size: 16px; font-weight: 700;
+                  color: #e6edf3; letter-spacing: -.01em; margin: 38px 0 16px; }
+    .section-h2.tight { margin-bottom: 8px; }
+    p.body-text { font-size: 14.5px; line-height: 1.72; color: #c9d1d9; margin-bottom: 18px; }
+    p.body-text:last-child { margin-bottom: 0; }
+    .recap-label { font-size: 10.5px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .11em; margin-bottom: 7px; }
+    .recap-block { margin-bottom: 18px; }
+
+    .fallback-card {
+      font-size: 13.5px; color: #8b949e; background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 16px; line-height: 1.6;
+    }
+    .fallback-card .warn-title { color: #d29922; font-weight: 600; margin-bottom: 4px;
+                                  display: flex; align-items: center; gap: 6px; }
+
+    .pbp-note {
+      display: flex; gap: 9px; align-items: center; font-size: 12.5px; color: #8b949e;
+      background: #161b22; border: 1px dashed #30363d; border-radius: 6px; padding: 11px 13px; margin-top: 6px;
+    }
+    .pbp-note .plus { color: #38bdf8; font-size: 14px; font-weight: 700; }
+
+    .baserunning-fallback {
+      display: flex; gap: 9px; align-items: flex-start; font-size: 13px; color: #8b949e;
+      background: #161b22; border: 1px dashed #30363d; border-radius: 6px; padding: 12px 13px; line-height: 1.55;
+    }
+    .baserunning-fallback .icon { color: #38bdf8; font-size: 13px; margin-top: 1px; }
+
+    .subhead-row { display: flex; align-items: center; gap: 10px; margin: 22px 0 14px; }
+    .subhead-row:first-of-type { margin-top: 20px; }
+    .subhead-label { font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 600; color: #38bdf8; letter-spacing: .14em; }
+    .subhead-hr { flex: 1; height: 1px; background: #30363d; }
+    .subsection { margin-bottom: 18px; }
+    .subsection h3 { font-size: 13px; font-weight: 700; color: #e6edf3; margin-bottom: 6px; letter-spacing: .01em; }
+
+    .signal-card { display: flex; gap: 12px; background: #161b22; border: 1px solid #30363d;
+                   border-radius: 8px; padding: 13px 15px; margin-bottom: 10px; }
+    .signal-diamond { width: 7px; height: 7px; background: #a78bfa; flex-shrink: 0; margin-top: 6px; transform: rotate(45deg); }
+    .signal-text { font-size: 13.5px; line-height: 1.6; color: #c9d1d9; }
+    .signal-text p { margin: 0; }
+
+    .focus-intro { font-size: 13px; color: #8b949e; line-height: 1.55; margin-bottom: 16px; }
+    .focus-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    .focus-row { display: flex; gap: 12px; align-items: flex-start; }
+    .focus-rank {
+      width: 26px; height: 26px; border-radius: 50%; background: rgba(56,189,248,.1);
+      border: 1px solid rgba(56,189,248,.35); color: #38bdf8; font-family: 'Orbitron', sans-serif;
+      font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .focus-title { font-size: 14.5px; font-weight: 700; color: #e6edf3; margin-bottom: 5px; }
+    .focus-rationale { font-size: 13px; line-height: 1.6; color: #8b949e; margin-bottom: 11px; }
+    .drill-cue-label { font-size: 9.5px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: .13em; margin-bottom: 5px; }
+    .drill-cue-body { font-size: 13px; line-height: 1.58; color: #c9d1d9; border-top: 1px solid #30363d; padding-top: 11px; }
+
+    .footer-meta { margin-top: 30px; padding-top: 16px; border-top: 1px solid #30363d;
+                   font-size: 11.5px; color: #8b949e; line-height: 1.6; text-align: center; }
+
+    @media (max-width: 480px) {
+      header.app-header { padding: .5rem .75rem; }
+      .col { padding: 0 16px 48px; }
+    }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <a href="/reports" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/roster">Roster</a>
+    <a href="/reports" class="active">Reports</a>
+    <a href="/">Upload</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+<nav class="bottom-nav">
+  <a href="/roster">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Roster
+  </a>
+  <a href="/reports" class="active">
+    <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+    Reports
+  </a>
+  <a href="/">
+    <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+    Upload
+  </a>
+  <a href="/logout">
+    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Sign out
+  </a>
+</nav>
+
+<div class="col">
+  <span class="report-tag">Single Game Report</span>
+  <h1 class="game-title">vs {{ header_block.visitor.label }}</h1>
+  <p class="game-meta">{{ d.game.game_date }} · Game {{ d.game_number_in_season }} of season</p>
+
+  <!-- HEADER BLOCK: structured box score, not AI -->
+  <div class="box-score">
+    <div class="box-score-top">
+      <div class="bs-row">
+        <div class="bs-team-label">{{ header_block.visitor.label }}</div>
+        <div class="bs-team-runs">{{ header_block.visitor.r }}</div>
+      </div>
+      <div class="bs-final-row">
+        <span class="bs-final-badge">FINAL</span>
+        <span class="bs-hr"></span>
+      </div>
+      <div class="bs-row">
+        <div class="bs-home-label">
+          <span class="bs-home-bar"></span>
+          <span class="bs-home-name">{{ header_block.home.label }}</span>
+        </div>
+        <div class="bs-home-runs">{{ header_block.home.r }}</div>
+      </div>
+    </div>
+
+    {% if header_block.has_line_score %}
+    <div class="line-score">
+      <div class="line-grid" style="grid-template-columns:74px repeat({{ header_block.line_header|length }},1fr) 8px repeat(3,1fr);">
+        <div></div>
+        {% for n in header_block.line_header %}<div class="hdr">{{ n }}</div>{% endfor %}
+        <div></div>
+        <div class="hdr rhe">R</div><div class="hdr rhe">H</div><div class="hdr rhe">E</div>
+
+        <div class="lbl">{{ header_block.visitor.short }}</div>
+        {% for c in header_block.visitor.cells %}<div class="cell">{{ c }}</div>{% endfor %}
+        <div></div>
+        <div class="cell total">{{ header_block.visitor.r }}</div>
+        <div class="cell">{{ header_block.visitor.h }}</div>
+        <div class="cell">{{ header_block.visitor.e }}</div>
+
+        <div class="lbl home">{{ header_block.home.short }}</div>
+        {% for c in header_block.home.cells %}<div class="cell">{{ c }}</div>{% endfor %}
+        <div></div>
+        <div class="cell total home">{{ header_block.home.r }}</div>
+        <div class="cell">{{ header_block.home.h }}</div>
+        <div class="cell">{{ header_block.home.e }}</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="no-line-score">
+      R {{ header_block.visitor.r }}–{{ header_block.home.r }} · H {{ header_block.visitor.h }}–{{ header_block.home.h }} · E {{ header_block.visitor.e }}–{{ header_block.home.e }}
+      &nbsp;·&nbsp; Add play-by-play for an inning-by-inning line score.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- REPORT HEADLINE -->
+  <div>
+    <div class="story-label">The Story</div>
+    <p class="story-text">{{ report.report_headline }}</p>
+  </div>
+
+  <!-- A: GAME SNAPSHOT -->
+  <h2 class="section-h2">Game Snapshot</h2>
+  <p class="body-text">{{ sections.snapshot | safe }}</p>
+
+  <!-- B: HOW IT HAPPENED -->
+  <h2 class="section-h2">How It Happened</h2>
+  {% if sections.how_it_happened %}
+    {% for g in sections.how_it_happened %}
+    <div class="recap-block">
+      <div class="recap-label">{{ g.label }}</div>
+      <p class="body-text">{{ g.text | safe }}</p>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="fallback-card">
+      <div class="warn-title">⚠ This section couldn't be generated.</div>
+      We'll retry automatically — the rest of your report is ready below.
+    </div>
+  {% endif %}
+
+  <!-- C: TEAM PERFORMANCE -->
+  <h2 class="section-h2 tight">Team Performance</h2>
+
+  <div class="subhead-row">
+    <span class="subhead-label">OFFENSE</span>
+    <span class="subhead-hr"></span>
+  </div>
+  <div class="subsection">
+    <h3>Hitting</h3>
+    <p class="body-text">{{ sections.hitting | safe }}</p>
+  </div>
+  <div class="subsection">
+    <h3>Baserunning</h3>
+    {% if sections.baserunning %}
+    <p class="body-text">{{ sections.baserunning | safe }}</p>
+    {% else %}
+    <div class="baserunning-fallback">
+      <span class="icon">ⓘ</span> Baserunning data was limited for this game — add play-by-play for a fuller picture.
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="subhead-row">
+    <span class="subhead-label">DEFENSE</span>
+    <span class="subhead-hr"></span>
+  </div>
+  <div class="subsection">
+    <h3>Pitching</h3>
+    <p class="body-text">{{ sections.pitching | safe }}</p>
+  </div>
+  <div class="subsection">
+    <h3>Fielding</h3>
+    <p class="body-text">{{ sections.fielding | safe }}</p>
+  </div>
+
+  <!-- D: TEAM SIGNALS -->
+  <h2 class="section-h2">Team Signals</h2>
+  {% for sig in sections.signals %}
+  <div class="signal-card">
+    <span class="signal-diamond"></span>
+    <div class="signal-text">{{ sig | safe }}</div>
+  </div>
+  {% endfor %}
+
+  <!-- E: BEFORE NEXT PRACTICE -->
+  <h2 class="section-h2 tight">Before Next Practice</h2>
+  <p class="focus-intro">Ranked focus areas with a drill cue for each.</p>
+  {% for f in sections.focus_areas %}
+  <div class="focus-card">
+    <div class="focus-row">
+      <div class="focus-rank">{{ f.rank }}</div>
+      <div style="flex:1;">
+        <h3 class="focus-title">{{ f.title }}</h3>
+        <p class="focus-rationale">{{ f.rationale }}</p>
+        <div class="drill-cue-label">Drill Cue</div>
+        <div class="drill-cue-body">{{ f.cue }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="footer-meta">
+    Generated automatically on upload · {{ report.season }}
+  </div>
+</div>
+</body>
+</html>

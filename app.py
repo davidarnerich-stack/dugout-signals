@@ -760,7 +760,61 @@ def upload():
         results.append({"filename": "", "status": "error",
                          "message": "Nothing was processed. Upload a box score PDF and/or stats CSV."})
 
+    # ── DS-11: auto-generate a single-game report once the commit succeeded ──
+    # "Commit succeeded" = the box score landed (game identity + final score),
+    # which is the minimum needed for a report (stats CSV enriches it but
+    # AC #1 only requires "detect step passes, commit step succeeds").
+    box_score_ok = any(r["status"] == "success" and r["filename"] == file_data.get("box_score", (None,))[0]
+                        for r in results)
+    if game_id and box_score_ok:
+        _generate_single_game_report_safe(sb, game_id, team_id, team_name)
+
     return jsonify(results)
+
+
+def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
+    """Best-effort single-game report generation — never breaks the upload
+    response. Silently skips if ANTHROPIC_API_KEY isn't configured (matches
+    the existing /reports/generate guard) rather than erroring the upload."""
+    ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not ANTHROPIC_KEY:
+        return
+    try:
+        team_resp = (sb.table("teams").select("sport, age_level, governing_body")
+                     .eq("id", team_id).limit(1).execute())
+        team = team_resp.data[0] if team_resp.data else {}
+
+        from reports.generate import generate_single_game_report
+        result = generate_single_game_report(
+            sb, game_id, ANTHROPIC_KEY, team_id, team_name,
+            team.get("sport"), team.get("age_level"), team.get("governing_body"),
+        )
+        d, sections, headline = result["data"], result["sections"], result["headline"]
+        g = d["game"]
+
+        import json
+        sb.table("reports").insert({
+            "report_type":     "single_game",
+            "game_id":         game_id,
+            "team_id":         team_id,
+            "team_name":       team_name,
+            "season":          g.get("season"),
+            "title":           f"{team_name} vs {g.get('opponent_name', 'Opponent')} — Game Analysis",
+            "report_headline": headline,
+            "header_block":    json.dumps(d["header_block"]),
+            "sections":        json.dumps(sections),
+            "games_played":    1,
+            "wins":            1 if g.get("result") == "W" else 0,
+            "losses":          1 if g.get("result") == "L" else 0,
+            "ties":            1 if g.get("result") == "T" else 0,
+            "runs_scored":     g.get("team_runs"),
+            "runs_allowed":    g.get("opponent_runs"),
+            "status":          "complete",
+        }).execute()
+    except Exception:
+        # Best-effort: a failed report generation should never surface as an
+        # upload failure to the coach. (Could log server-side in the future.)
+        pass
 
 
 @app.route("/api/games")
@@ -896,6 +950,17 @@ def report_view(report_id):
 
     import json
     sections = json.loads(report["sections"]) if isinstance(report["sections"], str) else report["sections"]
+
+    if report.get("report_type") == "single_game":
+        header_block = report.get("header_block")
+        if isinstance(header_block, str):
+            header_block = json.loads(header_block)
+        # Reload live data (so edits to game stats after generation show fresh
+        # in the box score / player lines, same freshness contract as tournament).
+        from reports.data import get_single_game_data
+        d = get_single_game_data(sb, report["game_id"], session["team_id"], report["team_name"])
+        return render_template("game_report.html", report=report, sections=sections,
+                                header_block=header_block, d=d)
 
     # Reload live data for tables (so edits to game data show fresh)
     from reports.data import get_tournament_data

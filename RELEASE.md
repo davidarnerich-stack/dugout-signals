@@ -62,6 +62,12 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   which default safely — no risk to currently-deployed code, which doesn't read these columns yet.
 - `ds56_create_coach_notes` — new `coach_notes` table (RLS + grants matching the `players` pattern).
   Not yet read/written by any deployed code.
+- `ds11_add_single_game_report_columns` — added `game_id`, `report_headline`, `header_block` (jsonb)
+  to `reports`. Additive/nullable — no risk to currently-deployed code.
+- `ds11_allow_null_tournament_name` — dropped the `NOT NULL` constraint on `reports.tournament_name`.
+  Found during DS-11 testing: single-game reports have no tournament, and the insert would have
+  failed in production on the very first single-game report generated. Safe — no deployed code
+  relies on `tournament_name` being non-null (tournament reports already always pass a value).
 
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against

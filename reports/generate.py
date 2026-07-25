@@ -178,6 +178,236 @@ Be specific to the data. No generic coaching platitudes.
 """)
 
 
+# ── DS-11: Single Game Analysis Report ──────────────────────────────────────
+SINGLE_GAME_SYSTEM_TEMPLATE = """You are an analytical assistant for a youth {sport} coaching staff.
+Team: {team_name} ({age_level}, {governing_body}).
+You write direct, data-driven game analysis in the style of a professional analytics department,
+but the audience is a VOLUNTEER coach working with YOUTH players — observations must be
+developmental and encouraging, never evaluative or harsh. Calibrate language to age-appropriate
+baselines: a strikeout rate that would be alarming at a higher level (e.g. 50% at 8U) is normal
+at this age and should not be treated as a concern.
+Tone: factual and specific, not generic praise. Write in present tense for trends, past tense for
+specific game events. Write in flowing paragraphs — like a beat reporter recap, not a bullet list —
+unless a section explicitly asks for a different format. Do not use markdown syntax (no #, **, etc.)
+— output will be inserted as plain text.
+Your audience is coaches only — never parents or players.
+"""
+
+
+def _single_game_call(client, system: str, prompt: str, max_tokens: int = 700) -> str:
+    msg = client.messages.create(
+        model=MODEL, max_tokens=max_tokens, system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
+def _season_context_note(game_number: int) -> str:
+    if game_number == 1:
+        return ("This is the team's FIRST game in Dugout Signals. Set an explicit baseline — "
+                "say this is the first game and results here will be what future games are compared "
+                "against. Do not make any trend comparisons; there is nothing yet to compare to.")
+    if game_number == 2:
+        return ("This is the team's SECOND game. You may make LIGHT comparisons to the first game, "
+                "but explicitly acknowledge the sample size is still small (two games is not a trend "
+                "yet) — keep any comparison tentative.")
+    return ("This is game {n} of the season. Use full intra-season trending — compare the last 3 "
+            "games' aggregate performance against the season-to-date aggregate, and call out "
+            "whether recent performance is ahead of, behind, or in line with the season average."
+            ).format(n=game_number)
+
+
+def generate_game_headline(client, system, data, opp, us) -> str:
+    return _single_game_call(client, system, f"""Write ONE punchy, specific sentence summarizing the
+defining story of this game — this is a headline, not a summary. It will be displayed on its own,
+directly under the box score.
+
+Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
+""", max_tokens=100)
+
+
+def generate_game_snapshot(client, system, data, opp, us) -> str:
+    return _single_game_call(client, system, f"""Write a 3-4 sentence "Game Snapshot" — the story of
+the game and final score. This is the reader's first narrative context, right after the headline.
+
+Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
+{_season_context_note(data['game_number_in_season'])}
+""")
+
+
+def generate_how_it_happened(client, system, data, opp, us) -> list:
+    hb = data["header_block"]
+    line_note = ""
+    if hb["has_line_score"]:
+        line_note = (f"Inning-by-inning ({', '.join(hb['line_header'])}): "
+                     f"{us['short']} {hb['home']['cells']}, {opp['short']} {hb['visitor']['cells']}.")
+    pbp_note = "" if data["has_pbp"] else ("\nPlay-by-play was not uploaded for this game — you only "
+        "have final box-score numbers, not sequence detail. Write the recap from the score/stats you "
+        "have; do not invent specific in-game sequences you don't have data for.")
+
+    text = _single_game_call(client, system, f"""Write "How It Happened" — a condensed recap
+structured in exactly 3 paragraphs: Early, Middle, Late. Each paragraph calls out what happened and
+why it mattered — conversational prose, like a beat reporter recap, not a bullet list.
+
+Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
+{line_note}
+{_season_context_note(data['game_number_in_season'])}{pbp_note}
+
+Return exactly 3 paragraphs separated by a blank line, in order: Early, Middle, Late. No headers,
+no labels — just the 3 paragraphs.
+""", max_tokens=900)
+
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    labels = ["Early", "Middle", "Late"]
+    recap = [{"label": labels[i] if i < 3 else f"Part {i+1}", "text": _to_html(p)}
+             for i, p in enumerate(paras[:3])]
+    if not data["has_pbp"] and recap:
+        recap[0]["text"] += "<p><em>Add play-by-play for richer game flow detail.</em></p>"
+    return recap
+
+
+def generate_hitting(client, system, data, us) -> str:
+    bats = "; ".join(f"{b['name']} #{b['number']}: {b['h']}-for-{b['ab']}, {b['rbi']} RBI, {b['r']} R, "
+                      f"{b['bb']} BB, {b['k']} K" for b in data["batting_stats"]) or "No batting data recorded."
+    return _single_game_call(client, system, f"""Write the "Hitting" subsection — team hitting
+performance for this game, with individual contributions woven naturally into the prose (not listed
+separately). Team totals: {us['h']} hits, {us['r']} runs.
+
+Batting lines:
+{bats}
+""")
+
+
+def generate_baserunning(client, system, data, us) -> str:
+    return _single_game_call(client, system, f"""Write the "Baserunning" subsection — stolen bases,
+smart reads, aggressive advancement, or missed opportunities.
+
+Stolen bases: {data['sb_count']}, caught stealing: {data['cs_count']}.
+""")
+
+
+def generate_pitching(client, system, data) -> str:
+    pitchers = "; ".join(f"{p['name']} #{p['number']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, "
+                          f"{p['er']} ER, {p['era']} ERA" for p in data["pitching_stats"]) or "No pitching data recorded."
+    return _single_game_call(client, system, f"""Write the "Pitching" subsection — pitching
+performance for this game, with individual pitcher contributions (IP, K, BB, ERA) woven into the
+prose.
+
+Pitching lines:
+{pitchers}
+""")
+
+
+def generate_fielding(client, system, data, us) -> str:
+    errs = "; ".join(f"{f['name']} #{f['number']} ({f['position']}): {f['e']} E / {f['tc']} TC"
+                      for f in data["fielding_stats"] if f["e"] > 0) or "no charged errors"
+    return _single_game_call(client, system, f"""Write the "Fielding" subsection — errors, key plays
+made or missed, defensive impact on the game.
+
+Team errors: {us['e']}. Errors by player: {errs}.
+""")
+
+
+def generate_signals(client, system, data) -> list:
+    text = _single_game_call(client, system, f"""Write 3-5 "Team Signals" — pattern observations
+phrased as developmental observations, not verdicts. Age/sport calibrated per the system prompt.
+
+Season-to-date team line: {data['season_to_date']['avg']} AVG / {data['season_to_date']['obp']} OBP
+/ {data['season_to_date']['ops']} OPS across {data['season_to_date']['games']} games.
+{"Last 3 games: " + data['last3']['avg'] + " AVG / " + data['last3']['obp'] + " OBP / " + data['last3']['ops'] + " OPS." if data['game_number_in_season'] >= 3 else ""}
+
+Return each signal as its own line, no numbering, no bullets — just one sentence-or-two observation
+per line, 3 to 5 lines total.
+""", max_tokens=600)
+    return [_to_html(line.strip()) for line in text.splitlines() if line.strip()]
+
+
+def generate_focus_areas(client, system, data) -> list:
+    text = _single_game_call(client, system, f"""Generate exactly 3 ranked "Before Next Practice"
+focus areas based on this game's data. Each needs a short title, a 1-2 sentence rationale grounded in
+what happened this game, and one concrete drill cue a coach could run at the next practice.
+
+Format each item on its own line EXACTLY as: TITLE | RATIONALE | DRILL CUE
+Do not add numbering, headers, or any other text — exactly 3 lines, pipe-delimited as shown.
+""", max_tokens=500)
+    focus = []
+    for i, line in enumerate(text.splitlines()):
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) == 3:
+            focus.append({"rank": str(i + 1), "title": parts[0], "rationale": parts[1], "cue": parts[2]})
+    return focus[:3]
+
+
+def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: str,
+                                 team_name: str, sport: str, age_level: str, governing_body: str) -> dict:
+    """
+    Generate a single-game report: structured header block (no AI) + AI narrative
+    sections, mirroring generate_full_report's independent-section-failure pattern.
+    """
+    from .data import get_single_game_data
+    data = get_single_game_data(sb, game_id, team_id, team_name)
+
+    system = SINGLE_GAME_SYSTEM_TEMPLATE.format(
+        sport=sport or "baseball", team_name=team_name,
+        age_level=age_level or "youth", governing_body=governing_body or "youth league",
+    )
+    client = anthropic.Anthropic(api_key=anthropic_key)
+
+    hb = data["header_block"]
+    us, opp = hb["home"], hb["visitor"]
+
+    sections = {}
+    try:
+        headline = generate_game_headline(client, system, data, opp, us)
+    except Exception as e:
+        headline = f"[Generation error: {e}]"
+
+    try:
+        sections["snapshot"] = _to_html(generate_game_snapshot(client, system, data, opp, us))
+    except Exception as e:
+        sections["snapshot"] = f"<p>[Generation error: {e}]</p>"
+
+    try:
+        sections["how_it_happened"] = generate_how_it_happened(client, system, data, opp, us)
+    except Exception as e:
+        sections["how_it_happened"] = None  # template shows the section-failed fallback
+
+    try:
+        sections["hitting"] = _to_html(generate_hitting(client, system, data, us))
+    except Exception as e:
+        sections["hitting"] = f"<p>[Generation error: {e}]</p>"
+
+    if data["has_pbp"]:
+        try:
+            sections["baserunning"] = _to_html(generate_baserunning(client, system, data, us))
+        except Exception as e:
+            sections["baserunning"] = f"<p>[Generation error: {e}]</p>"
+    else:
+        sections["baserunning"] = None  # template renders the fixed fallback copy — not an AI call
+
+    try:
+        sections["pitching"] = _to_html(generate_pitching(client, system, data))
+    except Exception as e:
+        sections["pitching"] = f"<p>[Generation error: {e}]</p>"
+
+    try:
+        sections["fielding"] = _to_html(generate_fielding(client, system, data, us))
+    except Exception as e:
+        sections["fielding"] = f"<p>[Generation error: {e}]</p>"
+
+    try:
+        sections["signals"] = generate_signals(client, system, data)
+    except Exception as e:
+        sections["signals"] = [f"[Generation error: {e}]"]
+
+    try:
+        sections["focus_areas"] = generate_focus_areas(client, system, data)
+    except Exception as e:
+        sections["focus_areas"] = []
+
+    return {"data": data, "sections": sections, "headline": headline}
+
+
 def generate_full_report(sb, tournament_id: str, anthropic_key: str, team_id: str, team_name: str) -> dict:
     """
     Generate all narrative sections and return a dict of section text + data.
