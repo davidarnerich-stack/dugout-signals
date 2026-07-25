@@ -35,8 +35,8 @@ def get_anon_client():
 
 # DS-53: Team Setup Wizard — field option sets and season default logic.
 GOVERNING_BODY_OPTIONS = {
-    "Baseball": ["Little League Baseball", "USSSA", "Other"],
-    "Softball": ["Little League Softball", "USA Softball", "USSSA", "Other"],
+    "Baseball": ["Little League", "USSSA", "Other"],
+    "Softball": ["Little League", "USA Softball", "USSSA", "Other"],
 }
 AGE_LEVEL_OPTIONS   = ["8U", "9U", "10U", "11U", "12U", "14U"]
 SEASON_OPTIONS      = ["Spring 2026", "Summer 2026", "Fall 2026", "Spring 2027", "Summer 2027"]
@@ -69,6 +69,14 @@ def _sync_team_session(coach_id):
         session["team_id"]   = resp.data[0]["id"]
         session["team_name"] = resp.data[0]["team_name"]
         session["sport"]     = resp.data[0]["sport"]
+    else:
+        # Must explicitly clear, not just skip — otherwise a stale team_id
+        # left over from a *different* coach's session (switched accounts in
+        # the same browser without logging out) silently carries forward and
+        # misattributes this coach to someone else's team.
+        session.pop("team_id", None)
+        session.pop("team_name", None)
+        session.pop("sport", None)
 
 
 def get_authenticated_client():
@@ -134,6 +142,11 @@ def login():
             session["coach_id"]      = resp.user.id
             session["coach_email"]   = resp.user.email
             _sync_team_session(resp.user.id)
+            # A coach who verified but never finished team setup (e.g. closed
+            # the browser mid-onboarding) has no team_id yet — send them back
+            # to finish it rather than a /dashboard that doesn't apply to them.
+            if not session.get("team_id"):
+                return redirect(url_for("onboarding"))
             return redirect("/dashboard")
     return render_template("login.html", error=error, email=email)
 
@@ -321,7 +334,8 @@ def onboarding():
         team_name      = (form.get("team_name") or "").strip()
         sport          = form.get("sport") or ""
         age_level      = form.get("age_level") or ""
-        governing_body = form.get("governing_body") or ""
+        governing_body       = form.get("governing_body") or ""
+        governing_body_other = (form.get("governing_body_other_text") or "").strip()
         season         = form.get("season") or ""
         league_name    = (form.get("league_name") or "").strip() or None
         source         = form.get("source") or ""
@@ -336,11 +350,19 @@ def onboarding():
             errors["age_level"] = "Please select an age level."
         if governing_body not in GOVERNING_BODY_OPTIONS.get(sport, []):
             errors["governing_body"] = "Please select a governing body."
+        elif governing_body == "Other" and not governing_body_other:
+            errors["governing_body"] = "Please specify your governing body."
         if season not in SEASON_OPTIONS:
             errors["season"] = "Please select a season."
+        if not league_name:
+            errors["league_name"] = "League name is required."
 
         if errors:
             return _render_onboarding(errors, form)
+
+        # Store the coach's actual answer, not the literal word "Other".
+        if governing_body == "Other":
+            governing_body = governing_body_other
 
         try:
             # Re-check immediately before insert — guards a double-submit race,

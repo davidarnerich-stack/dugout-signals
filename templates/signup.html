@@ -22,39 +22,32 @@
     --radius-sm: 6px;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-body);
-    min-height: 100vh;
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; }
+  .stage { display: flex; justify-content: center; min-height: 100vh; }
+  .frame { width: 100%; max-width: 440px; display: flex; flex-direction: column; padding: 26px 22px 56px; }
+  @media (min-width: 640px) {
+    .stage { padding: 40px 24px 72px; align-items: flex-start; }
+    .frame { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px 36px; }
   }
-  .frame {
-    max-width: 390px;
-    margin: 0 auto;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    padding: 32px 24px 48px;
-  }
-  .logo-block { padding: 32px 0 28px; display: flex; justify-content: center; }
+  .logo-block { padding: 6px 0 20px; display: flex; justify-content: center; }
   .logo-block img { width: 160px; height: auto; }
   .tagline {
-    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--muted); margin-top: -18px; margin-bottom: 32px;
+    text-align: center; font-size: 9px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted); margin-top: -12px; margin-bottom: 26px;
   }
   .screen-heading {
     font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text);
     line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.01em;
   }
-  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 28px; }
-  .field { margin-bottom: 20px; }
+  .screen-sub { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 26px; }
+  .field { margin-bottom: 18px; }
   .field label {
-    display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+    display: block; font-size: 10px; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px;
   }
   .field-wrap { position: relative; }
   .field input {
-    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
     border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-body);
     font-size: 15px; padding: 13px 16px; outline: none; transition: border-color 0.15s;
   }
@@ -66,6 +59,7 @@
     font-family: var(--font-body); font-weight: 600; cursor: pointer; padding: 4px;
     letter-spacing: 0.04em; text-transform: uppercase;
   }
+  .pw-toggle:hover { color: var(--accent); }
   .field input[type="password"] { padding-right: 60px; }
   .field-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .field-error {
@@ -76,21 +70,23 @@
   .btn-primary {
     width: 100%; background: var(--btn); border: none; border-radius: var(--radius-sm);
     color: #fff; font-family: var(--font-head); font-size: 12px; font-weight: 700;
-    letter-spacing: 0.07em; padding: 16px; cursor: pointer; transition: background 0.15s;
-    margin-top: 8px;
+    letter-spacing: 0.07em; padding: 16px; cursor: pointer; margin-top: 8px;
+    text-transform: uppercase; transition: background 0.15s, transform 0.1s;
   }
   .btn-primary:hover { background: var(--btn-hover); }
-  .footer-link { text-align: center; margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .btn-primary:active { transform: scale(0.96); }
+  .footer-link { text-align: center; margin-top: 22px; font-size: 13px; color: var(--muted); }
   .footer-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
   .footer-link a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
+<div class="stage">
 <div class="frame">
   <div class="logo-block">
     <img src="{{ url_for('static', filename='Logo_Dugout-Signals__baseball-softball_.svg') }}" alt="Dugout Signals">
   </div>
-  <p class="tagline">AI-powered coaching intelligence</p>
+  <p class="tagline">AI-Powered Coaching Intelligence</p>
 
   <h1 class="screen-heading">Create your account.</h1>
   <p class="screen-sub">Your team's stats, insights, and signals — all in one place.</p>
@@ -128,6 +124,7 @@
   <div class="footer-link">
     Already have an account? <a href="{{ url_for('login') }}">Log in</a>
   </div>
+</div>
 </div>
 <script>
   function togglePw() {
