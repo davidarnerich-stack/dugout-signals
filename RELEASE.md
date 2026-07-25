@@ -56,6 +56,12 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   any deployed code — confirmed via grep before applying)
 - `drop_reports_team_name_default` — dropped the `'Storm 12U All-Stars'` default on
   `reports.team_name` (safe — the insert path already always passes an explicit value)
+- `ds56_add_player_attributes` — added `league_age`, `bats`, `throws`, `arm`, `glove`, `speed`,
+  `position_eligibility` (jsonb), `signals` (jsonb, reserved for DS-15b), `status` (default
+  `'active'`) to `players`. All additive/nullable except `status`/`position_eligibility`/`signals`
+  which default safely — no risk to currently-deployed code, which doesn't read these columns yet.
+- `ds56_create_coach_notes` — new `coach_notes` table (RLS + grants matching the `players` pattern).
+  Not yet read/written by any deployed code.
 
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against

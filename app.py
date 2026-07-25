@@ -54,19 +54,21 @@ def default_season():
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 def _sync_team_session(coach_id):
-    """Populate session team_id/team_name from the coach's team record, if any.
+    """Populate session team_id/team_name/sport from the coach's team record, if any.
 
     team_id is the real scoping key every query/parser filters by; team_name
-    is carried alongside purely for display (page headers, report narrative).
+    and sport are carried alongside purely for display (page headers, report
+    narrative, sport-appropriate logo/pill on Roster).
     """
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     resp = (
-        sb.table("teams").select("id, team_name")
+        sb.table("teams").select("id, team_name, sport")
         .eq("coach_id", coach_id).limit(1).execute()
     )
     if resp.data:
         session["team_id"]   = resp.data[0]["id"]
         session["team_name"] = resp.data[0]["team_name"]
+        session["sport"]     = resp.data[0]["sport"]
 
 
 def get_authenticated_client():
@@ -377,6 +379,150 @@ def onboarding():
 @auth_required
 def index():
     return render_template("upload.html")
+
+
+# ── DS-56: Roster ────────────────────────────────────────────────────────────
+# Design source of truth: Jira DS-56 attachment "design_handoff_roster" (Roster.dc.html),
+# approved final 2026-07-22. Icon/color table below matches its meta() function exactly.
+POSITION_ORDER = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"]
+# 6-state tap-cycle model. "blank" is the absence of a key in position_eligibility.
+POSITION_STATE_CYCLE = ["primary", "secondary", "developing", "requested", "no"]
+POSITION_STATE_META = {
+    "primary":    {"sym": "★", "color": "#38bdf8", "bg": "rgba(56,189,248,.12)",  "border": "rgba(56,189,248,.4)",  "label": "Primary"},
+    "secondary":  {"sym": "✓", "color": "#3fb950", "bg": "rgba(63,185,80,.12)",   "border": "rgba(63,185,80,.4)",   "label": "Secondary"},
+    "developing": {"sym": "◐", "color": "#d29922", "bg": "rgba(210,153,34,.12)",  "border": "rgba(210,153,34,.4)",  "label": "Developing"},
+    "requested":  {"sym": "⚑", "color": "#a371f7", "bg": "rgba(163,113,247,.12)", "border": "rgba(163,113,247,.42)", "label": "Requested"},
+    "no":         {"sym": "✗", "color": "#f85149", "bg": "rgba(248,81,73,.1)",    "border": "rgba(248,81,73,.35)",  "label": "No"},
+    "blank":      {"sym": "○", "color": "#6e7681", "bg": "#161b22",              "border": "#30363d",              "label": "Blank"},
+}
+ROSTER_ROW_STATES = {"primary", "secondary", "developing"}  # only these show on the card strip
+
+LEAGUE_AGE_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 13, 14]
+BATS_OPTIONS   = ["L", "R", "Switch"]
+THROWS_OPTIONS = ["L", "R"]
+ARM_OPTIONS    = [("Strong", "Strong"), ("Average", "Average"), ("Developing", "Developing")]
+GLOVE_OPTIONS  = ["Sure-handed", "Average", "Developing"]
+SPEED_OPTIONS  = ["Wheels", "Average", "Developing"]
+
+LOGO_BY_SPORT = {
+    "Softball": "Logo_Dugout-Signals__softball_-transparent.svg",
+    "Baseball": "Logo_Dugout-Signals__baseball_-transparent.svg",
+}
+
+
+@app.route("/roster")
+@auth_required
+def roster():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("players")
+        .select("player_id, number, first_name, last_name, league_age, bats, "
+                "throws, arm, glove, speed, position_eligibility, signals, status")
+        .eq("team_id", session["team_id"])
+        .eq("status", "active")
+        .order("number")
+        .execute()
+    )
+    players = resp.data
+    for p in players:
+        pe = p.get("position_eligibility") or {}
+        p["position_strip"] = [
+            (pos, pe[pos]) for pos in POSITION_ORDER
+            if pe.get(pos) in ROSTER_ROW_STATES
+        ]
+    sport = session.get("sport") or "Baseball"
+    return render_template(
+        "roster.html",
+        players=players,
+        sport=sport,
+        logo_file=LOGO_BY_SPORT.get(sport, LOGO_BY_SPORT["Baseball"]),
+        state_meta=POSITION_STATE_META,
+        position_order=POSITION_ORDER,
+        state_cycle=POSITION_STATE_CYCLE,
+        league_age_options=LEAGUE_AGE_OPTIONS,
+        bats_options=BATS_OPTIONS,
+        throws_options=THROWS_OPTIONS,
+        arm_options=ARM_OPTIONS,
+        glove_options=GLOVE_OPTIONS,
+        speed_options=SPEED_OPTIONS,
+    )
+
+
+@app.route("/api/players/<player_id>", methods=["PATCH"])
+@auth_required
+def api_update_player(player_id):
+    data = request.get_json() or {}
+    allowed = {"first_name", "last_name", "number", "league_age", "bats",
+               "throws", "arm", "glove", "speed", "position_eligibility"}
+    update = {k: v for k, v in data.items() if k in allowed}
+    if not update:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("players").update(update)
+        .eq("player_id", player_id).eq("team_id", session["team_id"])
+        .execute()
+    )
+    if not resp.data:
+        return jsonify({"error": "Player not found"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/players/<player_id>/archive", methods=["POST"])
+@auth_required
+def api_archive_player(player_id):
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("players").update({"status": "archived"})
+        .eq("player_id", player_id).eq("team_id", session["team_id"])
+        .execute()
+    )
+    if not resp.data:
+        return jsonify({"error": "Player not found"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/players/<player_id>/notes", methods=["GET"])
+@auth_required
+def api_list_notes(player_id):
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("coach_notes")
+        .select("id, note_text, note_type, game_id, created_at, games(opponent_name, game_date)")
+        .eq("player_id", player_id).eq("team_id", session["team_id"])
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return jsonify(resp.data)
+
+
+@app.route("/api/players/<player_id>/notes", methods=["POST"])
+@auth_required
+def api_add_note(player_id):
+    data      = request.get_json() or {}
+    note_text = (data.get("note_text") or "").strip()
+    note_type = data.get("note_type")
+    game_id   = data.get("game_id") or None
+
+    if not note_text:
+        return jsonify({"error": "Note text is required."}), 400
+    if note_type not in ("game", "general"):
+        return jsonify({"error": "note_type must be 'game' or 'general'."}), 400
+    if note_type == "game" and not game_id:
+        return jsonify({"error": "A game must be selected for a game note."}), 400
+    if note_type == "general":
+        game_id = None
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = sb.table("coach_notes").insert({
+        "player_id": player_id,
+        "team_id":   session["team_id"],
+        "note_text": note_text,
+        "note_type": note_type,
+        "game_id":   game_id,
+    }).execute()
+    return jsonify(resp.data[0])
 
 
 # ── API: tournaments ───────────────────────────────────────────────────────────

@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roster — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+    select option { background: #161b22; color: #e6edf3; }
+
+    /* ── App header (shared shell — matches Upload/Reports/Report) ── */
+    header.app-header {
+      background: #000; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.25rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .sport-pill {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      color: #8b949e; border: 1px solid #30363d; border-radius: 20px; padding: 3px 10px;
+    }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; }
+
+    .bottom-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+      background: #0d1117; border-top: 1px solid #30363d; z-index: 100;
+    }
+    .bottom-nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; text-decoration: none; color: #8b949e;
+      font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      transition: color .15s, background .15s; -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-nav a + a { border-left: 1px solid #21262d; }
+    .bottom-nav a:hover, .bottom-nav a.active { color: #38bdf8; background: rgba(56,189,248,.06); }
+    .bottom-nav svg { width: 22px; height: 22px; stroke: currentColor; fill: none;
+                      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 640px) {
+      .bottom-nav { display: flex; }
+      .nav-links { display: none; }
+      body { padding-bottom: 64px; }
+    }
+
+    /* ── Roster page container ── */
+    .container { width: 100%; max-width: 1160px; margin: 0 auto; }
+
+    .title-row { padding: 22px 20px 6px; }
+    .title-row h1 {
+      font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 26px;
+      color: #e6edf3; letter-spacing: -.01em;
+    }
+    .title-row .subtitle { font-size: 13px; color: #8b949e; margin-top: 6px; }
+    .sort-wrap { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .sort-label { font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: #8b949e; }
+    .seg { display: inline-flex; background: #161b22; border: 1px solid #30363d; border-radius: 7px; padding: 3px; gap: 3px; }
+    .seg button {
+      border: none; border-radius: 5px; font-size: 12px; font-weight: 600; padding: 7px 11px;
+      cursor: pointer; transition: all .12s; background: transparent; color: #8b949e;
+      font-family: 'Inter', sans-serif;
+    }
+    .seg button.on { background: rgba(56,189,248,.15); color: #38bdf8; }
+
+    @media (min-width: 640px) {
+      .title-row { padding: 26px 24px 10px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+      .sort-wrap { margin-top: 0; }
+    }
+
+    /* ── Card grid ── */
+    .roster-grid { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 40px; }
+    @media (min-width: 768px) {
+      .roster-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; padding: 20px 24px 48px; align-items: start; }
+    }
+    @media (min-width: 1024px) {
+      .roster-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    }
+
+    .player-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 13px 14px; display: flex; flex-direction: column; min-height: 192px;
+    }
+    .card-top { display: flex; align-items: center; gap: 12px; }
+    .jersey-chip {
+      width: 38px; height: 38px; flex-shrink: 0; border-radius: 8px; background: #38bdf8;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px; color: #04222e;
+    }
+    .card-name { flex: 1; min-width: 0; font-weight: 600; font-size: 15px; color: #e6edf3; }
+    .edit-btn {
+      background: none; border: none; color: #8b949e; cursor: pointer; padding: 6px;
+      font-size: 16px; line-height: 1; border-radius: 6px;
+    }
+    .edit-btn:hover { color: #38bdf8; background: #1c2330; }
+
+    .attr-line { font-size: 12px; color: #8b949e; margin-top: 9px; line-height: 1.55; }
+    .attr-line .sep { color: #30363d; margin: 0 2px; }
+
+    .pos-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .pos-chip {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+      padding: 3px 8px; border-radius: 6px;
+    }
+
+    .signals-row {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-top: 9px;
+      border-top: 1px dashed #30363d;
+    }
+    .signals-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8b949e; align-self: center; margin-right: 2px; }
+    .signal-chip {
+      display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 20px; background: rgba(56,189,248,.1);
+      border: 1px solid rgba(56,189,248,.35); color: #38bdf8;
+    }
+
+    .add-prompt {
+      margin-top: auto; width: 100%; background: none; border: 1px dashed #30363d; border-radius: 8px;
+      color: #6e7681; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; padding: 11px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .add-prompt:hover { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,.05); }
+
+    /* ── Editor overlay ── */
+    .panel-overlay {
+      display: none; position: fixed; inset: 0; z-index: 20;
+      flex-direction: column; justify-content: flex-end; align-items: center;
+    }
+    .panel-overlay.open { display: flex; }
+    .panel-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.62); }
+    .edit-sheet {
+      position: relative; width: 100%; max-width: 390px; max-height: 94vh;
+      display: flex; flex-direction: column; background: #0d1117; border: 1px solid #30363d;
+      border-bottom: none; border-radius: 16px 16px 0 0; overflow: hidden;
+      animation: ds-up .3s cubic-bezier(.2,.85,.25,1);
+    }
+    @keyframes ds-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes ds-pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+    @media (min-width: 768px) {
+      .panel-overlay { justify-content: center; padding: 24px; }
+      .edit-sheet {
+        max-width: 500px; border: 1px solid #30363d; border-radius: 16px;
+        animation: ds-pop .2s cubic-bezier(.2,.85,.25,1);
+      }
+      .grabber { display: none; }
+    }
+
+    .grabber { flex-shrink: 0; display: flex; justify-content: center; padding: 8px 0 2px; }
+    .grabber span { width: 36px; height: 4px; border-radius: 3px; background: #30363d; display: block; }
+
+    .sheet-header { display: flex; align-items: center; gap: 12px; padding: 10px 18px 14px; border-bottom: 1px solid #30363d; flex-shrink: 0; }
+    .sheet-header .jersey-chip { width: 36px; height: 36px; font-size: 14px; }
+    .sheet-title { flex: 1; min-width: 0; font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px; color: #e6edf3; line-height: 1.2; }
+    .sheet-sub { font-size: 11px; color: #8b949e; margin-top: 2px; }
+    .close-btn { background: none; border: none; color: #8b949e; font-size: 19px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 6px; }
+    .close-btn:hover { color: #e6edf3; background: #1c2330; }
+
+    .sheet-body { flex: 1; overflow-y: auto; padding: 18px; }
+    .section-title { font-family: 'Orbitron', sans-serif; font-weight: 500; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #38bdf8; margin: 0 0 14px; }
+    .section-help { font-size: 11px; color: #8b949e; margin: 0 0 13px; line-height: 1.45; }
+
+    .field-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .field label { display: block; font-size: 10px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+    .field input, .field-select select {
+      width: 100%; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 14px; padding: 11px 13px; outline: none; font-family: inherit;
+    }
+    .field input:focus, .field-select select:focus { border-color: #38bdf8; }
+    .field-select { position: relative; }
+    .field-select select { padding-right: 32px; appearance: none; -webkit-appearance: none; cursor: pointer; }
+    .field-select .chev { position: absolute; right: 12px; top: 38px; color: #8b949e; pointer-events: none; font-size: 11px; }
+
+    .scout-panel { background: #1c2330; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin-top: 22px; }
+    .scout-panel .field-select select { background: #0d1117; }
+    .scout-panel .field { margin-bottom: 13px; }
+    .scout-panel .field:last-child { margin-bottom: 0; }
+
+    .pos-section { margin-top: 24px; }
+    .pos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .pos-cell {
+      aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; border-radius: 10px; cursor: pointer; transition: transform .1s ease; border: 1px solid;
+    }
+    .pos-cell:active { transform: scale(.94); }
+    .pos-cell .pos-label { font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px; }
+    .pos-cell .pos-sym { font-size: 15px; line-height: 1; }
+
+    .pos-legend {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 9px 16px; margin-top: 15px;
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 13px 15px;
+    }
+    .pos-legend .row { display: flex; align-items: center; gap: 9px; font-size: 12px; color: #8b949e; }
+    .pos-legend .sym { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+
+    .notes-section { margin-top: 24px; }
+    .note-form textarea {
+      width: 100%; min-height: 66px; resize: vertical; background: #161b22; border: 1px solid #30363d;
+      border-radius: 6px; color: #e6edf3; font-size: 14px; padding: 11px 13px; outline: none;
+      line-height: 1.5; font-family: inherit;
+    }
+    .note-form textarea:focus { border-color: #38bdf8; }
+    .note-add-btn {
+      margin-top: 8px; background: none; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 12px; font-weight: 600; padding: 8px 14px; cursor: pointer;
+    }
+    .note-add-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+    .note-game-select { margin: 8px 0; }
+    .note-game-select select {
+      width: 100%; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 13px; padding: 9px 12px; outline: none; font-family: inherit;
+    }
+
+    .notes-list { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; }
+    .note-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 11px 12px; }
+    .note-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .note-badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 5px; }
+    .note-badge.game { background: rgba(56,189,248,.12); color: #38bdf8; }
+    .note-badge.general { background: #1c2330; color: #8b949e; }
+    .note-game-label { font-size: 11px; color: #8b949e; }
+    .note-ts { font-size: 11px; color: #8b949e; margin-left: auto; }
+    .note-body { font-size: 13px; color: #e6edf3; line-height: 1.5; }
+    .notes-empty { font-size: 12px; color: #8b949e; padding: 4px 0; }
+
+    .danger-zone { border-top: 1px solid #30363d; margin-top: 24px; padding-top: 16px; }
+    .remove-link { background: none; border: none; color: #f85149; font-size: 13px; font-weight: 600; cursor: pointer; padding: 4px 0; }
+    .remove-link:hover { text-decoration: underline; }
+    .remove-confirm {
+      background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.32); border-radius: 10px;
+      padding: 14px; animation: ds-pop .15s ease;
+    }
+    .remove-confirm .title { font-size: 13px; color: #e6edf3; font-weight: 600; margin-bottom: 4px; }
+    .remove-confirm .body { font-size: 12px; color: #8b949e; line-height: 1.5; margin-bottom: 13px; }
+    .remove-confirm .row { display: flex; gap: 8px; }
+
+    .btn { border-radius: 6px; font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; flex: 1; }
+    .btn-outline { background: none; border: 1px solid #30363d; color: #e6edf3; }
+    .btn-outline:hover { border-color: #8b949e; }
+    .btn-danger { background: #f85149; border: none; color: #fff; }
+    .btn-danger:hover { background: #da3633; }
+
+    .sheet-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 13px 18px; border-top: 1px solid #30363d; background: #0d1117; }
+    .sheet-footer .btn-cancel { flex: 1; background: none; border: 1px solid #30363d; color: #e6edf3; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; padding: 14px; border-radius: 6px; cursor: pointer; }
+    .sheet-footer .btn-cancel:hover { border-color: #8b949e; }
+    .sheet-footer .btn-save { flex: 2; background: #0ea5e9; border: none; color: #fff; font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; padding: 14px; border-radius: 6px; cursor: pointer; }
+    .sheet-footer .btn-save:hover { background: #0284c7; }
+
+    /* ── Discard-confirm modal ── */
+    .discard-overlay { display: none; position: fixed; inset: 0; z-index: 30; align-items: center; justify-content: center; padding: 28px; }
+    .discard-overlay.open { display: flex; }
+    .discard-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+    .discard-card {
+      position: relative; width: 100%; max-width: 320px; background: #161b22; border: 1px solid #30363d;
+      border-radius: 12px; padding: 20px; animation: ds-pop .16s ease;
+    }
+    .discard-card .title { font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px; color: #e6edf3; margin-bottom: 6px; }
+    .discard-card .body { font-size: 13px; color: #8b949e; line-height: 1.5; margin-bottom: 18px; }
+    .discard-card .row { display: flex; gap: 8px; }
+
+    .empty-state { text-align: center; padding: 3rem 1rem; color: #6e7681; }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <a href="/roster" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/roster" class="active">Roster</a>
+    <a href="/reports">Reports</a>
+    <a href="/">Upload</a>
+    <span class="sport-pill">{{ sport }}</span>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+
+<nav class="bottom-nav">
+  <a href="/roster" class="active">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Roster
+  </a>
+  <a href="/reports">
+    <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+    Reports
+  </a>
+  <a href="/">
+    <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+    Upload
+  </a>
+  <a href="/logout">
+    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Sign out
+  </a>
+</nav>
+
+<div class="container">
+  <div class="title-row">
+    <div>
+      <h1>Roster</h1>
+      <p class="subtitle">Tap to edit any player</p>
+    </div>
+    <div class="sort-wrap">
+      <span class="sort-label">Sort</span>
+      <div class="seg">
+        <button type="button" id="sort-jersey-btn" class="on" onclick="setSort('jersey')">Jersey #</button>
+        <button type="button" id="sort-name-btn" onclick="setSort('name')">First name</button>
+      </div>
+    </div>
+  </div>
+
+  {% if players %}
+  <div class="roster-grid" id="roster-grid"></div>
+  {% else %}
+  <div class="empty-state"><p>No players yet. Upload a game to add your roster.</p></div>
+  {% endif %}
+</div>
+
+<!-- Edit panel -->
+<div class="panel-overlay" id="panel-overlay">
+  <div class="panel-scrim" onclick="requestClosePanel()"></div>
+  <div class="edit-sheet">
+    <div class="grabber"><span></span></div>
+
+    <div class="sheet-header">
+      <div class="jersey-chip" id="panel-jersey-chip"></div>
+      <div style="flex:1;min-width:0;">
+        <div class="sheet-title" id="panel-title"></div>
+        <div class="sheet-sub">Editing player profile</div>
+      </div>
+      <button type="button" class="close-btn" onclick="requestClosePanel()" aria-label="Close">✕</button>
+    </div>
+
+    <div class="sheet-body">
+      <div class="section-title">Player Info</div>
+      <div class="field-grid2">
+        <div class="field"><label>First Name</label><input type="text" id="f-first_name"></div>
+        <div class="field"><label>Last Name</label><input type="text" id="f-last_name"></div>
+      </div>
+      <div class="field-grid2">
+        <div class="field"><label>Jersey Number</label><input type="number" id="f-number"></div>
+        <div class="field field-select">
+          <label>League Age</label>
+          <select id="f-league_age">
+            <option value="">— Not set</option>
+            {% for a in league_age_options %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+          </select>
+          <span class="chev">▾</span>
+        </div>
+      </div>
+      <div class="field-grid2" style="margin-bottom:0;">
+        <div class="field field-select">
+          <label>Bats</label>
+          <select id="f-bats"><option value="">—</option>{% for o in bats_options %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+          <span class="chev">▾</span>
+        </div>
+        <div class="field field-select">
+          <label>Throws</label>
+          <select id="f-throws"><option value="">—</option>{% for o in throws_options %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+          <span class="chev">▾</span>
+        </div>
+      </div>
+
+      <div class="scout-panel">
+        <div class="section-title">Scout Attributes</div>
+        <p class="section-help">Coach's read on tools — "Developing" always frames the low tier, never negative.</p>
+        <div class="field field-select">
+          <label>Arm</label>
+          <select id="f-arm"><option value="">— Not set</option>{% for val, lbl in arm_options %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select>
+          <span class="chev">▾</span>
+        </div>
+        <div class="field field-select">
+          <label>Glove</label>
+          <select id="f-glove"><option value="">— Not set</option>{% for o in glove_options %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+          <span class="chev">▾</span>
+        </div>
+        <div class="field field-select">
+          <label>Speed</label>
+          <select id="f-speed"><option value="">— Not set</option>{% for o in speed_options %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+          <span class="chev">▾</span>
+        </div>
+      </div>
+
+      <div class="pos-section">
+        <div class="section-title">Position Eligibility</div>
+        <p class="section-help">Tap a position to cycle its state.</p>
+        <div class="pos-grid" id="pos-grid"></div>
+        <div class="pos-legend" id="pos-legend"></div>
+      </div>
+
+      <div class="notes-section">
+        <div class="section-title">Coach Notes</div>
+        <div class="seg" style="margin-bottom:10px;">
+          <button type="button" id="note-game-btn" class="on" onclick="setNoteType('game')">Game note</button>
+          <button type="button" id="note-general-btn" onclick="setNoteType('general')">General observation</button>
+        </div>
+        <div class="note-game-select" id="note-game-wrap">
+          <select id="note-game-select"><option value="">— Select a game —</option></select>
+        </div>
+        <div class="note-form">
+          <textarea id="note-text" placeholder="Add an observation…"></textarea>
+          <button type="button" class="note-add-btn" onclick="addNote()">+ Add note</button>
+        </div>
+        <div class="notes-list" id="notes-list"></div>
+      </div>
+
+      <div class="danger-zone">
+        <button type="button" class="remove-link" id="remove-link" onclick="askRemove()">Remove from roster</button>
+        <div class="remove-confirm" id="remove-confirm" style="display:none;">
+          <div class="title" id="remove-confirm-title"></div>
+          <div class="body">They'll be archived — stats, batting logs, and game history are preserved in your records. Nothing is deleted.</div>
+          <div class="row">
+            <button type="button" class="btn btn-outline" onclick="cancelRemove()">Keep player</button>
+            <button type="button" class="btn btn-danger" onclick="doRemove()">Remove &amp; archive</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet-footer">
+      <button type="button" class="btn-cancel" onclick="requestClosePanel()">Cancel</button>
+      <button type="button" class="btn-save" onclick="saveEdit()">SAVE CHANGES</button>
+    </div>
+  </div>
+</div>
+
+<!-- Discard-changes confirm -->
+<div class="discard-overlay" id="discard-overlay">
+  <div class="discard-scrim" onclick="cancelDiscard()"></div>
+  <div class="discard-card">
+    <div class="title">Discard changes?</div>
+    <div class="body">You have unsaved edits to this player. Closing now will lose them.</div>
+    <div class="row">
+      <button type="button" class="btn btn-outline" onclick="cancelDiscard()">Keep editing</button>
+      <button type="button" class="btn btn-danger" onclick="confirmDiscard()">Discard</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PLAYERS = {{ players | tojson }};
+const POSITION_ORDER = {{ position_order | tojson }};
+const STATE_CYCLE = {{ state_cycle | tojson }};
+const STATE_META = {{ state_meta | tojson }};
+const ROW_STATES = ['primary', 'secondary', 'developing'];
+
+let sortBy = 'jersey';
+let currentId = null;
+let currentEligibility = {};
+let originalSnapshot = null;
+let gamesCache = null;
+
+function metaOf(state) { return STATE_META[state] || STATE_META['blank']; }
+function dash(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+function playerById(id) { return PLAYERS.find(p => p.player_id === id); }
+
+function attrLine(p) {
+  return 'Age ' + dash(p.league_age) + '<span class="sep">·</span>Bats ' + dash(p.bats) +
+    '<span class="sep">·</span>Throws ' + dash(p.throws) + '<span class="sep">·</span>Arm ' + dash(p.arm) +
+    '<span class="sep">·</span>Glove ' + dash(p.glove) + '<span class="sep">·</span>Speed ' + dash(p.speed);
+}
+
+function positionStrip(p) {
+  const pe = p.position_eligibility || {};
+  return POSITION_ORDER.filter(pos => ROW_STATES.includes(pe[pos])).map(pos => ({pos, state: pe[pos]}));
+}
+
+function cardHTML(p) {
+  const strip = positionStrip(p);
+  const signals = Object.values(p.signals || {});
+  let stripHTML = '';
+  if (strip.length) {
+    stripHTML = '<div class="pos-strip">' + strip.map(({pos, state}) => {
+      const m = metaOf(state);
+      return `<span class="pos-chip" style="background:${m.bg};border:1px solid ${m.border};color:${m.color};">${m.sym} ${pos}</span>`;
+    }).join('') + '</div>';
+  }
+  let signalsHTML = '';
+  if (signals.length) {
+    signalsHTML = '<div class="signals-row"><span class="signals-label">Signals</span>' +
+      signals.map(s => `<span class="signal-chip">◆ ${s}</span>`).join('') + '</div>';
+  }
+  const addPrompt = strip.length === 0
+    ? `<button type="button" class="add-prompt" onclick="openEditPanel('${p.player_id}')">＋ Add positions &amp; scouting</button>` : '';
+  return `<div class="player-card" id="player-row-${p.player_id}">
+    <div class="card-top">
+      <div class="jersey-chip">${p.number ?? '—'}</div>
+      <div class="card-name">${p.first_name} ${p.last_name}</div>
+      <button type="button" class="edit-btn" onclick="openEditPanel('${p.player_id}')" aria-label="Edit player">✎</button>
+    </div>
+    <div class="attr-line">${attrLine(p)}</div>
+    ${stripHTML}
+    ${signalsHTML}
+    ${addPrompt}
+  </div>`;
+}
+
+function renderCards() {
+  const sorted = PLAYERS.slice();
+  if (sortBy === 'name') sorted.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  else sorted.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  const grid = document.getElementById('roster-grid');
+  if (grid) grid.innerHTML = sorted.map(cardHTML).join('');
+}
+
+function setSort(by) {
+  sortBy = by;
+  document.getElementById('sort-jersey-btn').classList.toggle('on', by === 'jersey');
+  document.getElementById('sort-name-btn').classList.toggle('on', by === 'name');
+  renderCards();
+}
+
+renderCards();
+
+// ── Edit panel ──────────────────────────────────────────────────────────
+function openEditPanel(id) {
+  const p = playerById(id);
+  if (!p) return;
+  currentId = id;
+  currentEligibility = Object.assign({}, p.position_eligibility || {});
+
+  document.getElementById('panel-jersey-chip').textContent = p.number ?? '—';
+  document.getElementById('panel-title').textContent =
+    ((p.first_name || '') + ' ' + (p.last_name || '')).trim() + (p.number ? '  ·  #' + p.number : '');
+  document.getElementById('f-first_name').value = p.first_name || '';
+  document.getElementById('f-last_name').value  = p.last_name || '';
+  document.getElementById('f-number').value     = p.number ?? '';
+  document.getElementById('f-league_age').value = p.league_age ?? '';
+  document.getElementById('f-bats').value       = p.bats || '';
+  document.getElementById('f-throws').value     = p.throws || '';
+  document.getElementById('f-arm').value        = p.arm || '';
+  document.getElementById('f-glove').value      = p.glove || '';
+  document.getElementById('f-speed').value      = p.speed || '';
+
+  renderPositionGrid();
+  renderLegend();
+
+  document.getElementById('note-text').value = '';
+  setNoteType('game');
+  document.getElementById('remove-confirm').style.display = 'none';
+  document.getElementById('remove-link').style.display = '';
+  loadNotes(id);
+
+  originalSnapshot = JSON.stringify(collectFormValues());
+  document.getElementById('panel-overlay').classList.add('open');
+}
+
+function collectFormValues() {
+  return {
+    first_name: document.getElementById('f-first_name').value.trim(),
+    last_name:  document.getElementById('f-last_name').value.trim(),
+    number:     document.getElementById('f-number').value,
+    league_age: document.getElementById('f-league_age').value,
+    bats:       document.getElementById('f-bats').value,
+    throws:     document.getElementById('f-throws').value,
+    arm:        document.getElementById('f-arm').value,
+    glove:      document.getElementById('f-glove').value,
+    speed:      document.getElementById('f-speed').value,
+    position_eligibility: currentEligibility,
+  };
+}
+
+function isDirty() { return JSON.stringify(collectFormValues()) !== originalSnapshot; }
+
+function requestClosePanel() {
+  if (isDirty()) { document.getElementById('discard-overlay').classList.add('open'); return; }
+  closeEditPanel();
+}
+function cancelDiscard() { document.getElementById('discard-overlay').classList.remove('open'); }
+function confirmDiscard() { document.getElementById('discard-overlay').classList.remove('open'); closeEditPanel(); }
+
+function closeEditPanel() {
+  document.getElementById('panel-overlay').classList.remove('open');
+  currentId = null;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && currentId !== null) requestClosePanel();
+});
+
+function renderPositionGrid() {
+  const grid = document.getElementById('pos-grid');
+  grid.innerHTML = POSITION_ORDER.map(pos => {
+    const state = currentEligibility[pos] || 'blank';
+    const m = metaOf(state);
+    const labelColor = state === 'blank' ? '#8b949e' : '#e6edf3';
+    return `<button type="button" class="pos-cell" style="background:${m.bg};border-color:${m.border};" onclick="cyclePosition('${pos}')">
+      <span class="pos-label" style="color:${labelColor};">${pos}</span>
+      <span class="pos-sym" style="color:${m.color};">${m.sym}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderLegend() {
+  const legend = document.getElementById('pos-legend');
+  const states = ['primary', 'secondary', 'developing', 'requested', 'no', 'blank'];
+  legend.innerHTML = states.map(s => {
+    const m = metaOf(s);
+    return `<div class="row"><span class="sym" style="color:${m.color};">${m.sym}</span>${m.label}</div>`;
+  }).join('');
+}
+
+// Blank isn't a real stored value (it's the absence of a key), but it IS a stop in the
+// cycle — Blank -> Primary -> Secondary -> Developing -> Requested -> No -> back to Blank.
+const FULL_CYCLE = ['blank'].concat(STATE_CYCLE);
+function cyclePosition(pos) {
+  const current = currentEligibility[pos] || 'blank';
+  const next = FULL_CYCLE[(FULL_CYCLE.indexOf(current) + 1) % FULL_CYCLE.length];
+  if (next === 'blank') delete currentEligibility[pos]; else currentEligibility[pos] = next;
+  renderPositionGrid();
+}
+
+async function saveEdit() {
+  const v = collectFormValues();
+  if (!v.first_name || !v.last_name || v.number === '') {
+    alert('First name, last name, and jersey number are required.');
+    return;
+  }
+  const payload = {
+    first_name: v.first_name, last_name: v.last_name, number: parseInt(v.number, 10),
+    league_age: v.league_age ? parseInt(v.league_age, 10) : null,
+    bats: v.bats || null, throws: v.throws || null,
+    arm: v.arm || null, glove: v.glove || null, speed: v.speed || null,
+    position_eligibility: currentEligibility,
+  };
+  const resp = await fetch('/api/players/' + currentId, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  if (!resp.ok) { alert('Save failed. Please try again.'); return; }
+
+  Object.assign(playerById(currentId), payload);
+  renderCards();
+  closeEditPanel();
+}
+
+// ── Remove / archive ────────────────────────────────────────────────────
+function askRemove() {
+  const p = playerById(currentId);
+  document.getElementById('remove-confirm-title').textContent =
+    'Remove ' + p.first_name + ' ' + p.last_name + ' from the roster?';
+  document.getElementById('remove-link').style.display = 'none';
+  document.getElementById('remove-confirm').style.display = '';
+}
+function cancelRemove() {
+  document.getElementById('remove-confirm').style.display = 'none';
+  document.getElementById('remove-link').style.display = '';
+}
+async function doRemove() {
+  const resp = await fetch('/api/players/' + currentId + '/archive', {method: 'POST'});
+  if (!resp.ok) { alert('Archive failed. Please try again.'); return; }
+  const idx = PLAYERS.findIndex(p => p.player_id === currentId);
+  if (idx >= 0) PLAYERS.splice(idx, 1);
+  renderCards();
+  closeEditPanel();
+}
+
+// ── Notes ────────────────────────────────────────────────────────────────
+let noteType = 'game';
+function setNoteType(t) {
+  noteType = t;
+  document.getElementById('note-game-btn').classList.toggle('on', t === 'game');
+  document.getElementById('note-general-btn').classList.toggle('on', t === 'general');
+  document.getElementById('note-game-wrap').style.display = t === 'game' ? '' : 'none';
+  if (t === 'game') ensureGamesLoaded();
+}
+
+async function ensureGamesLoaded() {
+  if (gamesCache) return gamesCache;
+  const resp = await fetch('/api/games');
+  gamesCache = await resp.json();
+  const sel = document.getElementById('note-game-select');
+  sel.innerHTML = '<option value="">— Select a game —</option>' + gamesCache.map(g =>
+    `<option value="${g.game_id}">${g.game_date} vs ${g.opponent_name || 'TBD'}</option>`
+  ).join('');
+  return gamesCache;
+}
+
+async function loadNotes(id) {
+  const list = document.getElementById('notes-list');
+  list.innerHTML = '<p class="notes-empty">Loading…</p>';
+  const resp = await fetch('/api/players/' + id + '/notes');
+  renderNotes(await resp.json());
+}
+
+function renderNotes(notes) {
+  const list = document.getElementById('notes-list');
+  if (!notes.length) { list.innerHTML = '<p class="notes-empty">No notes yet.</p>'; return; }
+  list.innerHTML = notes.map(n => {
+    const date = new Date(n.created_at).toLocaleDateString();
+    const gameLabel = n.note_type === 'game' && n.games
+      ? `<span class="note-game-label">${n.games.game_date} vs ${n.games.opponent_name || 'TBD'}</span>` : '';
+    const badgeLabel = n.note_type === 'game' ? 'Game note' : 'General observation';
+    return `<div class="note-card">
+      <div class="note-meta"><span class="note-badge ${n.note_type}">${badgeLabel}</span>${gameLabel}<span class="note-ts">${date}</span></div>
+      <div class="note-body">${n.note_text.replace(/</g, '&lt;')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function addNote() {
+  const text = document.getElementById('note-text').value.trim();
+  if (!text) return;
+  const gameId = document.getElementById('note-game-select').value;
+  if (noteType === 'game' && !gameId) { alert('Select a game for this note.'); return; }
+
+  const resp = await fetch('/api/players/' + currentId + '/notes', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({note_text: text, note_type: noteType, game_id: gameId || null}),
+  });
+  if (!resp.ok) { alert('Could not save note.'); return; }
+  document.getElementById('note-text').value = '';
+  loadNotes(currentId);
+}
+</script>
+</body>
+</html>
