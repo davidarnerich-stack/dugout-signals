@@ -42,11 +42,13 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
     name = filename.lower()
 
     if name.endswith(".pdf"):
-        # Try content-based detection first
+        # Try content-based detection first. BATTING and PITCHING aren't
+        # always on the same page — a full 12+ batter roster can push
+        # PITCHING onto page 2 — so check across all pages, not just page 1.
         try:
             import pdfplumber
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                text = pdf.pages[0].extract_text() or ""
+                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
             if "BATTING" in text and "PITCHING" in text:
                 return "box_score"
         except Exception:
@@ -79,7 +81,104 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
 
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
-def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
+def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
+    """
+    Parse the line-score grid and opponent name from already-extracted box
+    score PDF text. Shared by extract_game_info_from_pdf (below) and
+    parsers/box_scores.py, which used to each hardcode a specific team's
+    name here from this app's single-tenant era — that broke for every team
+    except the one literal name baked in, silently returning no score/
+    opponent match instead of an error. Multi-tenant-safe: takes the coach's
+    real team_name as a parameter instead.
+    Returns: {opponent_name, our_runs, opponent_runs, is_away}
+    """
+    is_away = bool(re.search(r"\bAway\b", raw[:400]))
+
+    # Line score: two rows appear under the "1 2 3 ..." inning header, one
+    # per team. The visiting team's row always comes first (they bat the
+    # top of the inning) and the home team's row second — that ordering
+    # tells us which row is ours without needing to recognize any specific
+    # team abbreviation (GameChanger auto-generates these per team, e.g.
+    # "STRM" for Storm, "YANK" for Yankees — not worth trying to predict).
+    score_rows = []
+    in_score = False
+    for line in raw.splitlines():
+        s = line.strip()
+        if re.match(r"^1\s+2\s+3", s):
+            in_score = True
+            continue
+        if in_score:
+            if not s or s.startswith("BATTING"):
+                break
+            m = re.match(r"^([A-Z0-9]{2,6})\s+([\dX\s]+)$", s)
+            if m:
+                nums = [int(n) for n in re.findall(r"\d+", m.group(2))]
+                if len(nums) >= 3:
+                    score_rows.append(nums[-3])
+
+    our_runs = opp_runs = None
+    if len(score_rows) >= 2:
+        if is_away:
+            our_runs, opp_runs = score_rows[0], score_rows[1]
+        else:
+            opp_runs, our_runs = score_rows[0], score_rows[1]
+
+    # Opponent name. The header reads "{Team A} {score} - {score} {Team B}
+    # {Home|Away}" — but pdfplumber's text extraction can interleave a
+    # wrapped second line of one team's name (e.g. "AllStars" wrapping
+    # under "Sierra Madre 12u Gold") to AFTER the other team's name in the
+    # raw text stream, not where it visually reads. So a name can arrive
+    # in two separate fragments, one on each side of whichever team isn't
+    # split. Two strategies, tried in order:
+    header = " ".join(raw[:500].split())
+    opponent_name = None
+
+    # 1. Split around our own team's name, tolerant of a trailing-s
+    #    mismatch between what a coach typed at onboarding ("...All
+    #    Stars") and GameChanger's own formatting of it ("...All Star").
+    #    This is the only strategy that can recombine a name that arrived
+    #    in two fragments, since it knows exactly where "us" sits.
+    if team_name:
+        words = team_name.split()
+        if words and words[-1].endswith("s"):
+            words[-1] = re.escape(words[-1][:-1]) + "s?"
+        else:
+            words[-1] = re.escape(words[-1]) + "s?" if words else words
+        team_pattern = r"\s+".join(re.escape(w) if i < len(words) - 1 else w
+                                    for i, w in enumerate(words))
+        m = re.search(
+            rf"^(.*?)\s*{team_pattern}\s+\d+\s*-\s*\d+\s+(.*?)\s*(?:Away|Home)\b"
+            rf"|^(.*?)\s+\d+\s*-\s*\d+\s*{team_pattern}\s*(.*?)\s*(?:Away|Home)\b",
+            header, re.I
+        )
+        if m:
+            groups = m.groups()
+            # Whichever alternative matched, the two "our name" fragments
+            # are groups (1,2) or (3,4) — the unused pair is all None.
+            frag_a, frag_b = (groups[0], groups[1]) if groups[0] is not None else (groups[2], groups[3])
+            opponent_name = " ".join(p.strip() for p in (frag_a, frag_b) if p and p.strip())
+
+    # 2. Fall back to pure position: the visiting team is always named
+    #    first (same convention as the line-score row order above). Won't
+    #    recombine a split fragment, but works with no team_name at all.
+    if not opponent_name:
+        header_m = re.match(r"^(.+?)\s+\d+\s*-\s*\d+\s+(.+?)\s*(?:Away|Home)\b", header)
+        if header_m:
+            team_a, team_b = header_m.group(1).strip(), header_m.group(2).strip()
+            opponent_name = team_b if is_away else team_a
+
+    if opponent_name:
+        opponent_name = re.sub(r"-\s+", "-", opponent_name).strip()
+
+    return {
+        "opponent_name": opponent_name,
+        "our_runs":      our_runs,
+        "opponent_runs": opp_runs,
+        "is_away":       is_away,
+    }
+
+
+def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name: str = "") -> dict:
     """
     Parse a box score PDF and return game metadata — no filename needed.
     Returns: {game_date, opponent_name, storm_runs, opponent_runs, is_away}
@@ -88,9 +187,6 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         raw = "\n".join(page.extract_text() or "" for page in pdf.pages)
-
-    # Home / Away
-    is_away = bool(re.search(r"\bAway\b", raw[:400]))
 
     # Game date: "Sunday May 31, 2026" or "Saturday May 16, 2026"
     game_date = None
@@ -109,48 +205,7 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
         except Exception:
             pass
 
-    # Scores from STRM line in line score
-    storm_runs = opp_runs = None
-    in_score = False
-    for line in raw.splitlines():
-        s = line.strip()
-        if re.match(r"^1\s+2\s+3", s):
-            in_score = True
-            continue
-        if in_score:
-            if not s or s.startswith("BATTING"):
-                break
-            m = re.match(r"^([A-Z0-9]{2,6})\s+([\dX\s]+)$", s)
-            if m:
-                nums = [int(n) for n in re.findall(r"\d+", m.group(2))]
-                if len(nums) >= 3:
-                    if "STRM" in m.group(1):
-                        storm_runs = nums[-3]
-                    else:
-                        opp_runs = nums[-3]
-
-    # Opponent name
-    header = " ".join(raw[:500].split())
-    opponent_name = None
-    if is_away:
-        pre  = re.search(r"^(.+?)\s+Storm\s+12u\s+Silver\s+All\s+Star", header, re.I)
-        post = re.search(
-            r"Storm\s+12u\s+Silver\s+All\s+Star\s+\d+\s*-\s*\d+\s+(.+?)\s*(?:Away|Home)",
-            header, re.I
-        )
-        parts = [g.group(1).strip() for g in [pre, post] if g and g.group(1).strip()]
-        opponent_name = " ".join(parts) if parts else None
-    else:
-        m = re.search(
-            r"^(.+?)\s+\d+\s*-\s*\d+\s+Storm\s+12u\s+Silver\s+All\s+Star\s*(.*?)\s*Home",
-            header, re.I
-        )
-        if m:
-            parts = [m.group(1).strip(), m.group(2).strip()]
-            opponent_name = " ".join(p for p in parts if p)
-
-    if opponent_name:
-        opponent_name = re.sub(r"-\s+", "-", opponent_name).strip()
+    score_info = parse_score_and_opponent(raw, team_name)
 
     # Fallback: parse date from GC filename if content extraction failed
     if not game_date and filename:
@@ -158,10 +213,10 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "") -> dict:
 
     return {
         "game_date":     game_date,
-        "opponent_name": opponent_name,
-        "storm_runs":    storm_runs,
-        "opponent_runs": opp_runs,
-        "is_away":       is_away,
+        "opponent_name": score_info["opponent_name"],
+        "storm_runs":    score_info["our_runs"],
+        "opponent_runs": score_info["opponent_runs"],
+        "is_away":       score_info["is_away"],
     }
 
 

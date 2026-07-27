@@ -633,7 +633,7 @@ def api_detect():
     game_info = None
     if box_bytes:
         try:
-            game_info = extract_game_info_from_pdf(box_bytes, filename=box_filename)
+            game_info = extract_game_info_from_pdf(box_bytes, filename=box_filename, team_name=session["team_name"])
             result["game_info"] = game_info
         except Exception as e:
             result["game_info_error"] = str(e)
@@ -729,7 +729,7 @@ def upload():
     if "box_score" in file_data:
         bs_name, bs_bytes = file_data["box_score"]
         try:
-            info = extract_game_info_from_pdf(bs_bytes, filename=bs_name)
+            info = extract_game_info_from_pdf(bs_bytes, filename=bs_name, team_name=team_name)
             # Tournament (only relevant for tournament game type)
             tournament_id = None
             if game_type == "tournament" and tournament_name:
