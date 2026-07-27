@@ -26,6 +26,25 @@ def _to_html(text: str) -> str:
     return _markdown_lib.markdown(text)
 
 
+def _strip_leading_label(text: str, label: str) -> str:
+    """
+    Backstop for duplicated subsection labels ("Pitching" / "Pitching...").
+    The system prompt already tells Claude not to restate a section's own
+    title, but that instruction isn't reliably followed — a real generated
+    report still showed it happening (with the repeated title rendered bold,
+    i.e. Claude wrapped it in markdown `**Pitching**` despite being told not
+    to use markdown at all). Since the template already renders `label` as
+    its own heading, strip a leading duplicate here instead of trusting the
+    prompt alone. Matches an optional markdown-bold wrapper and/or trailing
+    colon on the label, at the very start of the text only — but only when
+    the label stands alone (followed by a colon, or its own line break), not
+    when it's genuinely the first word of a real sentence like "Pitching was
+    excellent this game...".
+    """
+    pattern = rf"^\s*\*{{0,2}}{re.escape(label)}\*{{0,2}}(?:\s*:\s*|\s*\n+)"
+    return re.sub(pattern, "", text, count=1, flags=re.I)
+
+
 def _priority_items(text: str) -> list:
     """Split the priority-areas numbered list into individual items, each
     markdown-rendered (so a '**Label**' prefix becomes real <strong>, not a
@@ -290,6 +309,9 @@ def generate_hitting(client, system, data, us) -> str:
     return _single_game_call(client, system, f"""Write the "Hitting" subsection — team hitting
 performance for this game, with individual contributions woven naturally into the prose (not listed
 separately). Team totals: {us['h']} hits, {us['r']} runs.
+If there's enough to cover (multiple contributors, contrasting performances), split it into 2-3
+short paragraphs separated by a blank line rather than one dense block — a single short paragraph
+is fine when there isn't much to say.
 
 Batting lines:
 {bats}
@@ -310,6 +332,9 @@ def generate_pitching(client, system, data) -> str:
     return _single_game_call(client, system, f"""Write the "Pitching" subsection — pitching
 performance for this game, with individual pitcher contributions (IP, K, BB, ERA) woven into the
 prose.
+If there's enough to cover (multiple pitchers, contrasting outings), split it into 2-3 short
+paragraphs separated by a blank line rather than one dense block — a single short paragraph is fine
+when there isn't much to say.
 
 Pitching lines:
 {pitchers}
@@ -321,6 +346,8 @@ def generate_fielding(client, system, data, us) -> str:
                       for f in data["fielding_stats"] if f["e"] > 0) or "no charged errors"
     return _single_game_call(client, system, f"""Write the "Fielding" subsection — errors, key plays
 made or missed, defensive impact on the game.
+If there's enough to cover, split it into 2-3 short paragraphs separated by a blank line rather
+than one dense block — a single short paragraph is fine when there isn't much to say.
 
 Team errors: {us['e']}. Errors by player: {errs}.
 """)
@@ -391,25 +418,25 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
         sections["how_it_happened"] = None  # template shows the section-failed fallback
 
     try:
-        sections["hitting"] = _to_html(generate_hitting(client, system, data, us))
+        sections["hitting"] = _to_html(_strip_leading_label(generate_hitting(client, system, data, us), "Hitting"))
     except Exception as e:
         sections["hitting"] = f"<p>[Generation error: {e}]</p>"
 
     if data["has_pbp"]:
         try:
-            sections["baserunning"] = _to_html(generate_baserunning(client, system, data, us))
+            sections["baserunning"] = _to_html(_strip_leading_label(generate_baserunning(client, system, data, us), "Baserunning"))
         except Exception as e:
             sections["baserunning"] = f"<p>[Generation error: {e}]</p>"
     else:
         sections["baserunning"] = None  # template renders the fixed fallback copy — not an AI call
 
     try:
-        sections["pitching"] = _to_html(generate_pitching(client, system, data))
+        sections["pitching"] = _to_html(_strip_leading_label(generate_pitching(client, system, data), "Pitching"))
     except Exception as e:
         sections["pitching"] = f"<p>[Generation error: {e}]</p>"
 
     try:
-        sections["fielding"] = _to_html(generate_fielding(client, system, data, us))
+        sections["fielding"] = _to_html(_strip_leading_label(generate_fielding(client, system, data, us), "Fielding"))
     except Exception as e:
         sections["fielding"] = f"<p>[Generation error: {e}]</p>"
 
