@@ -132,7 +132,7 @@
 
     /* ── Editor overlay ── */
     .panel-overlay {
-      display: none; position: fixed; inset: 0; z-index: 20;
+      display: none; position: fixed; inset: 0; z-index: 110;
       flex-direction: column; justify-content: flex-end; align-items: center;
     }
     .panel-overlay.open { display: flex; }
@@ -254,7 +254,7 @@
     .sheet-footer .btn-save:hover { background: #0284c7; }
 
     /* ── Discard-confirm modal ── */
-    .discard-overlay { display: none; position: fixed; inset: 0; z-index: 30; align-items: center; justify-content: center; padding: 28px; }
+    .discard-overlay { display: none; position: fixed; inset: 0; z-index: 120; align-items: center; justify-content: center; padding: 28px; }
     .discard-overlay.open { display: flex; }
     .discard-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
     .discard-card {
