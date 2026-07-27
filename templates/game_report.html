@@ -96,7 +96,7 @@
     .section-h2.tight { margin-bottom: 8px; }
     p.body-text { font-size: 14.5px; line-height: 1.72; color: #c9d1d9; margin-bottom: 18px; }
     p.body-text:last-child { margin-bottom: 0; }
-    .recap-label { font-size: 10.5px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .11em; margin-bottom: 7px; }
+    .recap-label { font-size: 13px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 7px; }
     .recap-block { margin-bottom: 18px; }
 
     .fallback-card {
@@ -193,7 +193,7 @@
 </nav>
 
 <div class="col">
-  <span class="report-tag">Single Game Report</span>
+  <span class="report-tag">{{ "Scrimmage Report" if game_type == "scrimmage" else "Game Report" }}</span>
   <h1 class="game-title">vs {{ header_block.visitor.label }}</h1>
   <p class="game-meta">{{ d.game.game_date }} · Game {{ d.game_number_in_season }} of season</p>
 

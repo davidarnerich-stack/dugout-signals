@@ -15,7 +15,14 @@ def _to_html(text: str) -> str:
     """Render Claude's output through a real markdown parser. Claude isn't
     reliably forbidden from using markdown syntax (headers, bold, numbered
     lists) in its prose, so section text is rendered as HTML instead of
-    dropped in as literal text — DS-50."""
+    dropped in as literal text — DS-50.
+
+    Claude also doesn't reliably separate intended paragraphs with a full
+    blank line — a single \\n between them is standard-markdown-legal but
+    gets silently collapsed into one dense block by the parser. Normalize
+    every lone newline to a full paragraph break first so any intended
+    break renders, regardless of which convention Claude used."""
+    text = re.sub(r"\n(?!\n)", "\n\n", text)
     return _markdown_lib.markdown(text)
 
 
@@ -190,6 +197,14 @@ Tone: factual and specific, not generic praise. Write in present tense for trend
 specific game events. Write in flowing paragraphs — like a beat reporter recap, not a bullet list —
 unless a section explicitly asks for a different format. Do not use markdown syntax (no #, **, etc.)
 — output will be inserted as plain text.
+Never begin a section by restating its own title (e.g. don't start the "Hitting" subsection with
+the word "Hitting") — the title is already displayed as a heading directly above your text. Start
+straight into the analysis.
+When referencing innings, follow sportswriting convention: use ordinals like "1st inning" or "3rd
+inning", not "the first inning". Say "inning" more often than "frame" — "frame" is fine as an
+occasional variation, not the default word. When describing a stretch of the game, name the actual
+inning numbers involved (e.g. "innings 3 and 4") rather than vague phase language like "the middle
+innings".
 Your audience is coaches only — never parents or players.
 """
 
@@ -246,8 +261,11 @@ def generate_how_it_happened(client, system, data, opp, us) -> list:
         "have; do not invent specific in-game sequences you don't have data for.")
 
     text = _single_game_call(client, system, f"""Write "How It Happened" — a condensed recap
-structured in exactly 3 paragraphs: Early, Middle, Late. Each paragraph calls out what happened and
-why it mattered — conversational prose, like a beat reporter recap, not a bullet list.
+structured in exactly 3 paragraphs: Early, Middle, Late. These labels are section headings only —
+each paragraph should reference the specific inning numbers it covers (e.g. "In the 4th, ...") using
+the inning-by-inning data below, not the words "early/middle/late" themselves. Each paragraph calls
+out what happened and why it mattered — conversational prose, like a beat reporter recap, not a
+bullet list.
 
 Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
 {line_note}

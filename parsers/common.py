@@ -79,6 +79,23 @@ def detect_file_type(filename: str, file_bytes: bytes) -> str:
     return "unknown"
 
 
+def team_name_regex(team_name: str) -> str:
+    """
+    Build a whitespace-tolerant, trailing-s-tolerant regex pattern that matches
+    a team's full name the way GameChanger tends to print it (e.g. a coach-
+    entered "...All Stars" vs. GameChanger's own "...All Star"). Shared by
+    box score opponent/score detection and play-by-play batting-team detection
+    — anywhere we need to recognize "is this text talking about our team?"
+    without hardcoding any specific team's name.
+    """
+    words = team_name.split()
+    if not words:
+        return ""
+    last = words[-1]
+    words[-1] = (re.escape(last[:-1]) + "s?") if last.endswith("s") else (re.escape(last) + "s?")
+    return r"\s+".join(re.escape(w) if i < len(words) - 1 else w for i, w in enumerate(words))
+
+
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
 def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
@@ -139,13 +156,7 @@ def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
     #    This is the only strategy that can recombine a name that arrived
     #    in two fragments, since it knows exactly where "us" sits.
     if team_name:
-        words = team_name.split()
-        if words and words[-1].endswith("s"):
-            words[-1] = re.escape(words[-1][:-1]) + "s?"
-        else:
-            words[-1] = re.escape(words[-1]) + "s?" if words else words
-        team_pattern = r"\s+".join(re.escape(w) if i < len(words) - 1 else w
-                                    for i, w in enumerate(words))
+        team_pattern = team_name_regex(team_name)
         m = re.search(
             rf"^(.*?)\s*{team_pattern}\s+\d+\s*-\s*\d+\s+(.*?)\s*(?:Away|Home)\b"
             rf"|^(.*?)\s+\d+\s*-\s*\d+\s*{team_pattern}\s*(.*?)\s*(?:Away|Home)\b",

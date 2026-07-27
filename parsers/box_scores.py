@@ -134,7 +134,7 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
             }).execute()
 
     venue = "Away" if is_away else "Home"
-    score = f"Storm {storm_runs} – {opponent_name or 'Opponent'} {opp_runs}"
+    score = f"{team_name} {storm_runs} – {opponent_name or 'Opponent'} {opp_runs}"
     return {
         "message": f"{venue} | {score} | {len(storm_batters)} batting order + {len(opp_batters)} opponent players stored.",
         "details": details,

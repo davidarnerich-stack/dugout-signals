@@ -184,9 +184,15 @@
         <div class="report-card-meta">{{ r.season }} &nbsp;·&nbsp; {{ r.games_played }} games &nbsp;·&nbsp; Generated {{ r.generated_at[:10] }}</div>
       </div>
       <div class="report-card-badges">
+        {% if r.games_played == 1 %}
+        <span class="badge badge-{{ 'w' if r.wins else ('l' if r.losses else 't') }}">
+          {{ r.runs_scored }}–{{ r.runs_allowed }} {{ 'W' if r.wins else ('L' if r.losses else 'T') }}
+        </span>
+        {% else %}
         <span class="badge badge-w">{{ r.wins }}W</span>
         <span class="badge badge-l">{{ r.losses }}L</span>
         {% if r.ties %}<span class="badge badge-t">{{ r.ties }}T</span>{% endif %}
+        {% endif %}
       </div>
       <span class="arrow">›</span>
     </a>

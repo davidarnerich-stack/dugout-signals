@@ -326,14 +326,14 @@
     <div class="field" style="margin-bottom:1rem">
       <label>Game Type</label>
       <div style="display:flex;gap:.75rem;margin-top:.4rem">
+        <label class="type-opt" data-type="regular">
+          <input type="radio" name="game_type" value="regular" checked> Regular Season
+        </label>
         <label class="type-opt" data-type="tournament">
-          <input type="radio" name="game_type" value="tournament" checked> Tournament
+          <input type="radio" name="game_type" value="tournament"> Tournament
         </label>
         <label class="type-opt" data-type="scrimmage">
           <input type="radio" name="game_type" value="scrimmage"> Scrimmage
-        </label>
-        <label class="type-opt" data-type="regular">
-          <input type="radio" name="game_type" value="regular"> Regular Season
         </label>
       </div>
     </div>
@@ -399,9 +399,9 @@
         <input type="text" id="edit-opponent" placeholder="e.g. 12U Whittier Silver">
       </div>
       <div class="field">
-        <label for="edit-score">Score (Storm – Opponent)</label>
+        <label for="edit-score">Score ({{ team_name }} – Opponent)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
-          <input type="number" id="edit-storm-runs" min="0" placeholder="Storm" style="width:80px">
+          <input type="number" id="edit-storm-runs" min="0" placeholder="{{ team_name }}" style="width:80px">
           <span style="color:#6e7681">–</span>
           <input type="number" id="edit-opp-runs" min="0" placeholder="Opp" style="width:80px">
         </div>
@@ -416,6 +416,8 @@
 </main>
 
 <script>
+  const TEAM_NAME = {{ team_name | tojson }};
+
   // ── Client-side date parser from GC filename ─────────────────────────────
   function parseDateFromGCFilename(filename) {
     const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,
@@ -634,7 +636,7 @@
       detectedGameInfo = gi;
       const venue = gi.is_away ? 'Away' : 'Home';
       const score = (gi.storm_runs != null)
-        ? ` · Storm ${gi.storm_runs} – ${gi.opponent_name || 'Opponent'} ${gi.opponent_runs}`
+        ? ` · ${TEAM_NAME} ${gi.storm_runs} – ${gi.opponent_name || 'Opponent'} ${gi.opponent_runs}`
         : '';
       gameBanner.innerHTML = `<strong>Game detected:</strong> 📅 ${gi.game_date} · ${venue} vs ${gi.opponent_name || '?'}${score}`;
       gameBanner.style.display = 'block';
@@ -663,7 +665,7 @@
     processBtn.innerHTML = '<span class="spinner"></span>Processing…';
     resultsDiv.innerHTML = '';
 
-    const gameType = document.querySelector('input[name=game_type]:checked')?.value || 'tournament';
+    const gameType = document.querySelector('input[name=game_type]:checked')?.value || 'regular';
     const tVal    = tournamentSelect.value;
     const tName   = gameType !== 'tournament' ? ''
                   : tVal === '__new__' ? newTournamentName.value.trim()
@@ -683,9 +685,9 @@
     try {
       const resp = await fetch('/upload', { method: 'POST', body: form });
       const data = await resp.json();
-      renderResults(data);
+      renderResults(data.results, data.report_id);
       // Reset on success
-      const anySuccess = data.some(r => r.status === 'success');
+      const anySuccess = data.results.some(r => r.status === 'success');
       if (anySuccess) {
         selectedFiles = [];
         pbpText.value = '';
@@ -784,8 +786,18 @@
   });
 
   // ── Render results ────────────────────────────────────────────────────────
-  function renderResults(items) {
+  function renderResults(items, reportId) {
     resultsDiv.innerHTML = '';
+    if (reportId) {
+      const cta = document.createElement('a');
+      cta.href = `/reports/${reportId}`;
+      cta.className = 'view-report-cta';
+      cta.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:.5rem;' +
+        'margin-bottom:1rem;padding:.75rem 1.25rem;background:#0ea5e9;color:#fff;font-weight:600;' +
+        'font-size:.9rem;border-radius:8px;text-decoration:none;';
+      cta.textContent = 'View Report →';
+      resultsDiv.appendChild(cta);
+    }
     items.forEach(item => {
       const cls  = item.status === 'success' ? 'success' : 'error';
       const icon = item.status === 'success' ? '✅' : '❌';

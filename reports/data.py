@@ -3,6 +3,27 @@ Pull all data needed to generate a tournament analysis report.
 Returns a structured dict that gets passed to the AI and rendered into tables.
 """
 
+def _distinct_short_names(name_a, name_b, fallback_a="A", fallback_b="B"):
+    """
+    Line-score short labels for two teams shown side by side. Taking each
+    name's first word breaks when both teams share one (e.g. two Sierra
+    Madre-league teams: "Madre Yankees" vs "Madre Twins" both shorten to
+    "Madre") — fall back to each name's last word when the first-word
+    shorthand would collide, then to the full name if even that collides.
+    """
+    words_a = name_a.split() if name_a else []
+    words_b = name_b.split() if name_b else []
+    short_a = words_a[0] if words_a else fallback_a
+    short_b = words_b[0] if words_b else fallback_b
+    if short_a.lower() == short_b.lower() and short_a:
+        short_a = words_a[-1] if len(words_a) > 1 else short_a
+        short_b = words_b[-1] if len(words_b) > 1 else short_b
+        if short_a.lower() == short_b.lower():
+            short_a = name_a or fallback_a
+            short_b = name_b or fallback_b
+    return short_a, short_b
+
+
 def get_tournament_data(sb, tournament_id: str, team_id: str, team_name: str) -> dict:
     """
     Return a complete data payload for one tournament.
@@ -519,15 +540,16 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         return [by_inning.get(i, "") for i in range(1, max_inning + 1)]
 
     opponent_name = game.get("opponent_name") or "Opponent"
+    opp_short, team_short = _distinct_short_names(opponent_name, team_name, "Opp", "Team")
     header_block = {
         "has_line_score": has_line_score,
         "line_header": [str(i) for i in range(1, max_inning + 1)],
         "visitor": {
-            "label": opponent_name, "short": opponent_name.split()[0] if opponent_name else "Opp",
+            "label": opponent_name, "short": opp_short,
             "cells": cells_for("opponent"), "r": game.get("opponent_runs") or 0, "h": opp_h, "e": opp_e,
         },
         "home": {
-            "label": team_name, "short": team_name.split()[0] if team_name else "Team",
+            "label": team_name, "short": team_short,
             "cells": cells_for("storm"), "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
         },
     }

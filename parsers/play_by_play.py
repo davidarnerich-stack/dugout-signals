@@ -2,7 +2,7 @@
 import io
 import re
 from docx import Document
-from .common import build_player_map, resolve_player
+from .common import build_player_map, resolve_player, team_name_regex
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 RESULT_TYPES = {
@@ -83,13 +83,25 @@ def _get_paras_from_text(raw_text: str):
 def _is_narrative(paras):
     return any("PLAY-BY-PLAY" in p.upper() for p in paras[:3])
 
-def _parse_score(text):
+def _parse_score(text, we_are_away=None):
+    """
+    Score lines use GameChanger's auto-generated per-team abbreviation (e.g.
+    "STRM" for Storm, "YANK" for Yankees — unpredictable, not worth trying to
+    recognize by name). Instead, rely on the same left-is-visitor convention
+    already verified for the box score PDF's line score: whichever side is
+    us was already determined once from the game's first inning header
+    (`we_are_away`, passed in by the caller) — that determines which column
+    is ours here, not the abbreviation text itself. `we_are_away=None` (not
+    yet determined) falls back to the literal "STRM" match rather than
+    guessing, so it degrades no worse than before this fix.
+    """
     m = SCORE_RE.search(text)
     if not m: return None,None,None
     t1,s1,t2,s2 = m.group(1),int(m.group(2)),m.group(3),int(m.group(4))
     outs = int(m.group(5)) if m.group(5) else None
-    if "STRM" in t1.upper(): return s1,s2,outs
-    return s2,s1,outs
+    if we_are_away is None:
+        return (s1,s2,outs) if "STRM" in t1.upper() else (s2,s1,outs)
+    return (s1,s2,outs) if we_are_away else (s2,s1,outs)
 
 def _parse_outs(text):
     m = OUTS_RE.match(text.strip())
@@ -120,18 +132,50 @@ def _extract_batter_narr(para):
     if 1<=len(words)<=4 and words[0][0].isupper(): return raw
     return None
 
-def _update_inning(inning_scores, inning, half, score_storm, score_opp):
+def _update_inning(inning_scores, inning, half, score_storm, score_opp, closed):
+    """
+    Commit the runs scored in the current half-inning as (cumulative score
+    now) minus (cumulative score at the half-inning's start). GameChanger
+    play-by-play can signal the end of a half-inning two ways for the same
+    half-inning — the 3rd out landing mid-PA, and a separate "Inning Ended"
+    marker block right after it — so callers must only apply this once per
+    half-inning; a second call would subtract the just-committed delta
+    (already small) from the game's cumulative score instead of the
+    half-inning's starting score, producing a wildly inflated inning total.
+    `closed` is a set of (inning,half) keys already committed this game.
+    """
     if not inning or not half: return
+    key = (inning,half)
+    if key in closed: return
+    closed.add(key)
     ks,ko = (inning,half,"storm"),(inning,half,"opponent")
     inning_scores[ks] = score_storm - inning_scores.get(ks,0)
     inning_scores[ko] = score_opp  - inning_scores.get(ko,0)
 
 
+def _batting_team_matcher(team_name):
+    """
+    Inning headers ("Top 1st - {Team Name}") name whichever team is currently
+    batting. Match against the coach's real team_name (same pattern used for
+    box score opponent detection) instead of a hardcoded literal — otherwise
+    every non-Storm team has ALL of its own plate appearances misclassified
+    as the opponent's, and vice versa.
+    """
+    pattern = team_name_regex(team_name)
+    if not pattern:
+        return lambda text: "opponent"
+    compiled = re.compile(pattern, re.I)
+    return lambda text: "storm" if compiled.search(text) else "opponent"
+
+
 # ── GameChanger parser ─────────────────────────────────────────────────────────
-def _parse_gc(paras):
+def _parse_gc(paras, team_name=""):
+    is_our_team = _batting_team_matcher(team_name)
     pas,inning_scores = [],{}
     inning=half=batting_team=pitcher=None
     outs=score_storm=score_opp=0; pa_sequence=0
+    closed_innings=set()
+    we_are_away=None   # set once from the game's first "Top" header — visitor always bats first
 
     blocks=[]
     cur_result=None; cur_block=[]
@@ -151,13 +195,15 @@ def _parse_gc(paras):
             m=re.match(r"^(Top|Bottom)\s+(\d+)\w*\s+-\s+(.+)$",block_paras[0])
             if m:
                 half=m.group(1).lower(); inning=int(m.group(2))
-                batting_team="storm" if "storm" in m.group(3).lower() else "opponent"
+                batting_team=is_our_team(m.group(3))
+                if we_are_away is None and half=="top":
+                    we_are_away = (batting_team=="storm")
                 outs=0
                 inning_scores.setdefault((inning,half,"storm"),score_storm)
                 inning_scores.setdefault((inning,half,"opponent"),score_opp)
             continue
         if result_type=="Inning Ended":
-            _update_inning(inning_scores,inning,half,score_storm,score_opp)
+            _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
             outs=0; continue
 
         all_text=" ".join(block_paras)
@@ -172,7 +218,7 @@ def _parse_gc(paras):
 
         new_storm=new_opp=None; outs_after=None
         for line in block_paras:
-            s,o,oa=_parse_score(line)
+            s,o,oa=_parse_score(line, we_are_away)
             if s is not None: new_storm,new_opp=s,o
             if oa is not None: outs_after=oa
             oa2=_parse_outs(line)
@@ -211,36 +257,38 @@ def _parse_gc(paras):
         if new_storm is not None: score_storm,score_opp=new_storm,new_opp
         if outs_after is not None:
             if outs_after>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp)
+                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
             else: outs=outs_after
         else:
             outs=min(outs+outs_rec,3)
             if outs>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp)
+                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
     return pas,inning_scores
 
 
 # ── Narrative parser ───────────────────────────────────────────────────────────
-def _parse_narrative(paras):
+def _parse_narrative(paras, team_name=""):
+    is_our_team = _batting_team_matcher(team_name)
     pas,inning_scores=[],{}
     inning=half=batting_team=None
     outs=score_storm=score_opp=0; pa_sequence=0; pitcher=None
+    closed_innings=set()
 
     for para in paras:
         if any(k in para.upper() for k in ("PLAY-BY-PLAY","FINAL:","STRM:")):
             if not re.match(r"^(TOP|BOTTOM)",para,re.I): continue
         if re.match(r"^FINAL\s+(TOP|BOTTOM)",para,re.I):
-            _update_inning(inning_scores,inning,half,score_storm,score_opp)
+            _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
             outs=0; continue
 
         m=re.match(r"^(TOP|BOTTOM)\s+(\d+)(?:ST|ND|RD|TH)\s*[-–—]\s*(.+?)(?:\s+batting)?$",
                    para.strip(),re.I)
         if m:
             half=m.group(1).lower(); inning=int(m.group(2))
-            batting_team="storm" if "storm" in m.group(3).lower() else "opponent"
+            batting_team=is_our_team(m.group(3))
             outs=0
             inning_scores.setdefault((inning,half,"storm"),score_storm)
             inning_scores.setdefault((inning,half,"opponent"),score_opp)
@@ -283,13 +331,13 @@ def _parse_narrative(paras):
         if new_storm is not None: score_storm,score_opp=new_storm,new_opp
         if outs_after is not None:
             if outs_after>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp)
+                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
             else: outs=outs_after
         else:
             outs=min(outs+outs_rec,3)
             if outs>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp)
+                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
     return pas,inning_scores
@@ -362,8 +410,8 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
     else:
         paras = _get_paras_from_docx(source)
 
-    pa_dicts, inning_scores = (_parse_narrative(paras) if _is_narrative(paras)
-                               else _parse_gc(paras))
+    pa_dicts, inning_scores = (_parse_narrative(paras, team_name) if _is_narrative(paras)
+                               else _parse_gc(paras, team_name))
 
     # Resolve game_id (legacy filename path)
     if game_id is None and filename:
@@ -424,7 +472,7 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
     storm_pas=sum(1 for p in pa_dicts if p["batting_team"]=="storm")
     return {
         "message": (f"{len(inserted)} plate appearances, {len(all_bre)} base running events, "
-                    f"{len(is_rows)} inning score rows. Storm PAs: {storm_pas}."),
+                    f"{len(is_rows)} inning score rows. {team_name} PAs: {storm_pas}."),
         "details": [f"PA #{p['pa_sequence']}: {p['batter_name']} — {p['result']}"
                     for p in pa_dicts if p["batting_team"]=="storm"][:20],
     }

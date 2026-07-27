@@ -401,7 +401,7 @@ def onboarding():
 @app.route("/upload", methods=["GET"])
 @auth_required
 def index():
-    return render_template("upload.html")
+    return render_template("upload.html", team_name=session["team_name"])
 
 
 # ── DS-60: Dashboard (empty state only — DS-17 AC #3 carve-out) ────────────────
@@ -586,6 +586,7 @@ def api_tournaments():
     resp = (
         sb.table("tournaments")
         .select("tournament_id, name, season, year")
+        .eq("team_id", session["team_id"])
         .order("year", desc=True)
         .order("name")
         .execute()
@@ -819,19 +820,22 @@ def upload():
     # AC #1 only requires "detect step passes, commit step succeeds").
     box_score_ok = any(r["status"] == "success" and r["filename"] == file_data.get("box_score", (None,))[0]
                         for r in results)
+    report_id = None
     if game_id and box_score_ok:
-        _generate_single_game_report_safe(sb, game_id, team_id, team_name)
+        report_id = _generate_single_game_report_safe(sb, game_id, team_id, team_name)
 
-    return jsonify(results)
+    return jsonify({"results": results, "report_id": report_id})
 
 
 def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
     """Best-effort single-game report generation — never breaks the upload
     response. Silently skips if ANTHROPIC_API_KEY isn't configured (matches
-    the existing /reports/generate guard) rather than erroring the upload."""
+    the existing /reports/generate guard) rather than erroring the upload.
+    Returns the new report_id so the upload UI can link straight to it, or
+    None if generation was skipped/failed."""
     ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     if not ANTHROPIC_KEY:
-        return
+        return None
     try:
         team_resp = (sb.table("teams").select("sport, age_level, governing_body")
                      .eq("id", team_id).limit(1).execute())
@@ -846,7 +850,7 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
         g = d["game"]
 
         import json
-        sb.table("reports").insert({
+        resp = sb.table("reports").insert({
             "report_type":     "single_game",
             "game_id":         game_id,
             "team_id":         team_id,
@@ -864,10 +868,11 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
             "runs_allowed":    g.get("opponent_runs"),
             "status":          "complete",
         }).execute()
+        return resp.data[0]["report_id"]
     except Exception:
         # Best-effort: a failed report generation should never surface as an
         # upload failure to the coach. (Could log server-side in the future.)
-        pass
+        return None
 
 
 @app.route("/api/games")
@@ -906,7 +911,13 @@ def api_update_game(game_id):
         else:            update["result"] = "T"
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    sb.table("games").update(update).eq("game_id", game_id).execute()
+    resp = (
+        sb.table("games").update(update)
+        .eq("game_id", game_id).eq("team_id", session["team_id"])
+        .execute()
+    )
+    if not resp.data:
+        return jsonify({"error": "Game not found"}), 404
     return jsonify({"ok": True})
 
 
@@ -1013,7 +1024,8 @@ def report_view(report_id):
         from reports.data import get_single_game_data
         d = get_single_game_data(sb, report["game_id"], session["team_id"], report["team_name"])
         return render_template("game_report.html", report=report, sections=sections,
-                                header_block=header_block, d=d)
+                                header_block=header_block, d=d,
+                                game_type=d["game"].get("game_type"))
 
     # Reload live data for tables (so edits to game data show fresh)
     from reports.data import get_tournament_data
