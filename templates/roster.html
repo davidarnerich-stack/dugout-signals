@@ -557,6 +557,7 @@ function openEditPanel(id) {
   loadNotes(id);
 
   originalSnapshot = JSON.stringify(collectFormValues());
+  document.querySelector('.sheet-body').scrollTop = 0;
   document.getElementById('panel-overlay').classList.add('open');
 }
 
