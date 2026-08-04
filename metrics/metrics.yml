@@ -1,0 +1,424 @@
+# DS-74: Youth metric computation layer — canonical metric config.
+#
+# Source of truth for formulas/corrections: Requirements/Youth_Sabermetrics/
+# ds29-metric-extraction.md (this session's local copy). Three known errors in
+# the author's companion spreadsheet are already corrected there and must not
+# be reproduced: Corrected IP's threshold typo, HH%'s sign on SF, and YFIP's
+# printed FB denominator.
+#
+# `direction` is keyed on the namespaced `key`, never on `display_name` —
+# bat_bb_pct is higher_better, pit_bb_pct is lower_better. Keying on name
+# would ship a signal congratulating a pitcher for walking batters.
+#
+# `min_games`/`min_sample`/`stabilizes_early` reflect only what the source
+# material actually states (an explicit "exclude from single-game report",
+# an explicit stability ordering). Where no numeric threshold is sourced,
+# the field is left null rather than inventing a precise-looking number —
+# the same mistake DS-79 exists to fix, just in a config file instead of an
+# AI prompt.
+#
+# Catching metrics (PB/inning, CS%, SB/inning) are DS-75's scope, not this
+# file's — DS-29 counts them toward its "twenty" but ships them separately.
+# `pit_fip` is included here even though this layer doesn't compute it (it's
+# read directly from pitching_stats.fip, already provided by GameChanger) —
+# it still needs to flow through this layer's suppression logic, since
+# requirement #6 explicitly suppresses it at 8U alongside the walk metrics.
+
+metrics:
+
+  # ── Batting ──────────────────────────────────────────────────────────────
+  - key: bat_bb_pct
+    display_name: BB%
+    bucket: batting
+    subject: player
+    formula: "BB / PA * 100"
+    source_fields: [walks, plate_appearances]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: true     # sourced: "more stable than AVG, SLG, and OBP"
+    min_sample: null
+    min_games: null
+    suppressed_when: [walks_disabled]
+
+  - key: iso
+    display_name: ISO
+    bucket: batting
+    subject: player
+    formula: "SLG - AVG"
+    source_fields: [slugging_percentage, batting_average]
+    scale: {type: proportion, range: [0, 1], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: true     # sourced: "more stable than AVG and SLG"
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "Understates power at youth level — ROE isn't counted as an XBH, and ROE outnumbers XBH 2:1 in the sample."
+
+  - key: obpe
+    display_name: OBPE
+    bucket: batting
+    subject: player
+    formula: "(H + BB + ROE) / (AB + BB + HBP + SF)"
+    source_fields: [hits, walks, reached_on_error, at_bats, hit_by_pitch, sacrifice_flies]
+    scale: {type: proportion, range: [0, 1], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    superseded_by: {metric: obp, when: {league_age_min: 13}, ambiguous_from: 11}
+    notes: "Two changes vs OBP: ROE added to numerator, HBP removed from numerator only (denominator keeps HBP). Explicit proportion despite the percent-like name — do not multiply by 100."
+
+  - key: opse
+    display_name: OPSE
+    bucket: batting
+    subject: player
+    formula: "OBPE + SLG"
+    source_fields: [slugging_percentage]
+    scale: {type: proportion, range: [0, 2], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    superseded_by: {metric: ops, when: {league_age_min: 13}, ambiguous_from: 11}
+    notes: "SLG term is standard GameChanger SLG, not an ROE-inclusive variant — those were tested and rejected by the author."
+
+  - key: hh_pct
+    display_name: HH%
+    bucket: batting
+    subject: player
+    formula: "HHB / (AB - K + SF) * 100"
+    source_fields: [hard_hit_balls, at_bats, strikeouts, sacrifice_flies]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: true
+    stabilizes_early: true     # sourced: "informative in small samples, before other statistics stabilize"
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "Spreadsheet has a sign error on SF (subtracts instead of adds) — corrected here. More repeatable than batting average."
+
+  - key: bskl
+    display_name: BSKL
+    bucket: batting
+    subject: player
+    formula: "league_age <= 10: (BB + 0.5*HHB + 0.5*XBH) / PA | league_age >= 11: (BB + HBP + 0.5*HHB + 0.5*XBH) / PA"
+    source_fields: [walks, hard_hit_balls, extra_base_hits, plate_appearances, hit_by_pitch, league_age_at_game]
+    scale: {type: proportion, range: [0, 1], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: true
+    stabilizes_early: true     # sourced: grouped with HH% as informative before other stats stabilize
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    replaces: qab_pct
+    notes: "Single metric with an age-variant formula (not two metrics) — variant selected from league_age_at_game, not the player's current age. Only difference between variants is the HBP term. Only metric in the set where thresholds are described as cross-level stable (2022 MLB properties nearly identical to a 14U softball team)."
+
+  - key: yrpi
+    display_name: YRPI
+    bucket: batting
+    subject: player
+    formula: "y*R + y*RBI, where y = teamR / (teamR + teamRBI)"
+    source_fields: [runs_scored, runs_batted_in, team_runs_scored, team_rbi]
+    scale: {type: count, range: [0, null], precision: 2}
+    direction: higher_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: 2               # sourced: "very inaccurate on one game's data ... should not be used to judge a single-game contribution"
+    suppressed_when: []
+    lineup_bias: true
+    team_dependent: true
+    notes: "Recompute at read time — never cache per player. y must be computed over the SAME window as the player values, or the conservation property (player YRPI sums to team runs) silently breaks. Excluded from single-game reports."
+
+  - key: yrpipa
+    display_name: YRPI/PA
+    bucket: batting
+    subject: player
+    formula: "YRPI / PA"
+    source_fields: [plate_appearances]
+    scale: {type: rate, range: [0, null], precision: 3}
+    direction: higher_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: 2               # sourced: "needs several games before conclusions are drawn"
+    suppressed_when: []
+    lineup_bias: true
+    team_dependent: true
+    threshold_mode: relative_to_team   # benchmark is team R/PA, not an absolute number
+    notes: "Excluded from single-game reports, same as YRPI."
+
+  # ── Baserunning ──────────────────────────────────────────────────────────
+  - key: score_pct
+    display_name: SCORE%
+    bucket: baserunning
+    subject: player
+    formula: "R / (H + BB + HBP + CI + FC + ROE) * 100"
+    source_fields: [runs_scored, hits, walks, hit_by_pitch, catcher_interference, fielders_choice, reached_on_error]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: higher_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    lineup_bias: true
+    threshold_mode: relative_to_team
+    notes: "The only metric in the Baserunning bucket — DS-29 originally misfiled it under Batting, which would have shipped Baserunning empty. Spreadsheet omits the x100; corrected here. Denominator (times on base) is often 0-2 in a single game — high small-sample risk."
+
+  # ── Pitching ─────────────────────────────────────────────────────────────
+  - key: pit_bb_pct
+    display_name: BB%
+    bucket: pitching
+    subject: player
+    formula: "BB / BF * 100"
+    source_fields: [walks_allowed, batters_faced]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: lower_better        # inverted vs. bat_bb_pct — same display name, opposite direction, must key on namespaced key
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: [walks_disabled]
+    notes: "Not provided by GameChanger directly. Gate: BF > 0."
+
+  - key: pit_fip
+    display_name: FIP
+    bucket: pitching
+    subject: player
+    formula: "(GameChanger-provided; not computed by this layer)"
+    source_fields: [fip]
+    scale: {type: rate, range: [0, null], precision: 2}
+    direction: lower_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: [walks_disabled]   # requirement #6 names fip explicitly alongside the walk metrics
+    notes: "Passthrough of the stored pitching_stats.fip column — GameChanger provides it free and it ranks pitchers identically to YFIP on real data (see yfip below). Still routed through this layer so 8U suppression applies to it too."
+
+  - key: k_minus_bb_pct
+    display_name: K-BB%
+    bucket: pitching
+    subject: player
+    formula: "K% - BB%"
+    source_fields: [strikeouts, batters_faced, walks_allowed]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: [walks_disabled]
+    notes: "Negative is normal and expected for a developing pitcher — author frames it as a growth target, not a red flag."
+
+  - key: weak
+    display_name: WEAK
+    bucket: pitching
+    subject: player
+    formula: "(WEAK% / 100) * ((H - HR) / BABIP + HR)"
+    source_fields: [weak_pct, hits_allowed, home_runs_allowed, babip]
+    scale: {type: count, range: [0, null], precision: 3}
+    direction: higher_better    # more estimated weak contact induced = better pitching
+    metric_class: skill
+    proprietary: false          # WEAK% is GameChanger-native; only the estimator is the author's
+    attribution_required: true  # the count estimator is the author's method — attribute the estimator, not the raw WEAK% field
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: true
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "Guard BABIP = 0 -> null. Estimator degrades at single-game grain: when H is small, a dominant outing can compute toward zero rather than a high value — the estimator penalizes the pitcher's best performances at small sample sizes. Unverified as a documented min_games gate; flagging the mechanism rather than asserting a threshold."
+
+  - key: pskl
+    display_name: PSKL
+    bucket: pitching
+    subject: player
+    formula: "(K - (BB + HBP) + WEAK) / BF"
+    source_fields: [strikeouts, walks_allowed, hit_batters, batters_faced]
+    scale: {type: proportion, range: [null, 1], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: true
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    threshold_mode: absolute_by_competition_tier
+    notes: "Can go negative — despite the proportion-like scale it is NOT bounded to [0,1] the way a true percentage is. Guard BABIP = 0 (feeds WEAK) -> null. At youth level PSKL is almost entirely the WEAK term, so missing contact tagging doesn't just degrade PSKL, it collapses the whole signal. Inflated at 8U (no walk penalty possible) — not comparable across age/sport/team unless walks_enabled and contact tagging are both verified for every team being compared."
+
+  - key: fpr
+    display_name: FPR
+    bucket: pitching
+    subject: player
+    formula: "OverHR + (NonHRRunners * NonHRScore%), where NonHRRunners = BB + HBP + 0.5*(BF - outs - OverHR - BB - HBP) and NonHRScore% = (R - OverHR) / (BF - outs - OverHR)"
+    source_fields: [home_runs_allowed, walks_allowed, hit_batters, batters_faced, runs_allowed]
+    scale: {type: count, range: [0, null], precision: 3}
+    direction: lower_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "OverHR approximated by total HR — GameChanger has no inside-the-park distinction, and the author's own spreadsheet makes the same substitution; bias grows at younger ages where inside-the-park HRs are more common. outs comes from Corrected IP (stored as an integer), never from float division. NOTE: the extraction doc's own FPR guard says 'return 0' for a zero (BF-outs-OverHR) denominator, but DS-74 requirement #11 states the general rule as 'return null, never a divide error' for this exact case — a real conflict between the two source documents. Implemented per the ticket's explicit requirement (null), since it is the story-level authoritative spec; flagging the discrepancy rather than silently picking a side."
+
+  - key: fra
+    display_name: FRA
+    bucket: pitching
+    subject: player
+    formula: "(FPR / CorrectedIP) * L"
+    source_fields: []
+    scale: {type: rate, range: [0, null], precision: 3}
+    direction: lower_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "L is teams.regulation_innings-derived typical_game_innings (configured/derived team value, per requirement #8), not a per-window recomputation — this is what keeps FRA and YRAL player-scoped instead of team-dependent."
+
+  - key: yfip
+    display_name: YFIP
+    bucket: pitching
+    subject: player
+    formula: "(13*FB*(TmHR/TmFB) + 3*(BB+HBP) - 2*K) / IP + TmERA*(L/GameChangerL)"
+    source_fields: []
+    scale: {type: rate, range: [null, null], precision: 3}
+    direction: lower_better
+    metric_class: skill
+    proprietary: true
+    attribution_required: true
+    surfaced: false             # DS-29 decision: store, do not display — FIP (pit_fip above) ranks identically on real data and needs no contact-quality fields
+    signal_eligible: false
+    contact_dependent: true
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: [walks_disabled]
+    team_dependent: true
+    notes: "Book typo corrected: printed FB formula divides by 100, should divide by BABIP (confirmed by prose, the parallel TmFB formula, and the spreadsheet). Most fragile metric in the set — needs FB%, BABIP, and five team-season terms including a reverse-engineered GameChangerL. Recompute at read time, never cache per player."
+
+  # ── Fielding / Team ──────────────────────────────────────────────────────
+  - key: def_eff
+    display_name: DefEff
+    bucket: fielding
+    subject: team
+    formula: "1 - (OppH + TeamE) / BIP, where BIP = OppH / OppBABIP"
+    source_fields: []
+    scale: {type: proportion, range: [0, 1], precision: 3}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: true
+    stabilizes_early: false
+    min_sample: null
+    min_games: 2               # sourced: "wait for multiple games ... check every few games"; excluded from single-game report
+    suppressed_when: []
+    threshold_mode: absolute_by_age_band
+    notes: "Team-only — player cells render as a dash, never a value. Uses total errors (not just ROE) and HR in the numerator deliberately per the author; the accurate version needs data GameChanger doesn't provide, and this is his explicit recommended approximation. Guard OppBABIP = 0 -> null (BIP is estimated from OppH/OppBABIP, and single-game BABIP is a tiny-sample figure). Not comparable across teams playing different field dimensions."
+
+  - key: yral
+    display_name: YRAL
+    bucket: team_defense
+    subject: player
+    formula: "(R / CorrectedIP) * L"
+    source_fields: [runs_allowed]
+    scale: {type: rate, range: [0, null], precision: 3}
+    direction: lower_better
+    metric_class: credit
+    proprietary: true
+    attribution_required: true
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    threshold_mode: team_relative_only
+    notes: "Computed per pitcher but bucketed as Team Defense, not Pitching — it predicts what the WHOLE DEFENSE allows with this pitcher in, not the pitcher's own quality. Uses total R, not ER, deliberately. L is configured the same way as FRA's, keeping this player-scoped rather than team-dependent."

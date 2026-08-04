@@ -44,11 +44,19 @@ PIT_COLS = {
     "p_per_ip": 88, "fip": 95, "strike_pct": 96, "fps_pct": 97,
     "fpso_pct": 98, "fpsw_pct": 99, "fpsh_pct": 100, "bb_per_inn": 101,
     "zero_bb_inn": 102, "sm_pct": 106, "k_per_bf": 107, "k_per_bb": 108,
+    # DS-74: pitching-side contact-quality columns. Feed WEAK/PSKL (weak_pct,
+    # babip) and YFIP (fly_ball_pct) directly, and babip also drives the
+    # pitching contact_data_available check (requirement #10) — these are the
+    # pitching-section counterparts of the batting weak_pct/fly_ball_pct/babip
+    # DS-43 already captured; missed at the time because the pitching section
+    # wasn't in scope for that pass.
+    "weak_pct": 109, "fly_ball_pct": 114, "babip": 116,
 }
 PIT_FLOAT = {
     "innings_pitched", "era", "whip", "batting_average_against",
     "p_per_ip", "fip", "strike_pct", "fps_pct", "fpso_pct", "fpsw_pct",
     "fpsh_pct", "bb_per_inn", "sm_pct", "k_per_bf", "k_per_bb",
+    "weak_pct", "fly_ball_pct", "babip",
 }
 
 # Rate/percentage stats GameChanger writes as 0.00 when there's no data — store
@@ -300,11 +308,15 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     header_row = rows[1] if len(rows) > 1 else []
 
     data_rows = []
+    totals_row = None
     for r in rows[2:]:
         r += [""] * (200 - len(r))
         fc = r[0].strip().strip('"')
         lc = r[1].strip().strip('"')
-        if fc in ("", "Totals", "Glossary") or not lc:
+        if fc == "Totals":
+            totals_row = r
+            continue
+        if fc in ("", "Glossary") or not lc:
             continue
         data_rows.append(r)
 
@@ -326,6 +338,21 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
             game_action = "created"
     else:
         game_action = "linked"
+
+    # DS-74: capture GameChanger's own team-aggregate "Totals" row verbatim,
+    # rather than re-deriving team-level rate stats (BABIP, FB%, games played)
+    # by summing/weighting individual player rows — that approximation was
+    # verified against the reference workbooks to NOT match GameChanger's own
+    # computation closely enough for the metrics layer's 3-decimal-place
+    # validation. Reuses the same column-mapping functions as a player row;
+    # the Totals row has identical column layout, just team-summed values.
+    if totals_row is not None:
+        team_totals = {
+            "batting": _stat_dict(totals_row, BAT_COLS, BAT_FLOAT),
+            "pitching": _pitching_dict(totals_row),
+            "fielding": _fielding_dict(totals_row, offset=fld_offset),
+        }
+        sb.table("games").update({"team_totals": team_totals}).eq("game_id", game_id).execute()
 
     players_processed = []
     for row in data_rows:

@@ -120,6 +120,33 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   `source` pattern; the free-text input itself was already built and working on the
   frontend, only the backend storage was wrong.
 
+- `ds74_pitching_contact_quality_columns` — additive, safe. Added
+  `pitching_stats.weak_pct`, `.fly_ball_pct`, `.babip`. Found while implementing DS-74:
+  DS-43 ("capture all 197 columns") captured these fields on the batting side but missed
+  their pitching-section counterparts entirely — WEAK, PSKL, and YFIP all need pitching
+  BABIP, and requirement #10's pitching contact-data-missing detection needs it too.
+  Confirmed the raw export columns exist at the same absolute offsets for both sports
+  (upstream of the sport-dependent pitch-type-block divergence at col 118), so no
+  offset logic needed, unlike DS-78's fielding fix. Not backfilled on existing games —
+  requires a re-import (parser change, not a data migration) to populate.
+
+- `ds74_games_team_totals` — additive, safe. Added `games.team_totals jsonb`. GameChanger's
+  stats CSV includes its own team-aggregate "Totals" row, which the parser has always
+  discarded (`if fc in ("", "Totals", "Glossary")`). DS-74's team-dependent metrics (FRA,
+  YRAL, YFIP, DefEff) need GameChanger's own computed team BABIP/FB%/games-played —
+  verified against the reference workbooks that re-deriving these by summing/weighting
+  individual player rows drifts from GameChanger's own computation (team games-pitched in
+  particular isn't summable from individual pitchers' own games-pitched counts at all).
+  Parser now captures the Totals row verbatim via the same column-mapping functions used
+  for player rows. Not backfilled on existing games — requires a re-import.
+
+  **Both DS-74 migrations need a fourth re-import pass** (Storm's 4 games, Yankees' 7)
+  before FRA/YRAL/YFIP/DefEff and the pitching contact-quality metrics will compute
+  correctly against production data — the columns exist but are null on every game
+  uploaded before this release. Flag to David before this ships; the metrics layer itself
+  handles nulls safely (falls back to no team context / no contact-dependent metrics
+  rather than erroring), so this is a completeness gap, not a crash risk.
+
 - `ds76_signal_history` — additive, safe. New `signal_history` table (append-only: RLS has
   only `select_own_team`/`insert_own_team`, no update/delete policies at all) with
   `team_id`/`game_id` FKs, `signal_key`, `bucket`, `headline`, `interpretation`,
