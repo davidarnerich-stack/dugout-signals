@@ -530,7 +530,11 @@ def dashboard():
                 t_to_key = {f"T{i+1}": k for i, k in enumerate(CARD_ORDER)}
                 history_resp = (
                     sb.table("signal_history")
-                    .select("signal_key, headline, interpretation")
+                    # id + why_text: DS-69 explanation view. id is the "signal
+                    # instance" identifier feedback is stored against; a card
+                    # with no cached row (narrative generation failed or
+                    # hasn't run yet) simply has no explanation to open.
+                    .select("id, signal_key, headline, interpretation, why_text, games_in_sample")
                     .eq("team_id", session["team_id"])
                     .eq("game_id", last_game["game_id"])
                     .order("computed_at", desc=True)
@@ -545,6 +549,9 @@ def dashboard():
                     cached = cached_by_key.get(card["key"])
                     card["headline"] = cached["headline"] if cached else None
                     card["interpretation"] = cached["interpretation"] if cached else None
+                    card["why_text"] = cached["why_text"] if cached else None
+                    card["signal_history_id"] = cached["id"] if cached else None
+                    card["games_in_sample"] = cached["games_in_sample"] if cached else len(team_totals_list)
 
         # Summary line — games since last viewed, per DS-67 §7b. Never "this
         # week"; counts games because teams often play twice in a week and a
@@ -578,9 +585,15 @@ def dashboard():
                     {"dashboard_age_footnote_shown_count": shown_count + 1}
                 ).eq("id", session["team_id"]).execute()
 
-    from signals.team_signals import card_metric_rows as _card_metric_rows
+    from signals.team_signals import card_metric_rows as _card_metric_rows, card_context_chips as _card_context_chips
     for card in signal_cards:
         card["rows"] = _card_metric_rows(card)
+        # DS-69: explanation view's context chips. games_in_sample was set
+        # above from the cached signal_history row when present; falls back
+        # to 0 only if signal_cards exists without a matching history row
+        # (narrative generation failed at upload time) — chips still render,
+        # just without a precise window count.
+        card["context_chips"] = _card_context_chips(card, card.get("games_in_sample") or 0)
 
     # DS-68: reshapes the same signal_cards facts into the Offence/Defence
     # containment hierarchy — not a second computation pass. See
@@ -624,6 +637,32 @@ def api_bucket_tap():
         sb.table("bucket_taps").insert({"team_id": session["team_id"], "bucket": bucket}).execute()
     except Exception:
         pass
+    return jsonify({"ok": True})
+
+
+@app.route("/api/signals/<int:signal_history_id>/feedback", methods=["POST"])
+@auth_required
+def api_signal_feedback(signal_history_id):
+    """DS-69 req 5/6: Useful / Not-useful rating on one signal explanation
+    view instance. signal_history_id is the "signal instance" identifier —
+    signal_history is the closest stable one for team signals (there's no
+    separate per-view id; each computed-and-narrated card already gets one
+    row there per game commit). RLS scopes the insert to the caller's own
+    team, same as bucket_taps."""
+    data = request.get_json(silent=True) or {}
+    rating = (data.get("rating") or "").strip()
+    if rating not in ("useful", "not_useful"):
+        return jsonify({"error": "rating must be 'useful' or 'not_useful'"}), 400
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        sb.table("signal_feedback").insert({
+            "signal_history_id": signal_history_id,
+            "team_id": session["team_id"],
+            "coach_id": session["coach_id"],
+            "rating": rating,
+        }).execute()
+    except Exception:
+        return jsonify({"error": "Could not save feedback."}), 500
     return jsonify({"ok": True})
 
 
@@ -1078,6 +1117,7 @@ def _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name):
                 "bucket": c["bucket"],
                 "headline": c.get("headline"),
                 "interpretation": c.get("interpretation"),
+                "why_text": c.get("why_text"),
                 "metrics": card_metric_rows(c),
                 "raw_inputs": c["facts"],
                 "games_in_sample": len(team_totals_list),

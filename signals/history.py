@@ -36,6 +36,7 @@ def record_signal_history(sb, team_id, game_id, signals, *, age_band, contact_da
                 "bucket":          str,   # e.g. "Team Defence"
                 "headline":        str | None,   # generated copy, as rendered
                 "interpretation":  str | None,
+                "why_text":        str | None,   # DS-69: explanation view's "Why it might be happening"
                 "metrics":         list,  # [{"label":.., "value":.., "comparator":..}, ...]
                 "raw_inputs":      dict,  # underlying metric values, UNFORMATTED
                 "games_in_sample": int,
@@ -66,6 +67,7 @@ def record_signal_history(sb, team_id, game_id, signals, *, age_band, contact_da
         "bucket":           s["bucket"],
         "headline":         s.get("headline"),
         "interpretation":   s.get("interpretation"),
+        "why_text":         s.get("why_text"),
         "metrics":          s["metrics"],
         "raw_inputs":       s["raw_inputs"],
         "games_in_sample":  s["games_in_sample"],

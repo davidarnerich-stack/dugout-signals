@@ -13,6 +13,19 @@ not to invent anything beyond them. A signal card inventing a cause the way
 DS-79's original headline invented a walk and a wild pitch would be worse
 here, not better — these run every week, unattended, with no human review
 before a coach sees them.
+
+DS-69 (signal explanation view) adds a third line, WHY, generated in the
+same call as HEADLINE/INTERPRETATION — no extra Claude round trip. DS-69's
+"One thing to try" section reuses INTERPRETATION as-is: the existing
+system prompt already requires interpretation lines to suggest rather than
+instruct ("worth a look higher in the order", never "move her up"), which
+is exactly what that section needs — writing a second, separate
+action-suggestion field would be redundant copy grounded in the same facts.
+WHY is genuinely new content: the dashboard card's headline+interpretation
+never explained a mechanism, and the explanation view's "why it might be
+happening" section needs one. DS-69's "What we saw" section needs no model
+call at all — it reads team_signals.card_metric_rows(card), the same
+code-generated rows already rendered on the card.
 """
 
 import anthropic
@@ -29,6 +42,11 @@ Interpretation lines SUGGEST, they never INSTRUCT — "worth a look higher in th
 "move her up". Ground every specific number or claim strictly in the facts given in the prompt.
 Never invent a cause, a mechanism, or a number not explicitly provided — if you don't have enough
 detail to explain WHY something happened, describe WHAT the data shows instead of guessing why.
+You will also write a WHY line — one sentence of age-appropriate interpretation, normalising where
+normal (e.g. "at this age that pattern usually tracks arm fatigue more than mechanics"). It may
+name a plausible, commonly-understood explanation for the pattern, but only in hedged language
+("often", "usually", "one common reason is") — never state a specific cause as fact when the facts
+given don't establish it.
 Do not use markdown syntax. Output will be inserted as plain text.
 """
 
@@ -37,7 +55,7 @@ _NO_INVENTION_NOTE = ("Ground every word in the facts above. Do not invent a cau
     "describe what the numbers show rather than guessing at a reason.")
 
 
-def _call(client, system, prompt, max_tokens=150):
+def _call(client, system, prompt, max_tokens=220):
     msg = client.messages.create(
         model=MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": prompt}],
@@ -45,21 +63,24 @@ def _call(client, system, prompt, max_tokens=150):
     return msg.content[0].text.strip()
 
 
-def _parse_headline_interpretation(text):
-    """Expects two lines: HEADLINE: ... / INTERPRETATION: ..."""
-    headline, interpretation = None, None
+def _parse_narrative_lines(text):
+    """Expects three lines: HEADLINE: ... / INTERPRETATION: ... / WHY: ..."""
+    headline, interpretation, why = None, None, None
     for line in text.splitlines():
         line = line.strip()
         if line.upper().startswith("HEADLINE:"):
             headline = line.split(":", 1)[1].strip()
         elif line.upper().startswith("INTERPRETATION:"):
             interpretation = line.split(":", 1)[1].strip()
-    return headline, interpretation
+        elif line.upper().startswith("WHY:"):
+            why = line.split(":", 1)[1].strip()
+    return headline, interpretation, why
 
 
-_RESPONSE_FORMAT = """Return exactly two lines, in this format, no other text:
+_RESPONSE_FORMAT = """Return exactly three lines, in this format, no other text:
 HEADLINE: <one sentence, plain-language claim, never a bare stat>
-INTERPRETATION: <one sentence, suggests rather than instructs>"""
+INTERPRETATION: <one sentence, suggests rather than instructs>
+WHY: <one sentence, age-appropriate interpretation of why this might be happening>"""
 
 
 def _genuine_zero_prompt(claim_hint):
@@ -99,7 +120,7 @@ Games in sample: {f['games']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 def generate_run_gap(client, sport, team_name, age_level, card):
@@ -115,7 +136,7 @@ Games in sample: {f['games']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 def generate_offence_funnel(client, sport, team_name, age_level, card):
@@ -132,7 +153,7 @@ Team SCORE% (share of times on base that became runs): {f['team_score_pct']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 def generate_fielding_conversion(client, sport, team_name, age_level, card):
@@ -148,7 +169,7 @@ Games in sample: {f['games']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 def generate_catching_load(client, sport, team_name, age_level, card):
@@ -185,7 +206,7 @@ Caught-stealing rate: {f['cs_pct']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 def generate_command_vs_velocity(client, sport, team_name, age_level, card):
@@ -207,7 +228,7 @@ Staff size compared: {f['staff_size']}
 {_NO_INVENTION_NOTE}
 
 {_RESPONSE_FORMAT}"""
-    return _parse_headline_interpretation(_call(client, system, prompt))
+    return _parse_narrative_lines(_call(client, system, prompt))
 
 
 GENERATORS = {
@@ -221,7 +242,7 @@ GENERATORS = {
 
 
 def generate_all_narratives(anthropic_key, sport, team_name, age_level, cards):
-    """Fills in headline/interpretation on each card dict in place. Best-
+    """Fills in headline/interpretation/why on each card dict in place. Best-
     effort per card — one card's generation failure never blocks the others
     (same independent-section-failure pattern as reports/generate.py).
 
@@ -241,12 +262,13 @@ def generate_all_narratives(anthropic_key, sport, team_name, age_level, cards):
         try:
             return generator(client, sport, team_name, age_level, card)
         except Exception:
-            return None, None
+            return None, None, None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(cards) or 1) as pool:
         results = list(pool.map(_run, cards))
 
-    for card, (headline, interpretation) in zip(cards, results):
+    for card, (headline, interpretation, why) in zip(cards, results):
         card["headline"] = headline
         card["interpretation"] = interpretation
+        card["why_text"] = why
     return cards

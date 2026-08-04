@@ -348,3 +348,21 @@ def card_metric_rows(card):
             _row("BB% spread", f["bb_pct_spread"], 1, f"across {f['staff_size']} pitchers"),
         ]
     return []
+
+
+# ── DS-69: explanation-view context chips (bucket / window / players) ──────
+# Code-generated, same discipline as card_metric_rows — no model call, no
+# new computation, just reshaping facts already on the card. Team signals
+# rarely name individual players (that's a player-signal/DS-57 concept);
+# command_vs_velocity is the one card with a staff-size fact worth surfacing
+# as a chip here.
+
+def card_context_chips(card, games_in_sample):
+    f = card["facts"]
+    chips = [
+        {"label": "Bucket", "value": card["bucket"]},
+        {"label": "Window", "value": f"{games_in_sample} game{'s' if games_in_sample != 1 else ''} this season"},
+    ]
+    if card["key"] == "command_vs_velocity" and f.get("staff_size"):
+        chips.append({"label": "Staff", "value": f"{f['staff_size']} pitchers compared"})
+    return chips

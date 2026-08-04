@@ -235,6 +235,43 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   this is the same graceful "no headline" fallback already built and tested for exactly
   this case.
 
+- `ds69_signal_explanation_and_feedback` — additive, safe. Added `signal_history.why_text`
+  (nullable) and a new `signal_feedback` table (append-only, same select/insert-only RLS
+  pattern as `signal_history`/`bucket_taps`) storing per-coach Useful/Not-useful ratings
+  against a `signal_history` row. A follow-up migration in the same session,
+  `ds69_drop_unused_try_text`, dropped a `try_text` column added in the first pass once the
+  design settled on reusing `signal_history.interpretation` for the explanation view's "One
+  thing to try" section instead — the existing interpretation copy already suggests rather
+  than instructs (system prompt requirement from DS-67), so a second model-generated field
+  grounded in the same facts would have been redundant. Both migrations landed before any
+  deploy, so no production data ever had the dead column.
+
+  **DS-69 (signal explanation view), scoped this sprint to its DS-67 team-signals consumer
+  only** — DS-57 (player signals) is paused, see the DS-69 Jira scope comment for full
+  rationale. Tapping any of the six signal cards on the dashboard opens a bottom
+  sheet/modal (mobile/md+, matches `templates/roster.html`'s existing edit-sheet pattern,
+  Esc-to-close) with Headline / What we saw / Why it might be happening / One thing to try /
+  Context chips, plus a Useful/Not-useful control. No mute/hide/suppress control anywhere
+  (req 6) — Useful/Not-useful is the only feedback mechanism, feeding DS-64's ranking spike
+  once picked up.
+
+  "What we saw" and "Context chips" are code-generated (`card_metric_rows` and the new
+  `card_context_chips` in `signals/team_signals.py`) — no new computation, reuses exactly
+  what's already on the dashboard card. "Why it might be happening" is one new
+  model-generated line per card, added to the *same* Claude call `generate_all_narratives()`
+  already makes at upload time (HEADLINE/INTERPRETATION/WHY in one response) — no added
+  latency, no second narrative pass. "One thing to try" reuses the existing INTERPRETATION
+  text verbatim.
+
+  Verified via `py_compile` and manual review (no live server/API key available locally,
+  same constraint as DS-67's original verification): confirmed the 3-line
+  HEADLINE/INTERPRETATION/WHY parse handles a missing WHY line the same way the original
+  2-line parser handled a missing INTERPRETATION (field stays `None`, section hidden rather
+  than rendering empty); confirmed a card with no cached `signal_history` row (narrative
+  generation failed or hasn't run since this deploy) still opens with real "What we saw"
+  rows and a hidden feedback control rather than dead buttons; confirmed the feedback route
+  rejects any rating other than `useful`/`not_useful` with a 400.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the

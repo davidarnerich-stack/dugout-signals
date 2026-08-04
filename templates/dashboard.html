@@ -241,6 +241,89 @@
     .chip-bucket { font-size: 10px; color: #6e7681; }
     .chip-value { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: #e6edf3; }
     .chip-value.is-zero { font-family: 'Inter', sans-serif; font-weight: 600; }
+
+    /* ── DS-69: Signal explanation view ──
+       Tap target on the card itself — same affordance language as
+       .last-game-body (cursor + hover tint), no separate icon needed. */
+    .signal-card.tappable { cursor: pointer; transition: background .15s, border-color .15s; }
+    .signal-card.tappable:hover { background: #1a1f26; border-color: rgba(56,189,248,.3); }
+
+    /* Shell matches templates/roster.html's edit-sheet pattern exactly
+       (bottom sheet on mobile, centered modal at md+, Esc-to-close) — one
+       shared interaction language across the app, not a second one
+       invented for this view. Sheet peaks at ~78vh (DS-69 req 2) rather
+       than roster's 94vh, so the dashboard stays partly visible behind it. */
+    .explain-overlay {
+      display: none; position: fixed; inset: 0; z-index: 110;
+      flex-direction: column; justify-content: flex-end; align-items: center;
+    }
+    .explain-overlay.open { display: flex; }
+    .explain-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.62); }
+    .explain-sheet {
+      position: relative; width: 100%; max-width: 480px; max-height: 78vh;
+      display: flex; flex-direction: column; background: #0d1117; border: 1px solid #30363d;
+      border-bottom: none; border-radius: 16px 16px 0 0; overflow: hidden;
+      animation: ds-up .3s cubic-bezier(.2,.85,.25,1);
+    }
+    @keyframes ds-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes ds-pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+    @media (min-width: 768px) {
+      .explain-overlay { justify-content: center; padding: 24px; }
+      .explain-sheet {
+        max-width: 520px; border: 1px solid #30363d; border-radius: 16px;
+        animation: ds-pop .2s cubic-bezier(.2,.85,.25,1);
+      }
+      .explain-grabber { display: none; }
+    }
+    .explain-grabber { flex-shrink: 0; display: flex; justify-content: center; padding: 8px 0 2px; }
+    .explain-grabber span { width: 36px; height: 4px; border-radius: 3px; background: #30363d; display: block; }
+
+    .explain-header { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #30363d; flex-shrink: 0; }
+    .explain-header-text { flex: 1; min-width: 0; }
+    .explain-bucket { font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .12em; color: #6e7681; margin-bottom: 6px; }
+    .explain-headline { font-size: 16px; font-weight: 600; color: #e6edf3; line-height: 1.4; }
+    .explain-close { background: none; border: none; color: #8b949e; font-size: 19px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 6px; flex-shrink: 0; }
+    .explain-close:hover { color: #e6edf3; background: #1c2330; }
+
+    .explain-body { flex: 1; overflow-y: auto; padding: 18px; }
+    .explain-section { margin-bottom: 22px; }
+    .explain-section:last-child { margin-bottom: 0; }
+    .explain-section-title { font-family: 'Orbitron', sans-serif; font-weight: 500; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #38bdf8; margin: 0 0 10px; }
+    .explain-prose { font-size: 13.5px; color: #c9d1d9; line-height: 1.6; }
+
+    .explain-rows { }
+    .explain-row {
+      display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: baseline;
+      padding: 7px 0; border-top: 1px solid #21262d;
+    }
+    .explain-row:first-child { border-top: none; }
+    .explain-row-name { font-size: 12px; color: #8b949e; }
+    .explain-row-value { font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 700; color: #e6edf3; }
+    .explain-row-value.is-zero { font-family: 'Inter', sans-serif; font-weight: 600; }
+    .explain-row-comparator { font-size: 11px; font-weight: 500; color: #8b949e; text-align: right; max-width: 130px; white-space: normal; overflow-wrap: break-word; }
+
+    .explain-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .explain-chip {
+      display: flex; flex-direction: column; gap: 2px; padding: 7px 11px; border-radius: 8px;
+      background: #1a1f26; border: 1px solid #30363d; min-width: 76px;
+    }
+    .explain-chip-label { font-size: 10px; color: #6e7681; }
+    .explain-chip-value { font-size: 12px; font-weight: 600; color: #e6edf3; }
+
+    /* Req 6: no destructive action anywhere on a signal — the overflow
+       carries only the same two feedback actions, never mute/hide/delete. */
+    .explain-footer { flex-shrink: 0; padding: 14px 18px; border-top: 1px solid #30363d; background: #0d1117; }
+    .explain-footer-prompt { font-size: 11px; color: #8b949e; margin-bottom: 10px; text-align: center; }
+    .explain-footer-row { display: flex; gap: 10px; }
+    .explain-fb-btn {
+      flex: 1; background: none; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3;
+      font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; padding: 11px; cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .explain-fb-btn:hover:not(:disabled) { border-color: #38bdf8; color: #38bdf8; }
+    .explain-fb-btn.chosen { border-color: #38bdf8; background: rgba(56,189,248,.1); color: #38bdf8; }
+    .explain-fb-btn:disabled { cursor: default; opacity: .7; }
+    .explain-fb-thanks { text-align: center; font-size: 12.5px; color: #8b949e; }
   </style>
 </head>
 <body>
@@ -368,7 +451,7 @@
 
     <div class="signal-grid">
       {% for card in signal_cards %}
-      <div class="signal-card{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}" id="signal-{{ card.key }}">
+      <div class="signal-card tappable{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}" id="signal-{{ card.key }}" onclick="openExplain('{{ card.key }}')">
         <div class="signal-bucket">{{ card.bucket }}</div>
         {% if card.headline %}<div class="signal-headline">{{ card.headline }}</div>{% endif %}
         <div class="signal-rows">
@@ -441,7 +524,53 @@
 </div>
 {% endif %}
 
+<!-- DS-69: Signal explanation view — shared shell (see req 1), scoped this
+     sprint to the DS-67 team-signal cards above (see Jira DS-69 scope
+     comment). Bottom sheet / centered modal, matches templates/roster.html's
+     edit-sheet interaction pattern. -->
+<div class="explain-overlay" id="explain-overlay">
+  <div class="explain-scrim" onclick="closeExplain()"></div>
+  <div class="explain-sheet">
+    <div class="explain-grabber"><span></span></div>
+    <div class="explain-header">
+      <div class="explain-header-text">
+        <div class="explain-bucket" id="explain-bucket"></div>
+        <div class="explain-headline" id="explain-headline"></div>
+      </div>
+      <button type="button" class="explain-close" onclick="closeExplain()" aria-label="Close">✕</button>
+    </div>
+    <div class="explain-body">
+      <div class="explain-section">
+        <div class="explain-section-title">What we saw</div>
+        <div class="explain-rows" id="explain-rows"></div>
+      </div>
+      <div class="explain-section" id="explain-why-section">
+        <div class="explain-section-title">Why it might be happening</div>
+        <p class="explain-prose" id="explain-why"></p>
+      </div>
+      <div class="explain-section" id="explain-try-section">
+        <div class="explain-section-title">One thing to try</div>
+        <p class="explain-prose" id="explain-try"></p>
+      </div>
+      <div class="explain-section">
+        <div class="explain-section-title">Context</div>
+        <div class="explain-chips" id="explain-chips"></div>
+      </div>
+    </div>
+    <div class="explain-footer">
+      <p class="explain-footer-prompt">Was this useful?</p>
+      <div class="explain-footer-row" id="explain-fb-row">
+        <button type="button" class="explain-fb-btn" id="explain-fb-useful" onclick="submitFeedback('useful')">Useful</button>
+        <button type="button" class="explain-fb-btn" id="explain-fb-not-useful" onclick="submitFeedback('not_useful')">Not useful</button>
+      </div>
+      <p class="explain-fb-thanks" id="explain-fb-thanks" style="display:none;">Thanks — noted.</p>
+    </div>
+  </div>
+</div>
+
 <script>
+const SIGNAL_CARDS = {{ signal_cards | tojson }};
+
 // DS-68 AC #15: fire-and-forget tap tracking — never blocks the anchor
 // navigation itself (the <a href="#..."> already works natively).
 function recordBucketTap(bucket) {
@@ -450,6 +579,110 @@ function recordBucketTap(bucket) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ bucket: bucket }),
   }).catch(function() {});
+}
+
+// ── DS-69: Signal explanation view ─────────────────────────────────────────
+let explainOpenKey = null;
+
+function cardByKey(key) { return SIGNAL_CARDS.find(c => c.key === key); }
+
+function openExplain(key) {
+  const card = cardByKey(key);
+  if (!card) return;
+  explainOpenKey = key;
+
+  document.getElementById('explain-bucket').textContent = card.bucket;
+  document.getElementById('explain-headline').textContent = card.headline || 'Signal';
+
+  const rows = card.rows || [];
+  document.getElementById('explain-rows').innerHTML = rows.map(r =>
+    `<div class="explain-row">
+      <span class="explain-row-name">${r.name}</span>
+      <span class="explain-row-value${r.is_zero ? ' is-zero' : ''}">${r.value_display}</span>
+      <span class="explain-row-comparator">${r.comparator || ''}</span>
+    </div>`
+  ).join('');
+
+  const whySection = document.getElementById('explain-why-section');
+  if (card.why_text) {
+    whySection.style.display = '';
+    document.getElementById('explain-why').textContent = card.why_text;
+  } else {
+    whySection.style.display = 'none';
+  }
+
+  const trySection = document.getElementById('explain-try-section');
+  if (card.interpretation) {
+    trySection.style.display = '';
+    document.getElementById('explain-try').textContent = card.interpretation;
+  } else {
+    trySection.style.display = 'none';
+  }
+
+  const chips = card.context_chips || [];
+  document.getElementById('explain-chips').innerHTML = chips.map(c =>
+    `<div class="explain-chip"><span class="explain-chip-label">${c.label}</span><span class="explain-chip-value">${c.value}</span></div>`
+  ).join('');
+
+  // Reset feedback control for this open — a coach may rate the same
+  // signal again on a later visit (fresh signal_history_id each game
+  // commit), so no "already rated" state carries across opens. No
+  // signal_history_id (narrative generation failed at upload time) means
+  // there's nothing to rate feedback against — hide the control rather
+  // than show buttons that silently do nothing.
+  const fbFooterPrompt = document.querySelector('.explain-footer-prompt');
+  if (card.signal_history_id) {
+    fbFooterPrompt.style.display = '';
+    document.getElementById('explain-fb-row').style.display = '';
+    document.getElementById('explain-fb-thanks').style.display = 'none';
+    document.getElementById('explain-fb-useful').classList.remove('chosen');
+    document.getElementById('explain-fb-not-useful').classList.remove('chosen');
+    document.getElementById('explain-fb-useful').disabled = false;
+    document.getElementById('explain-fb-not-useful').disabled = false;
+  } else {
+    fbFooterPrompt.style.display = 'none';
+    document.getElementById('explain-fb-row').style.display = 'none';
+    document.getElementById('explain-fb-thanks').style.display = 'none';
+  }
+
+  document.querySelector('.explain-body').scrollTop = 0;
+  document.getElementById('explain-overlay').classList.add('open');
+}
+
+function closeExplain() {
+  document.getElementById('explain-overlay').classList.remove('open');
+  explainOpenKey = null;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && explainOpenKey !== null) closeExplain();
+});
+
+async function submitFeedback(rating) {
+  const card = cardByKey(explainOpenKey);
+  if (!card || !card.signal_history_id) return;
+
+  const useful = document.getElementById('explain-fb-useful');
+  const notUseful = document.getElementById('explain-fb-not-useful');
+  useful.disabled = true;
+  notUseful.disabled = true;
+  (rating === 'useful' ? useful : notUseful).classList.add('chosen');
+
+  try {
+    const resp = await fetch('/api/signals/' + card.signal_history_id + '/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating: rating }),
+    });
+    if (!resp.ok) throw new Error('failed');
+    document.getElementById('explain-fb-row').style.display = 'none';
+    document.getElementById('explain-fb-thanks').style.display = '';
+  } catch (e) {
+    useful.disabled = false;
+    notUseful.disabled = false;
+    useful.classList.remove('chosen');
+    notUseful.classList.remove('chosen');
+  }
 }
 
 var retryBtn = document.getElementById('lg-retry-btn');
