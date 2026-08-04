@@ -53,8 +53,13 @@ FLD_COLS = {
     "triple_plays": 180, "passed_balls": 182, "stolen_bases_allowed": 183,
     "runners_caught_stealing": 185,
     # New columns
-    "innings_as_catcher": 181, "stolen_base_attempts": 184,
+    "innings_as_catcher": 181,
     "pickoffs": 187, "catcher_interference": 188,
+    # NOTE: column 184 ("SB-ATT") is intentionally NOT mapped here — GameChanger
+    # exports it as a combined string like "38-42" (allowed-attempts), not a
+    # plain number, so parse_num() silently returns None for it every time.
+    # stolen_base_attempts is derived instead, in _fielding_dict() below, from
+    # the two columns that already parse cleanly. See DS-71.
 }
 FLD_FLOAT = {"fielding_percentage", "innings_as_catcher"}
 
@@ -103,6 +108,22 @@ def _pitching_dict(row):
     bf, fp = d.get("batters_faced"), d.get("fps_pct")
     d["strikes_thrown"]      = round(tp * sp / 100) if (tp and sp) else None
     d["first_pitch_strikes"] = round(bf * fp / 100) if (bf and fp) else None
+    return d
+
+
+def _fielding_dict(row):
+    """
+    Build the fielding_stats payload. stolen_base_attempts is derived rather
+    than parsed from GameChanger's own SB-ATT column (184), which exports a
+    combined string like "38-42" that parse_num() can't read — see DS-71.
+    stolen_bases_allowed and runners_caught_stealing are both plain numeric
+    columns already, so their sum is the attempts count; verified against
+    real data (38 + 4 = 42, matching the export's own "38-42"). Always
+    written explicitly, never omitted, so a catcher with zero attempts
+    stores 0 rather than relying on the column default.
+    """
+    d = _stat_dict(row, FLD_COLS, FLD_FLOAT)
+    d["stolen_base_attempts"] = (d.get("stolen_bases_allowed") or 0) + (d.get("runners_caught_stealing") or 0)
     return d
 
 
@@ -220,7 +241,7 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
 
         sb.table("fielding_stats").upsert(
             {**base, "position": _primary_position(row),
-             **_stat_dict(row, FLD_COLS, FLD_FLOAT)},
+             **_fielding_dict(row)},
             on_conflict="game_id,player_id",
         ).execute()
         players_processed.append(f"#{number} {first} {last}")
