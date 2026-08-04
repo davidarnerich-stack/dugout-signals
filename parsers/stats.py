@@ -64,21 +64,44 @@ FLD_COLS = {
 FLD_FLOAT = {"fielding_percentage", "innings_as_catcher"}
 
 POS_COLS = {"P":189,"C":190,"1B":191,"2B":192,"3B":193,"SS":194,"LF":195,"CF":196,"RF":197,"SF":198}
+# FLD_COLS and POS_COLS above are indexed against the softball layout, where
+# Fielding starts at column 174. Baseball's pitch-type detail block (30 cols)
+# is 26 columns shorter than softball's (56 cols), which shifts Fielding and
+# everything after it left to column 148 — reading FLD_COLS/POS_COLS
+# unadjusted on a baseball file silently reads past the real data into the
+# parser's own end-of-row padding. See DS-78.
+FLD_BASELINE_COL = 174  # where "Fielding" sits in the softball layout FLD_COLS/POS_COLS were built against
 
 
-def _primary_position(row):
+def _section_offset(banner_row, section_label, baseline_col):
+    """
+    Locate `section_label` (e.g. "Fielding") in the CSV's own banner row
+    (row 0) and return how far it sits from `baseline_col`, rather than
+    trusting a hardcoded index. 0 for softball, -26 for baseball, on current
+    real exports — but derived from the file itself so it doesn't silently
+    break if GameChanger's column counts shift again. Falls back to 0 (the
+    softball baseline, i.e. today's pre-fix behavior) if the label can't be
+    found, rather than raising on an unexpected export.
+    """
+    for i, cell in enumerate(banner_row):
+        if cell.strip() == section_label:
+            return i - baseline_col
+    return 0
+
+
+def _primary_position(row, offset=0):
     best_pos, best_inn = None, -1.0
     for pos, col in POS_COLS.items():
-        inn = parse_num(row[col], as_float=True) or 0.0
+        inn = parse_num(row[col + offset], as_float=True) or 0.0
         if inn > best_inn:
             best_inn = inn; best_pos = pos
     return best_pos
 
 
-def _stat_dict(row, col_map, float_fields):
+def _stat_dict(row, col_map, float_fields, offset=0):
     d = {}
     for field, col in col_map.items():
-        val = parse_num(row[col], as_float=(field in float_fields))
+        val = parse_num(row[col + offset], as_float=(field in float_fields))
         if val is not None:
             d[field] = val
     return d
@@ -111,18 +134,19 @@ def _pitching_dict(row):
     return d
 
 
-def _fielding_dict(row):
+def _fielding_dict(row, offset=0):
     """
-    Build the fielding_stats payload. stolen_base_attempts is derived rather
-    than parsed from GameChanger's own SB-ATT column (184), which exports a
-    combined string like "38-42" that parse_num() can't read — see DS-71.
-    stolen_bases_allowed and runners_caught_stealing are both plain numeric
-    columns already, so their sum is the attempts count; verified against
-    real data (38 + 4 = 42, matching the export's own "38-42"). Always
-    written explicitly, never omitted, so a catcher with zero attempts
-    stores 0 rather than relying on the column default.
+    Build the fielding_stats payload. `offset` corrects FLD_COLS for baseball
+    files — see DS-78 / _section_offset(). stolen_base_attempts is derived
+    rather than parsed from GameChanger's own SB-ATT column (184), which
+    exports a combined string like "38-42" that parse_num() can't read — see
+    DS-71. stolen_bases_allowed and runners_caught_stealing are both plain
+    numeric columns already, so their sum is the attempts count; verified
+    against real data (38 + 4 = 42, matching the export's own "38-42").
+    Always written explicitly, never omitted, so a catcher with zero
+    attempts stores 0 rather than relying on the column default.
     """
-    d = _stat_dict(row, FLD_COLS, FLD_FLOAT)
+    d = _stat_dict(row, FLD_COLS, FLD_FLOAT, offset=offset)
     d["stolen_base_attempts"] = (d.get("stolen_bases_allowed") or 0) + (d.get("runners_caught_stealing") or 0)
     return d
 
@@ -177,6 +201,7 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         raise ValueError("Either game_id or filename must be provided")
     text = file_bytes.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
+    fld_offset = _section_offset(rows[0] if rows else [], "Fielding", FLD_BASELINE_COL)
 
     data_rows = []
     for r in rows[2:]:
@@ -240,8 +265,8 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
             ).execute()
 
         sb.table("fielding_stats").upsert(
-            {**base, "position": _primary_position(row),
-             **_fielding_dict(row)},
+            {**base, "position": _primary_position(row, offset=fld_offset),
+             **_fielding_dict(row, offset=fld_offset)},
             on_conflict="game_id,player_id",
         ).execute()
         players_processed.append(f"#{number} {first} {last}")
