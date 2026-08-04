@@ -550,7 +550,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         },
         "home": {
             "label": team_name, "short": team_short,
-            "cells": cells_for("storm"), "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
+            "cells": cells_for("our_team"), "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
         },
     }
 

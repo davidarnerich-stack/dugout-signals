@@ -148,7 +148,7 @@ def _update_inning(inning_scores, inning, half, score_storm, score_opp, closed):
     key = (inning,half)
     if key in closed: return
     closed.add(key)
-    ks,ko = (inning,half,"storm"),(inning,half,"opponent")
+    ks,ko = (inning,half,"our_team"),(inning,half,"opponent")
     inning_scores[ks] = score_storm - inning_scores.get(ks,0)
     inning_scores[ko] = score_opp  - inning_scores.get(ko,0)
 
@@ -165,7 +165,7 @@ def _batting_team_matcher(team_name):
     if not pattern:
         return lambda text: "opponent"
     compiled = re.compile(pattern, re.I)
-    return lambda text: "storm" if compiled.search(text) else "opponent"
+    return lambda text: "our_team" if compiled.search(text) else "opponent"
 
 
 # ── GameChanger parser ─────────────────────────────────────────────────────────
@@ -197,9 +197,9 @@ def _parse_gc(paras, team_name=""):
                 half=m.group(1).lower(); inning=int(m.group(2))
                 batting_team=is_our_team(m.group(3))
                 if we_are_away is None and half=="top":
-                    we_are_away = (batting_team=="storm")
+                    we_are_away = (batting_team=="our_team")
                 outs=0
-                inning_scores.setdefault((inning,half,"storm"),score_storm)
+                inning_scores.setdefault((inning,half,"our_team"),score_storm)
                 inning_scores.setdefault((inning,half,"opponent"),score_opp)
             continue
         if result_type=="Inning Ended":
@@ -245,7 +245,7 @@ def _parse_gc(paras, team_name=""):
             "inning":inning,"half_inning":half,"pa_sequence":pa_sequence,
             "batting_team":batting_team,"batter_name":batter or "Unknown",
             "pitcher_name":pitcher,"outs_before":min(outs,2),
-            "score_storm_before":score_storm,"score_opp_before":score_opp,
+            "score_our_before":score_storm,"score_opp_before":score_opp,
             "runner_on_1b":None,"runner_on_2b":None,"runner_on_3b":None,
             "result":result_type,"hit_type":_hit_type(all_text),
             "hit_location":_hit_location(all_text),"rbi":_count_rbi(all_text),
@@ -290,7 +290,7 @@ def _parse_narrative(paras, team_name=""):
             half=m.group(1).lower(); inning=int(m.group(2))
             batting_team=is_our_team(m.group(3))
             outs=0
-            inning_scores.setdefault((inning,half,"storm"),score_storm)
+            inning_scores.setdefault((inning,half,"our_team"),score_storm)
             inning_scores.setdefault((inning,half,"opponent"),score_opp)
             continue
 
@@ -321,7 +321,7 @@ def _parse_narrative(paras, team_name=""):
         pas.append({
             "inning":inning,"half_inning":half,"pa_sequence":pa_sequence,
             "batting_team":batting_team,"batter_name":batter,"pitcher_name":pitcher,
-            "outs_before":min(outs,2),"score_storm_before":score_storm,
+            "outs_before":min(outs,2),"score_our_before":score_storm,
             "score_opp_before":score_opp,"runner_on_1b":None,"runner_on_2b":None,
             "runner_on_3b":None,"result":result,"hit_type":_hit_type(para),
             "hit_location":_hit_location(para),"rbi":_count_rbi(para),
@@ -437,8 +437,9 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
 
     for pa in pa_dicts:
         pa["game_id"] = game_id
+        pa["team_id"] = team_id
         pa["batter_player_id"]  = (resolve_player(pa["batter_name"],player_map)
-                                    if pa["batting_team"]=="storm" else None)
+                                    if pa["batting_team"]=="our_team" else None)
         pa["pitcher_player_id"] = resolve_player(pa.get("pitcher_name"),player_map)
 
     BATCH=50
@@ -469,10 +470,10 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
     if is_rows:
         sb.table("inning_scores").insert(is_rows).execute()
 
-    storm_pas=sum(1 for p in pa_dicts if p["batting_team"]=="storm")
+    storm_pas=sum(1 for p in pa_dicts if p["batting_team"]=="our_team")
     return {
         "message": (f"{len(inserted)} plate appearances, {len(all_bre)} base running events, "
                     f"{len(is_rows)} inning score rows. {team_name} PAs: {storm_pas}."),
         "details": [f"PA #{p['pa_sequence']}: {p['batter_name']} — {p['result']}"
-                    for p in pa_dicts if p["batting_team"]=="storm"][:20],
+                    for p in pa_dicts if p["batting_team"]=="our_team"][:20],
     }
