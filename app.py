@@ -462,10 +462,32 @@ DASHBOARD_LOGO_BY_SPORT = {
 @auth_required
 def dashboard():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    game_count = (
-        sb.table("games").select("game_id", count="exact")
-        .eq("team_id", session["team_id"]).execute()
-    ).count or 0
+    games_resp = (
+        sb.table("games")
+        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result")
+        .eq("team_id", session["team_id"])
+        .order("game_date", desc=True)
+        .order("game_number", desc=True)
+        .limit(1)
+        .execute()
+    )
+    last_game = games_resp.data[0] if games_resp.data else None
+
+    # DS-66: the report row for the last game — DS-62's unique (game_id,
+    # report_type) constraint guarantees at most one, so .limit(1) already
+    # is "exactly one report surfaced" (AC #5), not a truncation.
+    last_game_report = None
+    if last_game:
+        report_resp = (
+            sb.table("reports")
+            .select("report_id, report_headline, status")
+            .eq("game_id", last_game["game_id"])
+            .eq("report_type", "single_game")
+            .eq("team_id", session["team_id"])
+            .limit(1)
+            .execute()
+        )
+        last_game_report = report_resp.data[0] if report_resp.data else None
 
     sport = session.get("sport") or "Baseball"
     return render_template(
@@ -473,11 +495,11 @@ def dashboard():
         team_name=session.get("team_name") or "your team",
         sport=sport,
         logo_file=DASHBOARD_LOGO_BY_SPORT.get(sport, DASHBOARD_LOGO_BY_SPORT["Baseball"]),
-        # DS-66/67/68 fill this in with real modules; until then, populated
-        # teams get a lightweight interim card rather than bouncing off
-        # /dashboard entirely (DS-65 AC #1 — dashboard must be the landing
-        # destination for every coach, not just ones with zero games).
-        has_games=game_count > 0,
+        # DS-67/68 add more modules to this shell later; DS-66 (Last Game)
+        # is the first real content to replace DS-65's interim placeholder.
+        has_games=last_game is not None,
+        last_game=last_game,
+        last_game_report=last_game_report,
     )
 
 
@@ -1171,6 +1193,30 @@ def report_delete(report_id):
     if not resp.data:
         return jsonify({"error": "Report not found"}), 404
     return jsonify({"ok": True})
+
+
+@app.route("/reports/<report_id>/retry", methods=["POST"])
+@auth_required
+def report_retry(report_id):
+    """DS-66 AC #4: retry path for a single-game report stuck in status='error'.
+    Re-runs the same best-effort generator the upload flow uses — DS-62's
+    upsert means this replaces the error stub in place rather than duplicating it."""
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    r = (sb.table("reports").select("report_id, game_id, report_type")
+         .eq("report_id", report_id).eq("team_id", session["team_id"])
+         .limit(1).execute())
+    if not r.data:
+        return jsonify({"error": "Report not found"}), 404
+    report = r.data[0]
+    if report.get("report_type") != "single_game" or not report.get("game_id"):
+        return jsonify({"error": "Retry is only supported for single-game reports"}), 400
+
+    new_report_id = _generate_single_game_report_safe(
+        sb, report["game_id"], session["team_id"], session["team_name"]
+    )
+    if new_report_id is None:
+        return jsonify({"ok": False, "error": "Report generation failed again — try again shortly."}), 502
+    return jsonify({"ok": True, "report_id": new_report_id})
 
 
 # ── Errors ─────────────────────────────────────────────────────────────────────

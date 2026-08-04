@@ -93,6 +93,43 @@
     .export-link { text-align: center; margin-top: 16px; font-size: 13px; }
     .export-link a { color: #8b949e; text-decoration: none; border-bottom: 1px dashed #30363d; padding-bottom: 1px; }
     .export-link a:hover { color: #38bdf8; border-color: #38bdf8; }
+
+    /* ── DS-66: Last Game module ── */
+    .last-game-card {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 12px;
+      margin-bottom: 20px; overflow: hidden;
+    }
+    .last-game-label {
+      font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .12em;
+      color: #6e7681; padding: 12px 16px 0;
+    }
+    .last-game-body { display: block; padding: 8px 16px 16px; text-decoration: none; color: inherit; }
+    a.last-game-body { cursor: pointer; transition: background .15s; }
+    a.last-game-body:hover { background: rgba(56,189,248,.05); }
+    .last-game-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .lg-opponent { font-size: 15px; font-weight: 600; color: #e6edf3; }
+    .lg-date { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+    .lg-headline { font-size: 13.5px; color: #c9d1d9; line-height: 1.45; }
+    .lg-muted { color: #6e7681; font-style: italic; }
+    .lg-pending { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8b949e; }
+    .lg-spinner {
+      width: 13px; height: 13px; border-radius: 50%; border: 2px solid #30363d; border-top-color: #38bdf8;
+      animation: lg-spin .8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes lg-spin { to { transform: rotate(360deg); } }
+    .lg-error { font-size: 13px; color: #f85149; margin-bottom: 10px; }
+    .lg-retry-btn {
+      background: transparent; border: 1px solid #30363d; color: #38bdf8; border-radius: 6px;
+      padding: .4rem .9rem; font-size: .78rem; font-weight: 600; cursor: pointer; transition: background .15s;
+    }
+    .lg-retry-btn:hover:not(:disabled) { background: rgba(56,189,248,.08); }
+    .lg-retry-btn:disabled { opacity: .5; cursor: default; }
+    .lg-retry-note { font-size: .76rem; color: #f85149; margin-top: 8px; }
+
+    .badge { padding: .2rem .55rem; border-radius: 5px; font-size: .72rem; font-weight: 700; flex-shrink: 0; }
+    .badge-w { background:#0d2e1a; color:#3fb950; border:1px solid #238636; }
+    .badge-l { background:#2e0d0d; color:#f85149; border:1px solid #da3633; }
+    .badge-t { background:#1c1a2e; color:#a371f7; border:1px solid #6e40c9; }
   </style>
 </head>
 <body>
@@ -159,11 +196,83 @@
     <div class="export-link"><a href="#">How to export from GameChanger →</a></div>
     {% else %}
     <h1>Welcome back,<br><span class="team-name">{{ team_name }}.</span></h1>
-    <p class="subtext">Your dashboard modules are coming online this sprint. For now, your reports are one tap away.</p>
 
-    <a href="/reports" class="btn-primary">View Reports</a>
+    <div class="last-game-card">
+      <div class="last-game-label">LAST GAME</div>
+
+      {% if not last_game_report %}
+      <a href="/reports" class="last-game-body">
+        <div class="last-game-top">
+          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
+          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
+        </div>
+        <div class="lg-date">{{ last_game.game_date }}</div>
+        <div class="lg-headline lg-muted">Report not available for this game.</div>
+      </a>
+      {% elif last_game_report.status == 'generating' %}
+      <div class="last-game-body">
+        <div class="last-game-top">
+          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
+          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
+        </div>
+        <div class="lg-date">{{ last_game.game_date }}</div>
+        <div class="lg-pending"><span class="lg-spinner"></span> Generating report…</div>
+      </div>
+      {% elif last_game_report.status == 'error' %}
+      <div class="last-game-body">
+        <div class="last-game-top">
+          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
+          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
+        </div>
+        <div class="lg-date">{{ last_game.game_date }}</div>
+        <div class="lg-error">Report failed to generate.</div>
+        <button type="button" class="lg-retry-btn" id="lg-retry-btn" data-report-id="{{ last_game_report.report_id }}">Retry</button>
+        <p class="lg-retry-note" id="lg-retry-note" style="display:none;"></p>
+      </div>
+      {% else %}
+      <a href="/reports/{{ last_game_report.report_id }}" class="last-game-body">
+        <div class="last-game-top">
+          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
+          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
+        </div>
+        <div class="lg-date">{{ last_game.game_date }}</div>
+        <div class="lg-headline">{{ last_game_report.report_headline }}</div>
+      </a>
+      {% endif %}
+    </div>
+
+    <a href="/reports" class="btn-primary">View All Reports</a>
     {% endif %}
   </div>
 </div>
+
+<script>
+var retryBtn = document.getElementById('lg-retry-btn');
+if (retryBtn) {
+  retryBtn.addEventListener('click', async function() {
+    var note = document.getElementById('lg-retry-note');
+    this.disabled = true;
+    this.textContent = 'Retrying…';
+    note.style.display = 'none';
+    try {
+      const resp = await fetch('/reports/' + this.dataset.reportId + '/retry', { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        this.disabled = false;
+        this.textContent = 'Retry';
+        note.textContent = data.error || 'Retry failed. Try again shortly.';
+        note.style.display = 'block';
+      }
+    } catch (e) {
+      this.disabled = false;
+      this.textContent = 'Retry';
+      note.textContent = 'Network error: ' + e.message;
+      note.style.display = 'block';
+    }
+  });
+}
+</script>
 </body>
 </html>
