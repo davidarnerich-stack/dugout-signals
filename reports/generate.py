@@ -251,12 +251,47 @@ def _season_context_note(game_number: int) -> str:
             ).format(n=game_number)
 
 
+def _line_score_note(data, opp, us) -> str:
+    hb = data["header_block"]
+    if not hb["has_line_score"]:
+        return ""
+    return (f"Inning-by-inning ({', '.join(hb['line_header'])}): "
+            f"{us['short']} {hb['home']['cells']}, {opp['short']} {hb['visitor']['cells']}.")
+
+
+def _game_facts_note(data, opp, us) -> str:
+    """Compact, factual grounding block for the prompts that don't otherwise
+    receive per-play detail (headline, snapshot, focus areas). DS-79: these
+    three prompts used to ask for "specific" narrative with nothing specific
+    to draw from, which reliably produced confident, fabricated detail (a
+    walk and wild pitch that never happened, an inning that scored the
+    wrong team). This is the only lever those prompts have to stay grounded."""
+    lines = [f"Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']})."]
+    line_score = _line_score_note(data, opp, us)
+    if line_score:
+        lines.append(line_score)
+    team_bb = sum(b["bb"] for b in data["batting_stats"])
+    opp_bb  = sum(p["bb"] for p in data["pitching_stats"])
+    lines.append(f"{us['short']}: {us['h']} H, {us['e']} E, {team_bb} BB drawn by our hitters. "
+                 f"{opp['short']}: {opp['h']} H, {opp['e']} E, {opp_bb} BB issued by our pitching.")
+    return "\n".join(lines)
+
+
+_NO_INVENTION_NOTE = ("Ground every specific claim — which inning, which team, what happened — "
+    "strictly in the facts above. Do not invent a scoring mechanism (a walk, a wild pitch, a "
+    "hit-by-pitch, an error, etc.) unless the numbers above actually support it. If you don't have "
+    "enough detail to name a specific play, describe the outcome at the level the data supports "
+    "instead (e.g. \"pulled ahead in the 5th\") rather than inventing how it happened.")
+
+
 def generate_game_headline(client, system, data, opp, us) -> str:
     return _single_game_call(client, system, f"""Write ONE punchy, specific sentence summarizing the
 defining story of this game — this is a headline, not a summary. It will be displayed on its own,
 directly under the box score.
 
-Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
+{_game_facts_note(data, opp, us)}
+
+{_NO_INVENTION_NOTE}
 """, max_tokens=100)
 
 
@@ -264,17 +299,15 @@ def generate_game_snapshot(client, system, data, opp, us) -> str:
     return _single_game_call(client, system, f"""Write a 3-4 sentence "Game Snapshot" — the story of
 the game and final score. This is the reader's first narrative context, right after the headline.
 
-Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
+{_game_facts_note(data, opp, us)}
 {_season_context_note(data['game_number_in_season'])}
+
+{_NO_INVENTION_NOTE}
 """)
 
 
 def generate_how_it_happened(client, system, data, opp, us) -> list:
-    hb = data["header_block"]
-    line_note = ""
-    if hb["has_line_score"]:
-        line_note = (f"Inning-by-inning ({', '.join(hb['line_header'])}): "
-                     f"{us['short']} {hb['home']['cells']}, {opp['short']} {hb['visitor']['cells']}.")
+    line_note = _line_score_note(data, opp, us)
     pbp_note = "" if data["has_pbp"] else ("\nPlay-by-play was not uploaded for this game — you only "
         "have final box-score numbers, not sequence detail. Write the recap from the score/stats you "
         "have; do not invent specific in-game sequences you don't have data for.")
@@ -368,9 +401,24 @@ per line, 3 to 5 lines total.
 
 
 def generate_focus_areas(client, system, data) -> list:
+    bats = "; ".join(f"{b['name']}: {b['h']}-for-{b['ab']}, {b['bb']} BB, {b['k']} K"
+                      for b in data["batting_stats"]) or "No batting data recorded."
+    pitchers = "; ".join(f"{p['name']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
+                          for p in data["pitching_stats"]) or "No pitching data recorded."
+    errs = "; ".join(f"{f['name']} ({f['position']}): {f['e']} E / {f['tc']} TC"
+                      for f in data["fielding_stats"] if f["e"] > 0) or "no charged errors"
+    g = data["game"]
     text = _single_game_call(client, system, f"""Generate exactly 3 ranked "Before Next Practice"
 focus areas based on this game's data. Each needs a short title, a 1-2 sentence rationale grounded in
 what happened this game, and one concrete drill cue a coach could run at the next practice.
+
+Final: {g.get('result')} ({g.get('team_runs')}-{g.get('opponent_runs')}).
+Batting lines: {bats}
+Pitching lines: {pitchers}
+Fielding errors: {errs}
+
+Every rationale must cite only numbers or events shown above — do not invent a stat, a run total, or
+an in-game sequence (e.g. a "rally") that isn't directly supported by this data.
 
 Format each item on its own line EXACTLY as: TITLE | RATIONALE | DRILL CUE
 Do not add numbering, headers, or any other text — exactly 3 lines, pipe-delimited as shown.
