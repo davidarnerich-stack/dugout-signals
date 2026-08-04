@@ -145,6 +145,7 @@
       <span class="sport-pill">{{ sport }}</span>
     </div>
 
+    {% if not has_games %}
     <h1>Welcome to Dugout Signals,<br><span class="team-name">{{ team_name }}.</span></h1>
     <p class="subtext">Your dashboard comes alive after your first upload. It takes about 60 seconds.</p>
 
@@ -156,6 +157,12 @@
 
     <a href="/upload" class="btn-primary">Upload Your First Game</a>
     <div class="export-link"><a href="#">How to export from GameChanger →</a></div>
+    {% else %}
+    <h1>Welcome back,<br><span class="team-name">{{ team_name }}.</span></h1>
+    <p class="subtext">Your dashboard modules are coming online this sprint. For now, your reports are one tap away.</p>
+
+    <a href="/reports" class="btn-primary">View Reports</a>
+    {% endif %}
   </div>
 </div>
 </body>

@@ -451,7 +451,7 @@ def index():
     return render_template("upload.html", team_name=session["team_name"])
 
 
-# ── DS-60: Dashboard (empty state only — DS-17 AC #3 carve-out) ────────────────
+# ── DS-65: Dashboard shell and navigation (empty state carried over from DS-60) ─
 DASHBOARD_LOGO_BY_SPORT = {
     "Softball": "Logo_Dugout-Signals__softball_-transparent.svg",
     "Baseball": "Logo_Dugout-Signals__baseball_-transparent.svg",
@@ -467,17 +467,17 @@ def dashboard():
         .eq("team_id", session["team_id"]).execute()
     ).count or 0
 
-    # Populated dashboard (AC #1/#2/#4) isn't scoped yet — DS-17 epic, future
-    # sprint. Interim fallback so a coach with games never hits a dead end.
-    if game_count > 0:
-        return redirect("/reports")
-
     sport = session.get("sport") or "Baseball"
     return render_template(
         "dashboard.html",
         team_name=session.get("team_name") or "your team",
         sport=sport,
         logo_file=DASHBOARD_LOGO_BY_SPORT.get(sport, DASHBOARD_LOGO_BY_SPORT["Baseball"]),
+        # DS-66/67/68 fill this in with real modules; until then, populated
+        # teams get a lightweight interim card rather than bouncing off
+        # /dashboard entirely (DS-65 AC #1 — dashboard must be the landing
+        # destination for every coach, not just ones with zero games).
+        has_games=game_count > 0,
     )
 
 
