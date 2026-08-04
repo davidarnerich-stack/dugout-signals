@@ -462,14 +462,27 @@
     try {
       const resp = await fetch('/api/tournaments');
       tournaments = await resp.json();
-      // Rebuild select options
-      while (tournamentSelect.options.length > 2) tournamentSelect.remove(2);
+      // Full rebuild each call — on a second call (e.g. after upload, to pick
+      // up a newly-created tournament), index-based insert/remove is fragile:
+      // inserting each tournament option "before index 1" pushes the static
+      // "+ Add new tournament…" option to index 2+, so a later clear-by-index
+      // removes the wrong option and duplicates the tournament entries
+      // instead. Rebuilding from scratch has no such assumption to violate.
+      tournamentSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '— Select tournament —';
+      tournamentSelect.appendChild(placeholder);
       tournaments.forEach(t => {
         const opt = document.createElement('option');
         opt.value = t.tournament_id;
         opt.textContent = `${t.name} (${t.season})`;
-        tournamentSelect.insertBefore(opt, tournamentSelect.options[1]);
+        tournamentSelect.appendChild(opt);
       });
+      const addNew = document.createElement('option');
+      addNew.value = '__new__';
+      addNew.textContent = '+ Add new tournament…';
+      tournamentSelect.appendChild(addNew);
     } catch (e) { console.error('Could not load tournaments', e); }
   }
   loadTournaments();
