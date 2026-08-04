@@ -1,6 +1,6 @@
 """Dugout Signals — file upload web app."""
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (Flask, session, redirect, url_for, request,
@@ -907,6 +907,12 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
     `reports_game_id_report_type_unique` partial index) instead of inserting
     a new row on every re-upload.
 
+    `generated_at` is set explicitly here rather than left to the column's
+    DEFAULT now() — that default only fires on the row's first INSERT, so an
+    upsert that regenerates an existing report would otherwise leave the
+    original generation timestamp in place forever, silently making it wrong
+    (found while verifying DS-79/DS-78 fixes against a real re-import).
+
     On failure: if no report exists yet for this game, write a minimal
     status='error' row so a dashboard reading reports.status has something
     to point a retry affordance at (DS-17b). If a working report already
@@ -948,6 +954,7 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
             "runs_scored":     g.get("team_runs"),
             "runs_allowed":    g.get("opponent_runs"),
             "status":          "complete",
+            "generated_at":    datetime.now(timezone.utc).isoformat(),
         }, on_conflict="game_id,report_type").execute()
         return resp.data[0]["report_id"]
     except Exception:
