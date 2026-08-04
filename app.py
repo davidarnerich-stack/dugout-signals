@@ -516,46 +516,35 @@ def dashboard():
         pitcher_rows = list(pit_totals_by_player.values())
 
         if team_totals_list:
-            from signals.team_signals import compute_team_signals
+            from signals.team_signals import compute_team_signals, CARD_ORDER
             signal_cards = compute_team_signals(
                 team_totals_list, pitcher_rows,
                 age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
             )
-            ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-            if ANTHROPIC_KEY and signal_cards:
-                try:
-                    from signals.narrative import generate_all_narratives
-                    generate_all_narratives(ANTHROPIC_KEY, sport, team.get("team_name") or "the team",
-                                             age_level, signal_cards)
-                except Exception:
-                    pass
-
-            # DS-76: snapshot every computed card on every dashboard render
-            # that reflects a new game commit — Phase 1 records all six
-            # (five at 8U) regardless of whether a future trigger would
-            # suppress any of them.
-            try:
-                from signals.history import record_signal_history
-                from signals.team_signals import CARD_ORDER, card_metric_rows
-                key_to_t = {k: f"T{i+1}" for i, k in enumerate(CARD_ORDER)}
-                contact_ok = all(
-                    c["state"] not in ("missing_data",) for c in signal_cards
+            # Narrative is NOT generated here — it's computed once per game
+            # commit in the upload flow (_generate_and_record_team_signals_safe)
+            # and cached in signal_history. Generating it here too used to
+            # mean 6 sequential Claude calls (~24s) on every dashboard view;
+            # this route just reads back whatever was cached at upload time.
+            if signal_cards and last_game:
+                t_to_key = {f"T{i+1}": k for i, k in enumerate(CARD_ORDER)}
+                history_resp = (
+                    sb.table("signal_history")
+                    .select("signal_key, headline, interpretation")
+                    .eq("team_id", session["team_id"])
+                    .eq("game_id", last_game["game_id"])
+                    .order("computed_at", desc=True)
+                    .execute()
                 )
-                record_signal_history(
-                    sb, session["team_id"], last_game["game_id"],
-                    [{
-                        "signal_key": key_to_t[c["key"]],
-                        "bucket": c["bucket"],
-                        "headline": c.get("headline"),
-                        "interpretation": c.get("interpretation"),
-                        "metrics": card_metric_rows(c),
-                        "raw_inputs": c["facts"],
-                        "games_in_sample": len(team_totals_list),
-                    } for c in signal_cards],
-                    age_band=age_level, contact_data_ok=contact_ok,
-                )
-            except Exception:
-                pass
+                cached_by_key = {}
+                for row in (history_resp.data or []):
+                    key = t_to_key.get(row["signal_key"])
+                    if key and key not in cached_by_key:  # first hit per key = most recent, since ordered desc
+                        cached_by_key[key] = row
+                for card in signal_cards:
+                    cached = cached_by_key.get(card["key"])
+                    card["headline"] = cached["headline"] if cached else None
+                    card["interpretation"] = cached["interpretation"] if cached else None
 
         # Summary line — games since last viewed, per DS-67 §7b. Never "this
         # week"; counts games because teams often play twice in a week and a
@@ -1027,8 +1016,76 @@ def upload():
     report_id = None
     if game_id and box_score_ok:
         report_id = _generate_single_game_report_safe(sb, game_id, team_id, team_name)
+        # DS-67/DS-76: compute + narrate + snapshot team signals once per
+        # game commit here, not on every dashboard view — found live that
+        # generating narrative for 6 cards on every /dashboard GET made
+        # every page view block for ~24s. Upload is already a
+        # 30-60s-expected operation; dashboard views must be instant.
+        _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name)
 
     return jsonify({"results": results, "report_id": report_id})
+
+
+def _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name):
+    """Best-effort team-signals computation + narrative + DS-76 history
+    snapshot for one game commit. Never raises — this is instrumentation
+    plus a dashboard-read cache, not a critical path, same contract as
+    signal_history.record_signal_history's own try/except."""
+    try:
+        team_resp = sb.table("teams").select("*").eq("id", team_id).limit(1).execute()
+        team = team_resp.data[0] if team_resp.data else {}
+        age_level = team.get("age_level") or "12U"
+        sport = team.get("sport") or "Baseball"
+
+        games_resp = (
+            sb.table("games").select("team_totals").eq("team_id", team_id).execute()
+        )
+        team_totals_list = [g["team_totals"] for g in (games_resp.data or []) if g.get("team_totals")]
+        if not team_totals_list:
+            return
+
+        pitching_resp = sb.table("pitching_stats").select("*").eq("team_id", team_id).execute()
+        pit_totals_by_player = {}
+        for row in (pitching_resp.data or []):
+            agg = pit_totals_by_player.setdefault(row["player_id"], {
+                "batters_faced": 0, "walks_allowed": 0, "strikeouts": 0,
+            })
+            agg["batters_faced"] += row.get("batters_faced") or 0
+            agg["walks_allowed"] += row.get("walks_allowed") or 0
+            agg["strikeouts"] += row.get("strikeouts") or 0
+        pitcher_rows = list(pit_totals_by_player.values())
+
+        from signals.team_signals import compute_team_signals, CARD_ORDER, card_metric_rows
+        signal_cards = compute_team_signals(
+            team_totals_list, pitcher_rows,
+            age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
+        )
+        if not signal_cards:
+            return
+
+        ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+        if ANTHROPIC_KEY:
+            from signals.narrative import generate_all_narratives
+            generate_all_narratives(ANTHROPIC_KEY, sport, team_name, age_level, signal_cards)
+
+        from signals.history import record_signal_history
+        key_to_t = {k: f"T{i+1}" for i, k in enumerate(CARD_ORDER)}
+        contact_ok = all(c["state"] != "missing_data" for c in signal_cards)
+        record_signal_history(
+            sb, team_id, game_id,
+            [{
+                "signal_key": key_to_t[c["key"]],
+                "bucket": c["bucket"],
+                "headline": c.get("headline"),
+                "interpretation": c.get("interpretation"),
+                "metrics": card_metric_rows(c),
+                "raw_inputs": c["facts"],
+                "games_in_sample": len(team_totals_list),
+            } for c in signal_cards],
+            age_band=age_level, contact_data_ok=contact_ok,
+        )
+    except Exception:
+        pass
 
 
 def _generate_single_game_report_safe(sb, game_id, team_id, team_name):

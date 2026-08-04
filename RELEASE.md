@@ -211,6 +211,30 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   on its own independent data — and today's real production state (empty `signal_cards`)
   renders with no bucket-modules section at all, not a broken one.
 
+- **No migration, but worth recording**: found live immediately after the re-import that
+  `/dashboard` was taking ~24s on every single view. DS-67's `generate_all_narratives()`
+  (6 sequential Claude calls) and DS-76's `record_signal_history()` were both wired into
+  the `/dashboard` GET route instead of the upload flow — every page view re-ran narrative
+  generation and wrote a fresh `signal_history` row, not just the view right after a game
+  commit. Confirmed in production: 48 duplicate rows (6× for Yankees, 3× for Storm) from
+  repeated dashboard views of the same game. **Deleted all 48** — `signal_history` starts
+  clean again.
+
+  Fix: moved both calls into the upload flow (`_generate_and_record_team_signals_safe()`,
+  alongside the existing single-game report generation — already a 30-60s-expected
+  operation, unlike a dashboard view which must be instant) and parallelized the 6
+  narrative calls with a thread pool so the added upload-time cost is roughly the slowest
+  single call (~4-6s) rather than their sum. `/dashboard` now only computes signal-card
+  *numbers* fresh (cheap, matches DS-74's compute-on-read philosophy) and reads cached
+  headline/interpretation back from the latest `signal_history` row for the current game.
+
+  **Practical effect for David**: since `signal_history` is now empty, both teams' signal
+  cards will show numbers with no headline text until their next real game upload (which is
+  when narrative generation now actually happens) — or a manual re-upload of just the most
+  recent game's box score + stats CSV, which would populate it immediately. Not broken —
+  this is the same graceful "no headline" fallback already built and tested for exactly
+  this case.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the

@@ -223,15 +223,30 @@ GENERATORS = {
 def generate_all_narratives(anthropic_key, sport, team_name, age_level, cards):
     """Fills in headline/interpretation on each card dict in place. Best-
     effort per card — one card's generation failure never blocks the others
-    (same independent-section-failure pattern as reports/generate.py)."""
+    (same independent-section-failure pattern as reports/generate.py).
+
+    Runs the (up to 6) card generations concurrently rather than
+    sequentially — found live that 6 sequential Claude calls took ~24s,
+    which is fine as a one-time upload-commit cost but was originally
+    (wrongly) wired into the dashboard's read path, where it made every
+    single page view block for 24 seconds. Concurrency here cuts the wall
+    time to roughly the slowest single call regardless of where this ends
+    up being invoked from."""
+    import concurrent.futures
+
     client = anthropic.Anthropic(api_key=anthropic_key)
-    for card in cards:
+
+    def _run(card):
         generator = GENERATORS[card["key"]]
         try:
-            headline, interpretation = generator(client, sport, team_name, age_level, card)
-            card["headline"] = headline
-            card["interpretation"] = interpretation
+            return generator(client, sport, team_name, age_level, card)
         except Exception:
-            card["headline"] = None
-            card["interpretation"] = None
+            return None, None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(cards) or 1) as pool:
+        results = list(pool.map(_run, cards))
+
+    for card, (headline, interpretation) in zip(cards, results):
+        card["headline"] = headline
+        card["interpretation"] = interpretation
     return cards
