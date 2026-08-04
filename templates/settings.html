@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings — Dugout Signals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; min-height: 100vh; }
+    header {
+      background: #161b22; border-bottom: 1px solid #30363d;
+      padding: .5rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+    .brand img { height:40px; width:auto; }
+    .brand-name { font-family:'Orbitron',sans-serif; font-size:1.05rem; font-weight:700; letter-spacing:.1em; }
+    .brand-dugout { color:#f0f6fc; }
+    .brand-signals { color:#38bdf8; }
+    .nav-links { display:flex; gap:1.5rem; align-items:center; }
+    .nav-links a { color:#8b949e; font-size:.85rem; text-decoration:none; transition:color .15s; }
+    .nav-links a:hover { color:#f0f6fc; }
+    .nav-links a.active { color:#38bdf8; }
+    .logout { color:#8b949e; font-size:.82rem; text-decoration:none; border:1px solid #30363d;
+              border-radius:6px; padding:.3rem .7rem; }
+
+    /* ── Bottom nav (mobile only) ── */
+    .bottom-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+      background: #0d1117; border-top: 1px solid #30363d; z-index: 100;
+    }
+    .bottom-nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; text-decoration: none; color: #8b949e;
+      font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      transition: color .15s, background .15s; -webkit-tap-highlight-color: transparent;
+    }
+    .bottom-nav a + a { border-left: 1px solid #21262d; }
+    .bottom-nav a:hover, .bottom-nav a.active { color: #38bdf8; background: rgba(56,189,248,.06); }
+    .bottom-nav svg { width: 22px; height: 22px; stroke: currentColor; fill: none;
+                      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 640px) {
+      .bottom-nav { display: flex; }
+      .nav-links { display: none; }
+      body { padding-bottom: 64px; }
+    }
+
+    main { max-width: 640px; margin: 2.5rem auto; padding: 0 1.5rem; }
+    h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: .3rem; }
+    .subtitle { color: #8b949e; font-size: .88rem; margin-bottom: 2rem; }
+
+    .panel {
+      background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+      padding: 1.5rem; margin-bottom: 1.5rem;
+    }
+    .panel h3 { font-size: .95rem; font-weight: 600; margin-bottom: 1rem; color: #f0f6fc; }
+
+    .field { margin-bottom: 1.25rem; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; font-size: .8rem; color: #8b949e; margin-bottom: .4rem; }
+    .field-hint { font-size: .76rem; color: #6e7681; margin-top: .35rem; }
+    input[type="number"], select {
+      width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 7px;
+      padding: .6rem .8rem; color: #f0f6fc; font-size: .9rem; outline: none;
+      transition: border-color .15s;
+    }
+    input[type="number"]:focus, select:focus { border-color: #38bdf8; }
+    select option { background: #161b22; }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .toggle-row label { margin-bottom: 0; }
+    .toggle {
+      position: relative; width: 42px; height: 24px; flex-shrink: 0;
+      background: #30363d; border-radius: 12px; border: none; cursor: pointer;
+      transition: background .15s;
+    }
+    .toggle.on { background: #0ea5e9; }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+      background: #f0f6fc; border-radius: 50%; transition: transform .15s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    .mismatch-banner {
+      background: #1c1a0d; border: 1px solid #6e5a1a; border-radius: 10px;
+      padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: .85rem; color: #e6c866;
+      display: flex; align-items: flex-start; gap: .75rem;
+    }
+    .mismatch-banner strong { color: #f0f6fc; }
+    .mismatch-banner button {
+      background: transparent; border: 1px solid #6e5a1a; color: #e6c866;
+      border-radius: 6px; padding: .35rem .8rem; font-size: .8rem; cursor: pointer;
+      white-space: nowrap; transition: background .15s;
+    }
+    .mismatch-banner button:hover { background: rgba(230,200,102,.1); }
+
+    .save-btn {
+      background: #0ea5e9; color: #fff; border: none; border-radius: 8px;
+      padding: .65rem 1.5rem; font-size: .9rem; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    .save-btn:hover:not(:disabled) { background: #0284c7; }
+    .save-btn:disabled { background: #30363d; color: #8b949e; cursor: default; }
+    .save-note { font-size: .8rem; margin-top: .75rem; display: none; }
+    .save-note.ok { color: #3fb950; }
+    .save-note.err { color: #f85149; }
+
+    @media (max-width: 480px) {
+      header { padding: .5rem .75rem; }
+      main { padding: 0 .75rem; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/reports" class="brand">
+    <img src="/static/logo-icon.svg" alt="Dugout Signals">
+    <span class="brand-name">
+      <span class="brand-dugout">DUGOUT</span>&nbsp;<span class="brand-signals">SIGNALS</span>
+    </span>
+  </a>
+  <nav class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/roster">Roster</a>
+    <a href="/reports">Reports</a>
+    <a href="/">Upload</a>
+    <a href="/settings" class="active">Settings</a>
+    <a href="/logout" class="logout">Sign out</a>
+  </nav>
+</header>
+
+<!-- Bottom nav (mobile) -->
+<nav class="bottom-nav">
+  <a href="/dashboard">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Dashboard
+  </a>
+  <a href="/roster">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Roster
+  </a>
+  <a href="/reports">
+    <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+    Reports
+  </a>
+  <a href="/">
+    <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+    Upload
+  </a>
+  <a href="/logout">
+    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Sign out
+  </a>
+</nav>
+
+<main>
+  <h2>Team Settings</h2>
+  <p class="subtitle">{{ team.team_name }} &nbsp;·&nbsp; {{ team.sport }} &nbsp;·&nbsp; {{ team.age_level }} &nbsp;·&nbsp; {{ team.governing_body_other or team.governing_body }}</p>
+
+  {% if mismatch %}
+  <div class="mismatch-banner">
+    <div style="flex:1;">
+      Your team's own game data suggests <strong>{{ inferred_innings | round | int }} innings</strong> per regulation game, but it's currently set to <strong>{{ team.regulation_innings }}</strong>. Which is correct?
+    </div>
+    <button type="button" id="apply-inferred" data-value="{{ inferred_innings | round | int }}">Use {{ inferred_innings | round | int }}</button>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h3>Game Configuration</h3>
+
+    <div class="field">
+      <label for="regulation_innings">Regulation innings</label>
+      <input type="number" id="regulation_innings" min="1" max="9" value="{{ team.regulation_innings or '' }}">
+      <p class="field-hint">The official game length for your league. Recreational leagues often set their own — this is editable regardless of governing body.</p>
+    </div>
+
+    <div class="field toggle-row">
+      <div>
+        <label for="continuous_batting_order" style="margin-bottom:.15rem;">Continuous batting order</label>
+        <p class="field-hint" style="margin-top:0;">Whole roster bats regardless of fielding position — true for most youth leagues.</p>
+      </div>
+      <button type="button" class="toggle {{ 'on' if team.continuous_batting_order else '' }}"
+              id="continuous_batting_order" data-value="{{ 'true' if team.continuous_batting_order else 'false' }}"></button>
+    </div>
+
+    <div class="field">
+      <label for="season">Season</label>
+      <select id="season">
+        {% for s in season_options %}
+        <option value="{{ s }}" {{ 'selected' if s == team.season else '' }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <button class="save-btn" id="save-btn" onclick="saveSettings()">Save Changes</button>
+  <p class="save-note" id="save-note"></p>
+</main>
+
+<script>
+document.getElementById('continuous_batting_order').addEventListener('click', function() {
+  var on = this.dataset.value !== 'true';
+  this.dataset.value = on;
+  this.classList.toggle('on', on);
+});
+
+var applyBtn = document.getElementById('apply-inferred');
+if (applyBtn) {
+  applyBtn.addEventListener('click', function() {
+    document.getElementById('regulation_innings').value = this.dataset.value;
+  });
+}
+
+async function saveSettings() {
+  var btn  = document.getElementById('save-btn');
+  var note = document.getElementById('save-note');
+  var innings = parseInt(document.getElementById('regulation_innings').value, 10);
+
+  if (!innings || innings < 1 || innings > 9) {
+    note.textContent = 'Regulation innings must be a number between 1 and 9.';
+    note.className = 'save-note err'; note.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  note.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        regulation_innings: innings,
+        continuous_batting_order: document.getElementById('continuous_batting_order').dataset.value === 'true',
+        season: document.getElementById('season').value,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      note.textContent = 'Saved.';
+      note.className = 'save-note ok'; note.style.display = 'block';
+    } else {
+      note.textContent = data.error || 'Save failed.';
+      note.className = 'save-note err'; note.style.display = 'block';
+    }
+  } catch (e) {
+    note.textContent = 'Network error: ' + e.message;
+    note.className = 'save-note err'; note.style.display = 'block';
+  }
+
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>

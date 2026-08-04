@@ -104,6 +104,22 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   silently doesn't refresh" rather than a duplicate or a crash. Low severity given current
   usage (two low-volume accounts), but real — batch this one sooner rather than later.
 
+- `ds77_team_configuration_fields` — additive, safe. Added `teams.regulation_innings`,
+  `.continuous_batting_order`, `.governing_body_other`, `.dashboard_age_footnote_shown_count`
+  (default 0), and `games.contact_data_batting` / `.contact_data_pitching`. Backfilled both
+  existing teams' `regulation_innings` (6 each, per the governing-body/age-level table) and
+  `continuous_batting_order` (true). Not read by any deployed report/metrics code yet.
+
+  Also fixed a real bug found while implementing this: the onboarding wizard's "Other"
+  governing-body handling **overwrote** `governing_body` with the coach's free-text answer
+  instead of keeping the literal `"Other"` and storing the free text separately — the
+  opposite of the pattern the same route already uses correctly for `source`/
+  `source_other_text`. Silently meant `governing_body == "Other"` could never match again
+  once a coach had submitted the form, which would have broken `regulation_innings`
+  defaulting for exactly the teams that need it most. Fixed to match the existing
+  `source` pattern; the free-text input itself was already built and working on the
+  frontend, only the backend storage was wrong.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the

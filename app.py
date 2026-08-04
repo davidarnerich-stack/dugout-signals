@@ -42,6 +42,46 @@ AGE_LEVEL_OPTIONS   = ["8U", "9U", "10U", "11U", "12U", "14U"]
 SEASON_OPTIONS      = ["Spring 2026", "Summer 2026", "Fall 2026", "Spring 2027", "Summer 2027"]
 HEARD_ABOUT_OPTIONS = ["Word of mouth", "Google Search", "Reddit", "Social Media", "QR Code", "Other"]
 
+# DS-77: default teams.regulation_innings from governing_body + age_level.
+# Sport isn't a dimension here — USSSA/Little League cover both. "Other"
+# governing bodies have no table entry (regulation_innings stays null; the
+# inferred value from the team's own data is used until a coach sets it).
+REGULATION_INNINGS_TABLE = {
+    "USA Softball":  {"8U": 6, "9U": 6, "10U": 6, "11U": 6, "12U": 6, "14U": 7},
+    "Little League": {"8U": 6, "9U": 6, "10U": 6, "11U": 6, "12U": 6, "14U": 7},
+    "USSSA":         {"8U": 5, "9U": 6, "10U": 6, "11U": 6, "12U": 6, "14U": 7},
+}
+
+def default_regulation_innings(governing_body, age_level):
+    return REGULATION_INNINGS_TABLE.get(governing_body, {}).get(age_level)
+
+
+def infer_regulation_innings(sb, team_id):
+    """DS-77: reverse GameChanger's own ERA calculation from this team's
+    stored pitching data, as an independent sanity check on the configured
+    regulation_innings. GameChanger computes ERA scaled to the regulation
+    game length rather than a fixed 9 innings: ERA = regulation_innings *
+    earned_runs / innings_pitched. Solving for regulation_innings per row
+    and aggregating as Sum(ERA_i * IP_i) / Sum(ER_i) — rather than averaging
+    per-row estimates directly — weights each game by how much earned-run
+    evidence it actually contributes, so a one-inning relief outing with 1
+    earned run doesn't swing the estimate as much as a full start.
+
+    Returns None if there isn't enough data to infer anything yet (no
+    earned runs recorded across any stored outing)."""
+    resp = (sb.table("pitching_stats").select("era, earned_runs, innings_pitched")
+            .eq("team_id", team_id).execute())
+    total_er = sum((r.get("earned_runs") or 0) for r in resp.data)
+    if total_er <= 0:
+        return None
+    weighted = sum(
+        r["era"] * r["innings_pitched"]
+        for r in resp.data if r.get("era") and r.get("innings_pitched")
+    )
+    if weighted <= 0:
+        return None
+    return round(weighted / total_er, 2)
+
 
 def default_season():
     month, year = datetime.now().month, datetime.now().year
@@ -361,9 +401,13 @@ def onboarding():
         if errors:
             return _render_onboarding(errors, form)
 
-        # Store the coach's actual answer, not the literal word "Other".
-        if governing_body == "Other":
-            governing_body = governing_body_other
+        # DS-77: keep governing_body as the literal selection (including
+        # "Other") and store the free text separately in governing_body_other
+        # — same pattern already used for source/source_other_text below.
+        # Previously this overwrote governing_body with the free text, which
+        # silently broke the "Other" case for regulation_innings defaulting
+        # (nothing downstream could ever match governing_body == "Other"
+        # again once a coach had typed something in).
 
         try:
             # Re-check immediately before insert — guards a double-submit race,
@@ -372,13 +416,16 @@ def onboarding():
                 return redirect("/dashboard")
 
             insert_resp = sb.table("teams").insert({
-                "coach_id":       session["coach_id"],
-                "team_name":      team_name,
-                "sport":          sport,
-                "age_level":      age_level,
-                "governing_body": governing_body,
-                "season":         season,
-                "league_name":    league_name,
+                "coach_id":                session["coach_id"],
+                "team_name":               team_name,
+                "sport":                   sport,
+                "age_level":               age_level,
+                "governing_body":          governing_body,
+                "governing_body_other":    governing_body_other if governing_body == "Other" else None,
+                "season":                  season,
+                "league_name":             league_name,
+                "regulation_innings":      default_regulation_innings(governing_body, age_level),
+                "continuous_batting_order": True,
             }).execute()
 
             if source:
@@ -950,6 +997,50 @@ def api_update_game(game_id):
     if not resp.data:
         return jsonify({"error": "Game not found"}), 404
     return jsonify({"ok": True})
+
+
+# ── Settings (DS-77) ─────────────────────────────────────────────────────────
+@app.route("/settings", methods=["GET"])
+@auth_required
+def settings_page():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    team = (sb.table("teams").select("*")
+            .eq("id", session["team_id"]).limit(1).execute()).data[0]
+
+    inferred = infer_regulation_innings(sb, session["team_id"])
+    mismatch = (inferred is not None and team.get("regulation_innings") is not None
+                and round(inferred) != team["regulation_innings"])
+
+    return render_template(
+        "settings.html", team=team, season_options=SEASON_OPTIONS,
+        inferred_innings=inferred, mismatch=mismatch,
+    )
+
+
+@app.route("/api/settings", methods=["PATCH"])
+@auth_required
+def api_update_settings():
+    """DS-77 AC7: minimum viable settings — regulation_innings,
+    continuous_batting_order, season."""
+    data = request.get_json() or {}
+    allowed = {"regulation_innings", "continuous_batting_order", "season"}
+    update = {k: v for k, v in data.items() if k in allowed}
+    if not update:
+        return jsonify({"error": "No valid fields to update"}), 400
+    if "season" in update and update["season"] not in SEASON_OPTIONS:
+        return jsonify({"error": "Invalid season"}), 400
+    if "regulation_innings" in update:
+        try:
+            update["regulation_innings"] = int(update["regulation_innings"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "regulation_innings must be a number"}), 400
+
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (sb.table("teams").update(update)
+            .eq("id", session["team_id"]).execute())
+    if not resp.data:
+        return jsonify({"error": "Team not found"}), 404
+    return jsonify({"ok": True, "team": resp.data[0]})
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────
