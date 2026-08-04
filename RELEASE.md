@@ -272,6 +272,42 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   rows and a hidden feedback control rather than dead buttons; confirmed the feedback route
   rejects any rating other than `useful`/`not_useful` with a 400.
 
+- **No migration — DS-82, pitching ERA/WHIP bugfix**: `reports/data.py` was dividing ERA/WHIP
+  directly by `pitching_stats.innings_pitched` as if it were a real decimal. GameChanger's
+  thirds notation isn't decimal — `"5.2"` means 5⅔ innings (17 outs), not 5.2 innings — the
+  exact "Corrected IP" bug DS-74's source material documents and explicitly warns against
+  porting. The tournament report had it twice over: it also *summed* the raw notation across
+  a pitcher's games first (`"5.2" + "5.2"` as floats = `10.4`, not the correct 11⅓ innings /
+  34 outs), so every multi-game pitcher in a tournament report was affected, not just those
+  with a single ⅓-inning outing.
+
+  Fix: both call sites (`get_single_game_data()`, `get_tournament_data()`) now use
+  DS-74's `metrics.compute.parse_innings_to_outs`/`corrected_innings` — outs summed as
+  integers across games, corrected innings derived only at the final division step. The
+  tournament report's displayed IP is reconstructed from the true out count
+  (`f"{outs//3}.{outs%3}"`), not the buggy raw sum. Single-game display IP is untouched
+  (GameChanger's own string was already correct for one row; only the division was wrong).
+
+  Verified directly against real production `pitching_stats` rows (not synthetic data): a
+  Storm pitcher with five real games including `.1`/`.2` remainders — pre-fix buggy sum
+  `8.3`, ERA `1.45`/WHIP `0.72`; post-fix true outs `27` (9.0 innings exactly), ERA
+  `1.33`/WHIP `0.67`. Also checked a single real `1.1`-IP outing directly: pre-fix ERA
+  `10.91`/WHIP `2.73` vs post-fix ERA `9.0`/WHIP `2.25`. Both cases confirm AC #3's expected
+  direction — the prior denominator was too small (raw thirds-as-decimal always undercounts
+  the true fraction: `.1` reads as `0.1` instead of the true `1/3`), so every existing
+  ERA/WHIP was **overstated**, and the fix lowers them, never raises them.
+
+  **No backfill needed** — `get_single_game_data()`/`get_tournament_data()` recompute the
+  structured pitching tables fresh on every report *view* (`app.py`'s report-detail route
+  calls them directly, not just at generation time), so every existing report's tables
+  self-correct the next time it's opened, no re-generation required. The one thing this
+  doesn't fix: a report's **narrative prose** (AI-generated once, at creation time, and
+  stored) may still cite the old, overstated ERA/WHIP number in a sentence for any report
+  generated before this deploy — the table below it will now show the corrected number,
+  which can read as a mismatch on old reports specifically. Same class of issue, same
+  deferred-regeneration caution, as the existing DS-38 `fps_pct` UAT item below: don't
+  regenerate existing reports to fix this automatically, confirm with David first.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
@@ -317,6 +353,12 @@ checking the same boxes — that's what catches regressions.
       values (showing ERA instead, on the old reports only). This is intentionally deferred —
       regenerating costs Anthropic API tokens and overwrites the existing report rows. Confirm
       with David before regenerating; do not do this automatically as part of routine UAT.
+- [ ] **DS-82:** any report generated before this deploy may have narrative prose citing the
+      old, overstated ERA/WHIP number for a pitcher with a ⅓-inning remainder — the structured
+      pitching table on that same report will now show the corrected (lower) number, which can
+      read as a mismatch on old reports specifically. Tables self-correct automatically on next
+      view; only the AI-written prose is stale. Same deferral as DS-38 above — confirm with
+      David before regenerating any specific report.
 
 ---
 

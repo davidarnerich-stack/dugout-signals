@@ -190,30 +190,41 @@ def get_tournament_data(sb, tournament_id: str, team_id: str, team_name: str) ->
             })
 
     # Tournament totals per pitcher
+    from metrics.compute import parse_innings_to_outs, corrected_innings
+
+    # DS-82: innings_pitched is GameChanger's thirds notation ("5.2" = 5 2/3
+    # innings, 17 outs) — summing it as a raw float across games is wrong
+    # twice over (5.2 + 5.2 = 10.4, not the correct 11 1/3 innings / 34
+    # outs). Summed separately from the other counting stats as an integer
+    # out count; corrected innings is derived only at the final division.
+    pit_outs = defaultdict(int)
     pit_totals = defaultdict(lambda: defaultdict(float))
     for row in pit_rows:
         pid = row["player_id"]
-        for f in ["innings_pitched","games_pitched","batters_faced","total_pitches",
+        for f in ["games_pitched","batters_faced","total_pitches",
                   "hits_allowed","runs_allowed","earned_runs","walks_allowed",
                   "strikeouts","hit_batters","wild_pitches"]:
             pit_totals[pid][f] += (row.get(f) or 0)
+        pit_outs[pid] += parse_innings_to_outs(row.get("innings_pitched")) or 0
 
     pitching_stats = []
     for pid, sums in pit_totals.items():
         p = pid_to_player.get(pid, {})
-        ip   = sums["innings_pitched"]
+        outs = pit_outs[pid]
+        ip_corrected = corrected_innings(outs) or 0
+        ip_display = f"{outs // 3}.{outs % 3}"  # reconstruct thirds notation from the true out count
         er   = sums["earned_runs"]
         bb   = sums["walks_allowed"]
         h    = sums["hits_allowed"]
         k    = sums["strikeouts"]
         hbp  = sums["hit_batters"]
-        era  = round(er * 6 / ip, 2) if ip > 0 else 0
-        whip = round((bb + h) / ip, 2) if ip > 0 else 0
+        era  = round(er * 6 / ip_corrected, 2) if ip_corrected else 0
+        whip = round((bb + h) / ip_corrected, 2) if ip_corrected else 0
         pitching_stats.append({
             "number": p.get("number"),
             "name":   f"{p.get('first_name','?')} {p.get('last_name','?')}",
             "player_id": pid,
-            "ip":  ip, "gp": int(sums["games_pitched"]),
+            "ip":  ip_display, "gp": int(sums["games_pitched"]),
             "bf":  int(sums["batters_faced"]),
             "pitches": int(sums["total_pitches"]),
             "h": int(h), "r": int(sums["runs_allowed"]),
@@ -484,19 +495,27 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         })
     batting_stats.sort(key=lambda x: x["number"] or 99)
 
+    from metrics.compute import parse_innings_to_outs, corrected_innings
+
     pitching_stats = []
     for row in pit_rows:
         name, number = name_of(row["player_id"])
         ip, er = row.get("innings_pitched") or 0, row.get("earned_runs") or 0
         bb, h  = row.get("walks_allowed") or 0, row.get("hits_allowed") or 0
-        era  = round(er * 6 / ip, 2) if ip else 0
-        whip = round((bb + h) / ip, 2) if ip else 0
+        # DS-82: GameChanger's thirds notation ("5.2" = 5 2/3 innings, 17
+        # outs) is not decimal — divide ERA/WHIP by the corrected innings
+        # value, never the raw string-as-float. `ip` itself stays the raw
+        # value for display; it's already correct thirds notation for a
+        # single game, only the division was wrong.
+        ip_corrected = corrected_innings(parse_innings_to_outs(ip)) or 0
+        era  = round(er * 6 / ip_corrected, 2) if ip_corrected else 0
+        whip = round((bb + h) / ip_corrected, 2) if ip_corrected else 0
         pitching_stats.append({
             "player_id": row["player_id"], "number": number, "name": name,
             "ip": ip, "h": h, "r": row.get("runs_allowed") or 0, "er": er,
             "bb": bb, "k": row.get("strikeouts") or 0, "era": era, "whip": whip,
         })
-    pitching_stats.sort(key=lambda x: -(x["ip"] or 0))
+    pitching_stats.sort(key=lambda x: -(parse_innings_to_outs(x["ip"]) or 0))
 
     fielding_stats = []
     for row in fld_rows:
