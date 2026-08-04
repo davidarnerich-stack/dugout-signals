@@ -197,12 +197,16 @@ def _offence_funnel(bat_totals, contact_ok):
     team_bat_metrics = compute_batting_metrics(
         bat_totals, None, league_age_at_game=None, walks_ok=False, contact_ok=contact_ok,
     )
+    obpe = team_bat_metrics.get("obpe")
     opse = team_bat_metrics.get("opse")
     score_pct = team_bat_metrics.get("score_pct")
     state = "complete" if (opse is not None and score_pct is not None) else "missing_data"
     return {
         "key": "offence_funnel", "bucket": "Offence", "state": state,
-        "facts": {"team_opse": opse, "team_score_pct": score_pct},
+        # team_obpe: DS-68's funnel bar 1 ("get on base") fill — not
+        # re-derived there, read from here, single source of truth for both
+        # DS-67's ledger and DS-68's bar geometry.
+        "facts": {"team_obpe": obpe, "team_opse": opse, "team_score_pct": score_pct},
     }
 
 

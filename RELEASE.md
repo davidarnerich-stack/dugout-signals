@@ -193,6 +193,24 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   and populated-dashboard states are unaffected by an empty `signal_cards` list — exactly
   today's real production state, since neither new DS-74 migration is backfilled yet.
 
+- `ds68_bucket_taps` — additive, safe. New `bucket_taps` table (append-only, same
+  select/insert-only RLS pattern as `signal_history`) recording which Offence/Defence
+  bucket a coach taps — discovery input for DS-32/33/34. No new metrics computed: DS-68's
+  Offence/Defence hierarchy modules reshape the exact same `signal_cards` facts DS-67
+  already computes (team OBPE/OPSE/SCORE% for the offence funnel, FRA/DefEff/PB-or-CS%
+  for the defensive split and its chips) rather than re-deriving anything, so DS-68 has no
+  new re-import dependency beyond what DS-74/DS-67 already need.
+
+  Verified against the real reference data for both teams: the defensive-split proportional
+  bar's two segments (pitching share / fielding remainder, computed as fractions of runs
+  allowed per game) sum to exactly 100% for both Storm and Yankees, as they must by
+  construction. Confirmed via Jinja render tests: every bucket chip's anchor link resolves
+  to a real signal-card element id, AC #8 (omit rather than show a broken module) verified
+  with a synthetic partial-data case — the Offence module correctly omits itself when its
+  underlying runs-scored figure is missing while the Defence module still renders normally
+  on its own independent data — and today's real production state (empty `signal_cards`)
+  renders with no bucket-modules section at all, not a broken one.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the

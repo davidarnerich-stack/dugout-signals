@@ -593,21 +593,49 @@ def dashboard():
     for card in signal_cards:
         card["rows"] = _card_metric_rows(card)
 
+    # DS-68: reshapes the same signal_cards facts into the Offence/Defence
+    # containment hierarchy — not a second computation pass. See
+    # signals/bucket_modules.py's module docstring.
+    bucket_hierarchy = {"offence": None, "defence": None}
+    if signal_cards:
+        from signals.bucket_modules import build_bucket_hierarchy
+        bucket_hierarchy = build_bucket_hierarchy(signal_cards)
+
     return render_template(
         "dashboard.html",
         team_name=session.get("team_name") or "your team",
         sport=sport,
         logo_file=DASHBOARD_LOGO_BY_SPORT.get(sport, DASHBOARD_LOGO_BY_SPORT["Baseball"]),
-        # DS-68 adds more modules to this shell later; DS-66 (Last Game) and
-        # DS-67 (Team Signals) are the first real content to replace DS-65's
-        # interim placeholder.
+        # DS-66 (Last Game), DS-67 (Team Signals) and DS-68 (bucket modules)
+        # are the real content that replaces DS-65's interim placeholder.
         has_games=last_game is not None,
         last_game=last_game,
         last_game_report=last_game_report,
         signal_cards=signal_cards,
         summary_line=summary_line,
         show_age_footnote=show_age_footnote,
+        offence_module=bucket_hierarchy["offence"],
+        defence_module=bucket_hierarchy["defence"],
     )
+
+
+@app.route("/api/bucket-tap", methods=["POST"])
+@auth_required
+def api_bucket_tap():
+    """DS-68 AC #15: record which bucket a coach tapped, for DS-32/33/34
+    discovery — showing what coaches actually reach for rather than what
+    was guessed. Fire-and-forget from the client; a failure here must never
+    block navigation to the tapped bucket's signal card."""
+    data = request.get_json(silent=True) or {}
+    bucket = (data.get("bucket") or "").strip()
+    if not bucket:
+        return jsonify({"error": "bucket is required"}), 400
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        sb.table("bucket_taps").insert({"team_id": session["team_id"], "bucket": bucket}).execute()
+    except Exception:
+        pass
+    return jsonify({"ok": True})
 
 
 # ── DS-56: Roster ────────────────────────────────────────────────────────────

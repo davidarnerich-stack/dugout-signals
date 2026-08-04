@@ -189,6 +189,58 @@
       font-size: 12px; color: #8b949e; line-height: 1.5; padding-top: 10px;
       border-top: 1px solid #21262d; margin-top: auto;
     }
+
+    /* ── DS-68: Bucket context modules ── */
+    .bucket-section { margin-top: 24px; }
+
+    /* Run gap — identical fill tone both rows so length is the only
+       variable (design spec §4a). Row labels use min-width, never a hard
+       width, so "ALLOWED" never clips. */
+    .run-gap-headline { font-size: 15px; font-weight: 600; color: #e6edf3; margin-bottom: 14px; }
+    .run-gap-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .run-gap-row:last-child { margin-bottom: 0; }
+    .run-gap-row-label { font-size: 11px; color: #8b949e; min-width: 74px; white-space: nowrap; }
+    .run-gap-track { flex: 1; height: 8px; background: #1a1f26; border-radius: 4px; overflow: hidden; }
+    .run-gap-fill { height: 100%; background: #6e7681; border-radius: 4px; }
+    .run-gap-row-value { font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700; color: #e6edf3; min-width: 34px; text-align: right; }
+
+    .bucket-modules { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 20px; }
+    @media (min-width: 768px) { .bucket-modules { grid-template-columns: repeat(2, 1fr); } }
+
+    .bucket-module {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px;
+    }
+    .bucket-module-header { font-family: 'Orbitron', sans-serif; font-weight: 500; font-size: 11px;
+      letter-spacing: .12em; text-transform: uppercase; color: #38bdf8; margin: 0 0 14px; }
+    .bucket-module-headline { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 700;
+      color: #e6edf3; margin-bottom: 16px; }
+
+    /* Offence funnel: bar 2 is drawn at bar 1's FILL width, not the full
+       track — the inset is the argument (design spec §4, "the funnel
+       narrows"). */
+    .funnel-bar { margin-bottom: 14px; }
+    .funnel-label { font-size: 10px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
+      color: #6e7681; margin-bottom: 5px; }
+    .funnel-track { height: 10px; background: #1a1f26; border-radius: 5px; overflow: hidden; }
+    .funnel-fill { height: 100%; background: #6e7681; border-radius: 5px; }
+
+    /* Defensive split: the one graphic permitted to carry accent as data —
+       it encodes proportion, not judgement (design spec §11). */
+    .split-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin-bottom: 10px; }
+    .split-segment.pitching { background: #38bdf8; }
+    .split-segment.fielding { background: #1c4a5e; }
+    .split-sentence { font-size: 13px; color: #8b949e; line-height: 1.5; margin-bottom: 16px; }
+
+    .bucket-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .bucket-chip {
+      display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 8px;
+      background: #1a1f26; border: 1px solid #30363d; text-decoration: none; min-width: 84px;
+      transition: background .15s, border-color .15s;
+    }
+    .bucket-chip:hover { background: rgba(56,189,248,.06); border-color: rgba(56,189,248,.3); }
+    .chip-bucket { font-size: 10px; color: #6e7681; }
+    .chip-value { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: #e6edf3; }
+    .chip-value.is-zero { font-family: 'Inter', sans-serif; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -316,7 +368,7 @@
 
     <div class="signal-grid">
       {% for card in signal_cards %}
-      <div class="signal-card{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}">
+      <div class="signal-card{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}" id="signal-{{ card.key }}">
         <div class="signal-bucket">{{ card.bucket }}</div>
         {% if card.headline %}<div class="signal-headline">{{ card.headline }}</div>{% endif %}
         <div class="signal-rows">
@@ -332,11 +384,74 @@
       </div>
       {% endfor %}
     </div>
+
+    {% if offence_module or defence_module %}
+    <div class="bucket-section">
+      <div class="bucket-modules">
+        {% if offence_module %}
+        <div class="bucket-module">
+          <div class="bucket-module-header">Offence</div>
+          <div class="bucket-module-headline">{{ "%.1f"|format(offence_module.runs_per_game) }} runs per game</div>
+
+          <div class="funnel-bar">
+            <div class="funnel-label">Hitting · get on base</div>
+            <div class="funnel-track"><div class="funnel-fill" style="width: {{ (offence_module.bar1_pct * 100) | round(1) }}%;"></div></div>
+          </div>
+          <div class="funnel-bar" style="width: {{ (offence_module.bar1_pct * 100) | round(1) }}%;">
+            <div class="funnel-label">Baserunning · get home</div>
+            <div class="funnel-track"><div class="funnel-fill" style="width: {{ (offence_module.bar2_pct * 100) | round(1) }}%;"></div></div>
+          </div>
+
+          <div class="bucket-chips">
+            {% for chip in offence_module.chips %}
+            <a href="#{{ chip.anchor }}" class="bucket-chip" data-bucket="{{ chip.bucket }}" onclick="recordBucketTap('{{ chip.bucket }}')">
+              <span class="chip-bucket">{{ chip.bucket }} · {{ chip.metric_name }}</span>
+              <span class="chip-value{{ ' is-zero' if chip.value == 0 else '' }}">{{ chip.value_display }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if defence_module %}
+        <div class="bucket-module">
+          <div class="bucket-module-header">Defence</div>
+          <div class="bucket-module-headline">{{ "%.1f"|format(defence_module.runs_allowed_per_game) }} runs allowed per game</div>
+
+          <div class="split-bar">
+            <div class="split-segment pitching" style="width: {{ (defence_module.pitching_pct * 100) | round(1) }}%;"></div>
+            <div class="split-segment fielding" style="width: {{ (defence_module.fielding_pct * 100) | round(1) }}%;"></div>
+          </div>
+          <p class="split-sentence">{{ "%.1f"|format(defence_module.pitching_share) }} of that is fairly the pitching, {{ "%.1f"|format(defence_module.fielding_share) }} is fielding.</p>
+
+          <div class="bucket-chips">
+            {% for chip in defence_module.chips %}
+            <a href="#{{ chip.anchor }}" class="bucket-chip" data-bucket="{{ chip.bucket }}" onclick="recordBucketTap('{{ chip.bucket }}')">
+              <span class="chip-bucket">{{ chip.bucket }} · {{ chip.metric_name }}</span>
+              <span class="chip-value{{ ' is-zero' if chip.value == 0 else '' }}">{{ chip.value_display }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
 
 <script>
+// DS-68 AC #15: fire-and-forget tap tracking — never blocks the anchor
+// navigation itself (the <a href="#..."> already works natively).
+function recordBucketTap(bucket) {
+  fetch('/api/bucket-tap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bucket: bucket }),
+  }).catch(function() {});
+}
+
 var retryBtn = document.getElementById('lg-retry-btn');
 if (retryBtn) {
   retryBtn.addEventListener('click', async function() {
