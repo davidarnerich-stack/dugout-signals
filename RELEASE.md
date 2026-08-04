@@ -86,6 +86,23 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   2S+3%, 6+%, AB/HR — GameChanger already computes all 13, column mapping only) and one
   nullable `pitching_stats.pitch_type_detail jsonb` column. Not read by any deployed code
   yet — parser writes it going forward, nothing displays it this sprint.
+- `ds62_reports_replace_in_place` — **mild edge case, worth knowing before pushing.**
+  Deleted the one existing duplicate report (game `4884b464...`, kept the newer row) and
+  added a `UNIQUE (game_id, report_type)` constraint on `reports`. First attempt used a
+  partial unique index (`WHERE game_id IS NOT NULL`, to leave tournament reports
+  unconstrained) but Postgres can't infer a partial index from a bare `ON CONFLICT (cols)`
+  — which is all PostgREST's `upsert()` ever sends — so it was replaced with a **plain**
+  unique constraint instead; Postgres treats `NULL` as distinct by default, so tournament
+  reports (`game_id IS NULL`) stay unconstrained without needing the partial predicate at
+  all. Verified the fix directly against a real row before trusting it (see commit).
+
+  **The edge case:** currently-deployed code still does a plain `.insert()` for reports,
+  not the new `.upsert(on_conflict=...)`. Until the matching code deploys, re-uploading a
+  game that already has a report will hit the new constraint and the insert will fail —
+  caught by the existing best-effort try/except in `_generate_single_game_report_safe`
+  (never surfaces as an upload failure), so the practical effect is just "the report
+  silently doesn't refresh" rather than a duplicate or a crash. Low severity given current
+  usage (two low-volume accounts), but real — batch this one sooner rather than later.
 
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against

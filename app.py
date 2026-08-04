@@ -832,7 +832,19 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
     response. Silently skips if ANTHROPIC_API_KEY isn't configured (matches
     the existing /reports/generate guard) rather than erroring the upload.
     Returns the new report_id so the upload UI can link straight to it, or
-    None if generation was skipped/failed."""
+    None if generation was skipped/failed.
+
+    DS-62: replaces in place (upsert on game_id+report_type, matching the
+    `reports_game_id_report_type_unique` partial index) instead of inserting
+    a new row on every re-upload.
+
+    On failure: if no report exists yet for this game, write a minimal
+    status='error' row so a dashboard reading reports.status has something
+    to point a retry affordance at (DS-17b). If a working report already
+    exists, leave it completely untouched — a failed regeneration attempt
+    must never make a previously-good report look broken. This is the two
+    cases AC2 covers; they need different handling, not one upsert for both.
+    """
     ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     if not ANTHROPIC_KEY:
         return None
@@ -850,7 +862,7 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
         g = d["game"]
 
         import json
-        resp = sb.table("reports").insert({
+        resp = sb.table("reports").upsert({
             "report_type":     "single_game",
             "game_id":         game_id,
             "team_id":         team_id,
@@ -867,11 +879,30 @@ def _generate_single_game_report_safe(sb, game_id, team_id, team_name):
             "runs_scored":     g.get("team_runs"),
             "runs_allowed":    g.get("opponent_runs"),
             "status":          "complete",
-        }).execute()
+        }, on_conflict="game_id,report_type").execute()
         return resp.data[0]["report_id"]
     except Exception:
         # Best-effort: a failed report generation should never surface as an
-        # upload failure to the coach. (Could log server-side in the future.)
+        # upload failure to the coach. But don't just vanish — if nothing
+        # exists yet for this game, leave a record the dashboard can show a
+        # retry affordance for. If a good report already exists, touching it
+        # here would destroy working content over a regeneration hiccup, so
+        # leave it alone entirely (see docstring).
+        try:
+            existing = (sb.table("reports").select("report_id")
+                        .eq("game_id", game_id).eq("report_type", "single_game")
+                        .limit(1).execute())
+            if not existing.data:
+                sb.table("reports").upsert({
+                    "report_type": "single_game",
+                    "game_id":     game_id,
+                    "team_id":     team_id,
+                    "team_name":   team_name,
+                    "title":       f"{team_name} — Game Analysis",
+                    "status":      "error",
+                }, on_conflict="game_id,report_type").execute()
+        except Exception:
+            pass
         return None
 
 
@@ -1032,6 +1063,23 @@ def report_view(report_id):
     d = get_tournament_data(sb, report["tournament_id"], session["team_id"], report["team_name"])
 
     return render_template("report.html", report=report, sections=sections, d=d)
+
+
+@app.route("/reports/<report_id>/delete", methods=["POST"])
+@auth_required
+def report_delete(report_id):
+    """DS-62: minimal delete entry point. Coach-facing placement/affordance
+    design belongs to the split-out story (DS-70) — this is the capability
+    plus a bare entry point, per that ticket's own scope note."""
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    resp = (
+        sb.table("reports").delete()
+        .eq("report_id", report_id).eq("team_id", session["team_id"])
+        .execute()
+    )
+    if not resp.data:
+        return jsonify({"error": "Report not found"}), 404
+    return jsonify({"ok": True})
 
 
 # ── Errors ─────────────────────────────────────────────────────────────────────
