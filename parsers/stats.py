@@ -16,8 +16,19 @@ BAT_COLS = {
     "left_on_base": 40, "two_out_rbi": 41, "extra_base_hits": 42, "total_bases": 43,
     "pitches_seen": 44, "two_strike_three_plus": 46, "six_plus_pitch_pa": 48,
     "grounded_into_double_play": 51, "grounded_into_triple_play": 52, "catcher_interference": 53,
+    # DS-43: remaining batting columns. All pre-computed by GameChanger and
+    # exported as their own columns — column mapping only, no calculation.
+    "quality_at_bat_pct": 30, "pa_per_bb": 31, "bb_per_k": 32, "contact_pct": 33,
+    "line_drive_pct": 35, "fly_ball_pct": 36, "ground_ball_pct": 37,
+    "babip": 38, "batting_avg_risp": 39, "pitches_per_pa": 45,
+    "two_strike_three_plus_pct": 47, "six_plus_pitch_pa_pct": 49, "ab_per_hr": 50,
 }
-BAT_FLOAT = {"batting_average","on_base_percentage","ops","slugging_percentage","stolen_base_percentage"}
+BAT_FLOAT = {
+    "batting_average","on_base_percentage","ops","slugging_percentage","stolen_base_percentage",
+    "quality_at_bat_pct","pa_per_bb","bb_per_k","contact_pct","line_drive_pct","fly_ball_pct",
+    "ground_ball_pct","babip","batting_avg_risp","pitches_per_pa","two_strike_three_plus_pct",
+    "six_plus_pitch_pa_pct","ab_per_hr",
+}
 
 PIT_COLS = {
     "innings_pitched": 54, "games_pitched": 55, "games_started": 56,
@@ -46,6 +57,24 @@ PIT_NULL_IF_ZERO = {
     "strike_pct", "fps_pct", "fpso_pct", "fpsw_pct", "fpsh_pct",
     "sm_pct", "k_per_bb", "bb_per_inn", "p_per_ip", "fip",
 }
+
+# DS-43: per-pitch-type detail block (cols 118 onward). Baseball carries 6
+# pitch types (FB/CT/CB/SL/CH/OS), softball carries 10 (FB/CH/RB/DB/SC/CB/
+# DC/KB/KC/OS) — different sets, different column counts (30 vs 56), and the
+# column layout differs by sport rather than being a fixed offset like
+# Fielding is. Rather than hardcoding two per-sport tables, this is walked
+# directly from the CSV's own header row (row 1) at parse time: a block
+# starts wherever a bare code is immediately followed by "<code>S" (e.g.
+# "FB" then "FBS"), which self-validates without needing a fixed whitelist
+# of pitch-type codes — robust to a pitch type this file has never shown us.
+#
+# Column 82-87 carries a FIXED 6-slot velocity block present in every file
+# regardless of sport (softball files carry unused MPHCT/MPHSL columns).
+# Types not in that fixed set (softball's RB/DB/SC/DC/KB/KC) carry their own
+# inline MPH column as a 6th column in their block instead of borrowing from
+# here — see PITCH_TYPE_TRAP note in _parse_pitch_type_detail().
+MPH_SHARED = {"FB": 82, "CT": 83, "CB": 84, "SL": 85, "CH": 86, "OS": 87}
+PITCH_TYPE_BLOCK_START = 118
 
 FLD_COLS = {
     "total_chances": 174, "assists": 175, "putouts": 176,
@@ -151,6 +180,71 @@ def _fielding_dict(row, offset=0):
     return d
 
 
+def _parse_pitch_type_detail(header_row, row, fielding_start_col):
+    """
+    Build the pitch_type_detail JSONB payload for pitching_stats — see DS-43.
+
+    Walks columns 118 .. fielding_start_col-1 using the CSV's own header row
+    (row 1) rather than a hardcoded per-sport table, so baseball's 6 pitch
+    types and softball's 10 don't need two separate maps. A block starts
+    wherever a bare code (e.g. "FB") is immediately followed by "<code>S"
+    (e.g. "FBS") — self-validating, not a fixed whitelist.
+
+    Sub-field labels confirmed against GameChanger's own glossary (per DS-43
+    AC3 — not guessed) — every export embeds it as a row the app already
+    discards as non-player data (row 15 in a real file; matched here by
+    content, not position, since its row number isn't guaranteed stable):
+        FB    = "Number of pitches thrown as Fastballs"           -> thrown
+        FBS   = "Number of Fastballs thrown for strikes"          -> strikes
+        FBS%  = "Percentage of Fastballs thrown for strikes"      -> strike_pct
+        FBSW% = "Percentage of Fastballs swung at"                -> swing_pct
+        FBSM% = "Percentage of Fastballs swung at and missed"     -> swing_miss_pct
+        MPHFB = "Fastball average velocity"                       -> mph
+    (Same pattern for every other pitch-type prefix.)
+
+    Only pitch types the pitcher actually threw (thrown > 0) are included —
+    intentionally sparse, not one key per pitch type this sport supports.
+    """
+    detail = {}
+    col = PITCH_TYPE_BLOCK_START
+    while col < fielding_start_col:
+        code = header_row[col].strip() if col < len(header_row) else ""
+        next_label = header_row[col + 1].strip() if col + 1 < len(header_row) else ""
+        if not code or next_label != f"{code}S":
+            col += 1  # not a recognized block start; skip forward defensively
+            continue
+
+        thrown = parse_num(row[col])
+        if not thrown:
+            # Not thrown this game — omit rather than store an all-zero block.
+            width = 6 if (col + 5 < fielding_start_col
+                          and header_row[col + 5].strip() == f"MPH{code}") else 5
+            col += width
+            continue
+
+        has_inline_mph = (col + 5 < fielding_start_col
+                           and header_row[col + 5].strip() == f"MPH{code}")
+        if has_inline_mph:
+            mph = parse_num(row[col + 5], as_float=True)
+            width = 6
+        else:
+            mph_col = MPH_SHARED.get(code)
+            mph = parse_num(row[mph_col], as_float=True) if mph_col is not None else None
+            width = 5
+
+        detail[code] = {
+            "thrown":          thrown,
+            "strikes":         parse_num(row[col + 1]),
+            "strike_pct":      parse_num(row[col + 2], as_float=True),
+            "swing_pct":       parse_num(row[col + 3], as_float=True),
+            "swing_miss_pct":  parse_num(row[col + 4], as_float=True),
+            "mph":             mph,
+        }
+        col += width
+
+    return detail
+
+
 def preview(file_bytes):
     """
     Parse a stats CSV for the upload preview — no DB access, no writes.
@@ -202,6 +296,8 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     text = file_bytes.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
     fld_offset = _section_offset(rows[0] if rows else [], "Fielding", FLD_BASELINE_COL)
+    fielding_start_col = FLD_BASELINE_COL + fld_offset
+    header_row = rows[1] if len(rows) > 1 else []
 
     data_rows = []
     for r in rows[2:]:
@@ -260,7 +356,8 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         ip = parse_num(row[PIT_COLS["innings_pitched"]], as_float=True)
         if ip and ip > 0:
             sb.table("pitching_stats").upsert(
-                {**base, **_pitching_dict(row)},
+                {**base, **_pitching_dict(row),
+                 "pitch_type_detail": _parse_pitch_type_detail(header_row, row, fielding_start_col)},
                 on_conflict="game_id,player_id",
             ).execute()
 

@@ -81,6 +81,11 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   a legacy team name (`"Storm 12U All-Stars"` vs. the current `"Storm 12U Silver All
   Stars"`) that had never gotten `team_id` set — found while preparing this migration, not
   previously known.
+- `ds43_batting_fields_and_pitch_type_detail` — additive, safe. Added 13 nullable `numeric`
+  columns to `batting_stats` (QAB%, PA/BB, BB/K, C%, LD%, FB%, GB%, BABIP, BA/RISP, PS/PA,
+  2S+3%, 6+%, AB/HR — GameChanger already computes all 13, column mapping only) and one
+  nullable `pitching_stats.pitch_type_detail jsonb` column. Not read by any deployed code
+  yet — parser writes it going forward, nothing displays it this sprint.
 
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
