@@ -68,6 +68,19 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   Found during DS-11 testing: single-game reports have no tournament, and the insert would have
   failed in production on the very first single-game report generated. Safe — no deployed code
   relies on `tournament_name` being non-null (tournament reports already always pass a value).
+- `ds63_ds72_our_team_and_plate_appearances_team_id` — **breaking, unlike everything above.**
+  Renamed `'storm'` → `'our_team'` in the `plate_appearances.batting_team` /
+  `inning_scores.team` CHECK constraints, renamed `score_storm_before` →
+  `score_our_before`, added `plate_appearances.team_id` (FK to `teams.id`, backfilled,
+  RLS switched from deny-all to the standard own-team policy). Currently-deployed code at
+  the time of migration still wrote/read the old names — this violated the "sequence the
+  deploy first" rule below, not deliberately, and left a real (if brief) window where a
+  play-by-play upload would have failed outright. Treated as the RELEASE.md exception
+  ("a live data-correctness bug can jump the queue") and pushed same-session rather than
+  batched to sprint-end. Also backfilled `games.team_id` for 22 Storm games uploaded under
+  a legacy team name (`"Storm 12U All-Stars"` vs. the current `"Storm 12U Silver All
+  Stars"`) that had never gotten `team_id` set — found while preparing this migration, not
+  previously known.
 
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
