@@ -23,9 +23,14 @@ def record_signal_history(sb, team_id, game_id, signals, *, age_band, contact_da
     """
     Snapshot every computed team signal for one game commit.
 
-    signals: list of dicts, one per signal (expect exactly 6 from DS-67,
-        including at 8U where the design spec says card 6 doesn't render —
-        req 2 requires recording it here anyway). Each dict:
+    signals: list of dicts, one per signal — 6 for a 12U+ team, 5 at 8U.
+        DS-67's finalized spec (later than this module's original req 2
+        assumption) is explicit that card 6 "must not be computed or
+        rendered" at 8U, not just hidden after computing — the no-walk rule
+        means there's no K%/BB% spread across the staff to compute at all,
+        so there's nothing for DS-64 Phase 2 to threshold later either.
+        Every OTHER card is still recorded regardless of what a future
+        trigger would suppress. Each dict:
             {
                 "signal_key":      str,   # "T1".."T6"
                 "bucket":          str,   # e.g. "Team Defence"

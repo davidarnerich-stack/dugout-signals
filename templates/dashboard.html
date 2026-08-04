@@ -130,6 +130,65 @@
     .badge-w { background:#0d2e1a; color:#3fb950; border:1px solid #238636; }
     .badge-l { background:#2e0d0d; color:#f85149; border:1px solid #da3633; }
     .badge-t { background:#1c1a2e; color:#a371f7; border:1px solid #6e40c9; }
+
+    /* ── DS-67: Team Signals ── */
+    /* Design spec calls for a ~1160px app container here, wider than the
+       480px onboarding .card above — this is a data/app view, not a
+       reading column. Own section rather than reworking the existing
+       .stage/.card shell DS-65/66 already shipped. */
+    .signals-section { display: flex; justify-content: center; padding: 0 20px 48px; }
+    .signals-container { width: 100%; max-width: 1160px; }
+
+    .signals-summary { font-size: 14px; color: #8b949e; margin-bottom: 20px; }
+
+    .age-footnote {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #8b949e; line-height: 1.5;
+    }
+
+    .signal-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 768px) { .signal-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 1024px) { .signal-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .signal-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px;
+      display: flex; flex-direction: column;
+    }
+    /* Genuine zero vs missing data must be carried three ways together —
+       border style is one of them (design spec §7), never used alone. */
+    .signal-card.dashed { border-style: dashed; border-color: #2a2f38; }
+
+    .signal-bucket {
+      font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: .12em; color: #6e7681; margin-bottom: 10px;
+    }
+    .signal-headline { font-size: 15px; font-weight: 600; color: #e6edf3; line-height: 1.4; margin-bottom: 12px; }
+
+    .signal-rows { margin-bottom: 12px; }
+    .signal-row {
+      display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: baseline;
+      padding: 7px 0; border-top: 1px solid #21262d;
+    }
+    .signal-row:first-child { border-top: none; }
+    .signal-row-name { font-size: 11px; color: #8b949e; }
+    .signal-row-value { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: #e6edf3; }
+    /* TYPE EXCEPTION (design spec §7): a standalone zero sets in Inter 600,
+       not Orbitron — Orbitron's slashed zero reads as a "no data" glyph at
+       13px, the one case where the typeface would invert the meaning. */
+    .signal-row-value.is-zero { font-family: 'Inter', sans-serif; font-weight: 600; }
+    /* Comparator overflow — required fallback behaviour (design spec §2):
+       cap ~112px, wrap to a second line on overflow, never truncate with
+       an ellipsis. white-space:normal + overflow-wrap already does this;
+       no JS needed. */
+    .signal-row-comparator {
+      font-size: 10px; font-weight: 500; color: #8b949e; text-align: right;
+      max-width: 112px; white-space: normal; overflow-wrap: break-word;
+    }
+
+    .signal-interpretation {
+      font-size: 12px; color: #8b949e; line-height: 1.5; padding-top: 10px;
+      border-top: 1px solid #21262d; margin-top: auto;
+    }
   </style>
 </head>
 <body>
@@ -245,6 +304,37 @@
     {% endif %}
   </div>
 </div>
+
+{% if has_games and signal_cards %}
+<div class="signals-section">
+  <div class="signals-container">
+    {% if summary_line %}<p class="signals-summary">{{ summary_line }}</p>{% endif %}
+
+    {% if show_age_footnote %}
+    <div class="age-footnote">At 8U there are no walks, so a few metrics that depend on them aren't part of your dashboard.</div>
+    {% endif %}
+
+    <div class="signal-grid">
+      {% for card in signal_cards %}
+      <div class="signal-card{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}">
+        <div class="signal-bucket">{{ card.bucket }}</div>
+        {% if card.headline %}<div class="signal-headline">{{ card.headline }}</div>{% endif %}
+        <div class="signal-rows">
+          {% for row in card.rows %}
+          <div class="signal-row">
+            <span class="signal-row-name">{{ row.name }}</span>
+            <span class="signal-row-value{{ ' is-zero' if row.is_zero else '' }}">{{ row.value_display }}</span>
+            <span class="signal-row-comparator">{{ row.comparator }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% if card.interpretation %}<div class="signal-interpretation">{{ card.interpretation }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 var retryBtn = document.getElementById('lg-retry-btn');

@@ -1,0 +1,237 @@
+"""
+DS-67: narrative generation for the six team signal cards.
+
+"Card narrative text is model-generated; the six cards themselves are
+code-defined. The model writes copy, it does not decide what appears"
+(DS-67 requirements). team_signals.py computes what to show and with what
+numbers; this module writes the headline and interpretation sentence for
+each, strictly grounded in those numbers.
+
+Same grounding discipline DS-79 exists to enforce for game reports: every
+prompt here gets ONLY the real computed facts, plus an explicit instruction
+not to invent anything beyond them. A signal card inventing a cause the way
+DS-79's original headline invented a walk and a wild pitch would be worse
+here, not better — these run every week, unattended, with no human review
+before a coach sees them.
+"""
+
+import anthropic
+
+MODEL = "claude-opus-4-5"
+
+SIGNAL_SYSTEM = """You are writing one-line narrative copy for a youth {sport} coaching dashboard.
+Team: {team_name} ({age_level}).
+Audience is a volunteer coach, not a player or parent. Tone is developmental, never evaluative —
+a strikeout rate or run gap that would read as alarming at a higher level is often normal at this
+age. Positive and problem signals get the exact same flat, factual treatment: no triumphant framing
+for good numbers, no alarmed framing for bad ones, no colour-coded judgment in the words themselves.
+Interpretation lines SUGGEST, they never INSTRUCT — "worth a look higher in the order", never
+"move her up". Ground every specific number or claim strictly in the facts given in the prompt.
+Never invent a cause, a mechanism, or a number not explicitly provided — if you don't have enough
+detail to explain WHY something happened, describe WHAT the data shows instead of guessing why.
+Do not use markdown syntax. Output will be inserted as plain text.
+"""
+
+_NO_INVENTION_NOTE = ("Ground every word in the facts above. Do not invent a cause, an event, or "
+    "a number that isn't explicitly given. If the facts don't explain why something is happening, "
+    "describe what the numbers show rather than guessing at a reason.")
+
+
+def _call(client, system, prompt, max_tokens=150):
+    msg = client.messages.create(
+        model=MODEL, max_tokens=max_tokens, system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
+def _parse_headline_interpretation(text):
+    """Expects two lines: HEADLINE: ... / INTERPRETATION: ..."""
+    headline, interpretation = None, None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.upper().startswith("HEADLINE:"):
+            headline = line.split(":", 1)[1].strip()
+        elif line.upper().startswith("INTERPRETATION:"):
+            interpretation = line.split(":", 1)[1].strip()
+    return headline, interpretation
+
+
+_RESPONSE_FORMAT = """Return exactly two lines, in this format, no other text:
+HEADLINE: <one sentence, plain-language claim, never a bare stat>
+INTERPRETATION: <one sentence, suggests rather than instructs>"""
+
+
+def _genuine_zero_prompt(claim_hint):
+    return (f"This is a genuine-zero state — the team truly had none, not missing data. "
+            f"Write the headline as a plain factual claim (e.g. \"{claim_hint}\"), not a status "
+            f"report. Interpretation can be brief context or omitted-sounding (still one sentence).")
+
+
+def _missing_data_prompt(games_affected, games_total):
+    return (f"Contact-quality tagging was missing for {games_affected} of {games_total} games in "
+            f"this window. Write the headline as a STATUS, not a claim — name the affected game "
+            f"count (e.g. \"Hard-hit rate unavailable for {games_affected} of {games_total} games\"). "
+            f"Do not speculate about what the missing data might have shown.")
+
+
+def _insufficient_attempts_prompt(context_hint):
+    return (f"There isn't enough sample to compute this reliably yet: {context_hint}. Write the "
+            f"headline explaining that the situation simply hasn't come up enough yet, not as a "
+            f"failure or a gap.")
+
+
+def generate_defensive_split(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    if card["state"] != "complete":
+        state_note = _insufficient_attempts_prompt("not enough pitching data yet to split the runs allowed")
+    else:
+        state_note = ""
+    prompt = f"""Write the "Defensive split" card — Team Defence bucket.
+
+Runs allowed per game: {f['runs_allowed_per_game']}
+Of that, the pitching's fair share (FRA): {f['fra_pitching_share']}
+The fielding remainder: {f['fielding_remainder']}
+Games in sample: {f['games']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+def generate_run_gap(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    prompt = f"""Write the "Run gap" card — Offence / Defence bucket.
+
+Runs scored per game: {f['runs_scored_per_game']}
+Runs allowed per game: {f['runs_allowed_per_game']}
+Gap (positive = allowing more than scoring, negative = scoring more than allowing): {f['gap']}
+Games in sample: {f['games']}
+
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+def generate_offence_funnel(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    state_note = _missing_data_prompt("some", "recent") if card["state"] != "complete" else ""
+    prompt = f"""Write the "Offence funnel" card — Offence bucket. This describes the two-step
+process of getting on base (hitting) and then getting home (baserunning).
+
+Team OPSE (on-base + slugging with errors, scale 0-1+): {f['team_opse']}
+Team SCORE% (share of times on base that became runs): {f['team_score_pct']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+def generate_fielding_conversion(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    prompt = f"""Write the "Fielding conversion" card — Fielding bucket.
+
+DefEff (share of balls in play converted to outs, scale 0-1): {f['def_eff']}
+Team errors: {f['errors']}
+Runs allowed per game: {f['runs_allowed_per_game']}
+Games in sample: {f['games']}
+
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+def generate_catching_load(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    if f["metric"] == "pb_per_inning":
+        if card["state"] == "genuine_zero":
+            state_note = _genuine_zero_prompt("No passed balls allowed this season")
+        else:
+            state_note = ""
+        prompt = f"""Write the "Catching load" card — Catching bucket.
+
+Passed balls: {f['passed_balls']}
+Innings caught: {f['innings']}
+Passed balls per inning: {f['pb_per_inning']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    else:
+        if card["state"] == "insufficient_attempts":
+            state_note = _insufficient_attempts_prompt(
+                f"only {f['attempts']} stolen base attempts against this team all season")
+        else:
+            state_note = ""
+        prompt = f"""Write the "Catching load" card — Catching bucket.
+
+Runners caught stealing: {f['cs']}
+Total steal attempts against this team: {f['attempts']}
+Caught-stealing rate: {f['cs_pct']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+def generate_command_vs_velocity(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    if card["state"] == "insufficient_attempts":
+        state_note = _insufficient_attempts_prompt(
+            f"only {f['staff_size']} pitcher(s) with enough innings to compare")
+    else:
+        state_note = ""
+    prompt = f"""Write the "Command vs velocity" card — Pitching bucket. This compares strike-
+throwing consistency across the pitching staff.
+
+K% spread across the staff (highest minus lowest): {f.get('k_pct_spread')}
+BB% spread across the staff (highest minus lowest): {f.get('bb_pct_spread')}
+Staff size compared: {f['staff_size']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_headline_interpretation(_call(client, system, prompt))
+
+
+GENERATORS = {
+    "defensive_split": generate_defensive_split,
+    "run_gap": generate_run_gap,
+    "offence_funnel": generate_offence_funnel,
+    "fielding_conversion": generate_fielding_conversion,
+    "catching_load": generate_catching_load,
+    "command_vs_velocity": generate_command_vs_velocity,
+}
+
+
+def generate_all_narratives(anthropic_key, sport, team_name, age_level, cards):
+    """Fills in headline/interpretation on each card dict in place. Best-
+    effort per card — one card's generation failure never blocks the others
+    (same independent-section-failure pattern as reports/generate.py)."""
+    client = anthropic.Anthropic(api_key=anthropic_key)
+    for card in cards:
+        generator = GENERATORS[card["key"]]
+        try:
+            headline, interpretation = generator(client, sport, team_name, age_level, card)
+            card["headline"] = headline
+            card["interpretation"] = interpretation
+        except Exception:
+            card["headline"] = None
+            card["interpretation"] = None
+    return cards

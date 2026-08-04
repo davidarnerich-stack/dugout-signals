@@ -464,14 +464,14 @@ def dashboard():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     games_resp = (
         sb.table("games")
-        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result")
+        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result, team_totals")
         .eq("team_id", session["team_id"])
         .order("game_date", desc=True)
         .order("game_number", desc=True)
-        .limit(1)
         .execute()
     )
-    last_game = games_resp.data[0] if games_resp.data else None
+    all_games = games_resp.data or []
+    last_game = all_games[0] if all_games else None
 
     # DS-66: the report row for the last game — DS-62's unique (game_id,
     # report_type) constraint guarantees at most one, so .limit(1) already
@@ -490,16 +490,123 @@ def dashboard():
         last_game_report = report_resp.data[0] if report_resp.data else None
 
     sport = session.get("sport") or "Baseball"
+
+    # ── DS-67: Team Signals ─────────────────────────────────────────────────
+    signal_cards, summary_line, show_age_footnote = [], None, False
+    if all_games:
+        team_resp = (sb.table("teams").select("*").eq("id", session["team_id"]).limit(1).execute())
+        team = team_resp.data[0] if team_resp.data else {}
+        age_level = team.get("age_level") or "12U"
+
+        team_totals_list = [g["team_totals"] for g in all_games if g.get("team_totals")]
+        pitching_resp = (
+            sb.table("pitching_stats").select("*")
+            .eq("team_id", session["team_id"]).execute()
+        )
+        pitcher_rows_raw = pitching_resp.data or []
+        pit_totals_by_player = {}
+        for row in pitcher_rows_raw:
+            pid = row["player_id"]
+            agg = pit_totals_by_player.setdefault(pid, {
+                "batters_faced": 0, "walks_allowed": 0, "strikeouts": 0,
+            })
+            agg["batters_faced"] += row.get("batters_faced") or 0
+            agg["walks_allowed"] += row.get("walks_allowed") or 0
+            agg["strikeouts"] += row.get("strikeouts") or 0
+        pitcher_rows = list(pit_totals_by_player.values())
+
+        if team_totals_list:
+            from signals.team_signals import compute_team_signals
+            signal_cards = compute_team_signals(
+                team_totals_list, pitcher_rows,
+                age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
+            )
+            ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+            if ANTHROPIC_KEY and signal_cards:
+                try:
+                    from signals.narrative import generate_all_narratives
+                    generate_all_narratives(ANTHROPIC_KEY, sport, team.get("team_name") or "the team",
+                                             age_level, signal_cards)
+                except Exception:
+                    pass
+
+            # DS-76: snapshot every computed card on every dashboard render
+            # that reflects a new game commit — Phase 1 records all six
+            # (five at 8U) regardless of whether a future trigger would
+            # suppress any of them.
+            try:
+                from signals.history import record_signal_history
+                from signals.team_signals import CARD_ORDER, card_metric_rows
+                key_to_t = {k: f"T{i+1}" for i, k in enumerate(CARD_ORDER)}
+                contact_ok = all(
+                    c["state"] not in ("missing_data",) for c in signal_cards
+                )
+                record_signal_history(
+                    sb, session["team_id"], last_game["game_id"],
+                    [{
+                        "signal_key": key_to_t[c["key"]],
+                        "bucket": c["bucket"],
+                        "headline": c.get("headline"),
+                        "interpretation": c.get("interpretation"),
+                        "metrics": card_metric_rows(c),
+                        "raw_inputs": c["facts"],
+                        "games_in_sample": len(team_totals_list),
+                    } for c in signal_cards],
+                    age_band=age_level, contact_data_ok=contact_ok,
+                )
+            except Exception:
+                pass
+
+        # Summary line — games since last viewed, per DS-67 §7b. Never "this
+        # week"; counts games because teams often play twice in a week and a
+        # bye week would leave calendar framing as dead air.
+        total_games = len(all_games)
+        last_viewed = team.get("dashboard_last_viewed_game_count") or 0
+        new_games = max(0, total_games - last_viewed)
+        card_count = len(signal_cards)
+        if new_games == 0:
+            summary_line = f"{card_count} things worth knowing through {total_games} game{'s' if total_games != 1 else ''}."
+        elif new_games == 1:
+            weekday = None
+            raw_date = last_game.get("game_date")
+            if raw_date:
+                try:
+                    weekday = datetime.strptime(str(raw_date)[:10], "%Y-%m-%d").strftime("%A")
+                except ValueError:
+                    weekday = None
+            when = f"after {weekday}" if weekday else "after your last game"
+            summary_line = f"{card_count} things worth knowing {when}."
+        else:
+            summary_line = f"{card_count} things worth knowing after your last {new_games} games."
+        sb.table("teams").update({"dashboard_last_viewed_game_count": total_games}).eq("id", session["team_id"]).execute()
+
+        # 8U suppression footnote — sessions 1-3 only, per teams.dashboard_age_footnote_shown_count.
+        if age_level == "8U":
+            shown_count = team.get("dashboard_age_footnote_shown_count") or 0
+            if shown_count < 3:
+                show_age_footnote = True
+                sb.table("teams").update(
+                    {"dashboard_age_footnote_shown_count": shown_count + 1}
+                ).eq("id", session["team_id"]).execute()
+
+    from signals.team_signals import card_metric_rows as _card_metric_rows
+    for card in signal_cards:
+        card["rows"] = _card_metric_rows(card)
+
     return render_template(
         "dashboard.html",
         team_name=session.get("team_name") or "your team",
         sport=sport,
         logo_file=DASHBOARD_LOGO_BY_SPORT.get(sport, DASHBOARD_LOGO_BY_SPORT["Baseball"]),
-        # DS-67/68 add more modules to this shell later; DS-66 (Last Game)
-        # is the first real content to replace DS-65's interim placeholder.
+        # DS-68 adds more modules to this shell later; DS-66 (Last Game) and
+        # DS-67 (Team Signals) are the first real content to replace DS-65's
+        # interim placeholder.
         has_games=last_game is not None,
         last_game=last_game,
         last_game_report=last_game_report,
+        signal_cards=signal_cards,
+        summary_line=summary_line,
+        show_age_footnote=show_age_footnote,
     )
 
 

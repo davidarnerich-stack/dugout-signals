@@ -161,6 +161,38 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   `record_signal_history`'s try/except is built to catch and log without failing the
   upload, then deleted all test rows so the table starts genuinely empty.
 
+- `ds67_dashboard_last_viewed_game_count` — additive, safe. Added
+  `teams.dashboard_last_viewed_game_count`, default 0. DS-67's summary line needs to know
+  how many games are new since the coach last opened the dashboard ("after your last 2
+  games" vs "through 9 games") — nothing tracked this before. Updated on every dashboard
+  render; both existing teams start at 0, so their first post-release dashboard view reads
+  as "through N games" (the no-new-games framing), which is correct for a first view.
+
+  **DS-67 (Team Signals) now wired in**, first real consumer of `signal_history` and both
+  DS-74 migrations above. `record_signal_history()` is called from `/dashboard` on every
+  render that has games — not from the upload flow directly, since the dashboard route is
+  where team_totals across the whole season window gets assembled; this means a signal
+  snapshot happens on the coach's next dashboard *view* after a game commits, not at
+  upload time itself. Six cards at 12U+, five at 8U (Command vs velocity requires walk
+  rate, which is structurally zero under the no-walk rule — DS-67's finalized spec says
+  it "must not be computed", overriding DS-76's original assumption that all six always
+  get recorded; `signals/history.py`'s docstring updated to match).
+
+  Verified the card computation layer (not the narrative generation, which needs
+  `ANTHROPIC_API_KEY` unavailable locally) against the real reference data for both teams:
+  the defensive-split decomposition for Storm (7.55 runs allowed/game = 4.83 FRA + 2.72
+  fielding remainder) matches the design spec's own illustrative example (7.6 = 4.8 + 2.7)
+  almost exactly, strong evidence the spec was written against this same dataset. Catching
+  totals from the Totals row (70 passed balls / 74.1 innings for the Yankees) likewise
+  nearly match the spec's own cited example (69 PB / 72 innings). Confirmed via Jinja
+  render tests: correct card count per age band (5 at 8U, 6 at 12U+), card 6 content
+  genuinely absent (not hidden) at 8U, genuine-zero vs missing-data border/typography
+  states render correctly and independently, the Inter-600 standalone-zero exception
+  applies only to a true zero value, no-headline graceful fallback (simulating a failed or
+  skipped narrative generation) doesn't break the card, and the existing DS-65/66 empty-
+  and populated-dashboard states are unaffected by an empty `signal_cards` list — exactly
+  today's real production state, since neither new DS-74 migration is backfilled yet.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
