@@ -120,6 +120,20 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   `source` pattern; the free-text input itself was already built and working on the
   frontend, only the backend storage was wrong.
 
+- `ds76_signal_history` — additive, safe. New `signal_history` table (append-only: RLS has
+  only `select_own_team`/`insert_own_team`, no update/delete policies at all) with
+  `team_id`/`game_id` FKs, `signal_key`, `bucket`, `headline`, `interpretation`,
+  `metrics`/`raw_inputs` (jsonb), `games_in_sample`, `age_band`, `contact_data_ok`,
+  `computed_at`. Not read or written by any deployed code yet — this is storage
+  infrastructure for DS-67 (which computes the six signals) and doesn't exist as a live
+  write path until that ticket wires `signals.history.record_signal_history()` into the
+  upload flow. Verified directly against the real table before committing: inserted a
+  synthetic 6-row batch (shape matched exactly), inserted a second batch for the same
+  `game_id` and confirmed 12 rows resulted (not an overwrite — proves append-only end to
+  end), confirmed an invalid `team_id` raises `23503` (FK violation) which
+  `record_signal_history`'s try/except is built to catch and log without failing the
+  upload, then deleted all test rows so the table starts genuinely empty.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
