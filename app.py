@@ -516,7 +516,7 @@ def dashboard():
         pitcher_rows = list(pit_totals_by_player.values())
 
         if team_totals_list:
-            from signals.team_signals import compute_team_signals, CARD_ORDER
+            from signals.team_signals import compute_team_signals, compute_familiar_anchors, CARD_ORDER
             signal_cards = compute_team_signals(
                 team_totals_list, pitcher_rows,
                 age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
@@ -599,9 +599,22 @@ def dashboard():
     # containment hierarchy — not a second computation pass. See
     # signals/bucket_modules.py's module docstring.
     bucket_hierarchy = {"offence": None, "defence": None}
+    metric_explainers = {}
     if signal_cards:
         from signals.bucket_modules import build_bucket_hierarchy
         bucket_hierarchy = build_bucket_hierarchy(signal_cards)
+
+        # DS-73: metric explainer content, one entry per metric that's
+        # actually tappable on this render (see explainers.yml's scope
+        # note). team_totals_list/team are only reachable here because
+        # signal_cards is non-empty, which requires the same all_games /
+        # team_totals_list block above to have run.
+        from signals.team_signals import compute_familiar_anchors as _compute_familiar_anchors
+        from metrics.explainer import build_metric_explainers
+        familiar_anchors = _compute_familiar_anchors(
+            team_totals_list, regulation_innings=team.get("regulation_innings") or 6,
+        )
+        metric_explainers = build_metric_explainers(signal_cards, familiar_anchors)
 
     return render_template(
         "dashboard.html",
@@ -618,6 +631,7 @@ def dashboard():
         show_age_footnote=show_age_footnote,
         offence_module=bucket_hierarchy["offence"],
         defence_module=bucket_hierarchy["defence"],
+        metric_explainers=metric_explainers,
     )
 
 

@@ -22,11 +22,14 @@ def _cards_by_key(signal_cards):
     return {c["key"]: c for c in signal_cards}
 
 
-def _chip(bucket, metric_name, value, value_display, anchor_key, *, state="complete"):
+def _chip(bucket, metric_name, value, value_display, anchor_key, *, state="complete", metric_key=None):
+    # DS-73: metric_key (nullable) is the metrics.yml key this chip's
+    # metric_name reads as, if any — drives whether the name itself opens
+    # the metric explainer independently of the chip's anchor-scroll link.
     return {
         "bucket": bucket, "metric_name": metric_name, "value": value,
         "value_display": value_display, "anchor": f"signal-{anchor_key}",
-        "state": state,
+        "state": state, "metric_key": metric_key,
     }
 
 
@@ -53,10 +56,10 @@ def build_offence_module(signal_cards):
     chips = [
         _chip("Hitting", "OPSE", funnel["facts"].get("team_opse"),
               f"{funnel['facts']['team_opse']:.3f}" if funnel["facts"].get("team_opse") is not None else "—",
-              "offence_funnel", state=funnel["state"]),
+              "offence_funnel", state=funnel["state"], metric_key="opse"),
         _chip("Baserunning", "SCORE%", score_pct,
               f"{score_pct:.1f}%" if score_pct is not None else "—",
-              "offence_funnel", state=funnel["state"]),
+              "offence_funnel", state=funnel["state"], metric_key="score_pct"),
     ]
     return {
         "runs_per_game": runs_per_game, "bar1_pct": bar1_pct, "bar2_pct": bar2_pct,
@@ -84,24 +87,27 @@ def build_defence_module(signal_cards):
     chips = [
         _chip("Pitching", "FRA", pitching_share,
               f"{pitching_share:.2f}" if pitching_share is not None else "—",
-              "defensive_split", state=split["state"]),
+              "defensive_split", state=split["state"], metric_key="fra"),
     ]
     if fielding:
         def_eff = fielding["facts"].get("def_eff")
         chips.append(_chip("Fielding", "DefEff", def_eff,
                             f"{def_eff:.3f}" if def_eff is not None else "—",
-                            "fielding_conversion", state=fielding["state"]))
+                            "fielding_conversion", state=fielding["state"], metric_key="def_eff"))
     if catching:
         f = catching["facts"]
         if f.get("metric") == "pb_per_inning":
             val = f.get("pb_per_inning")
             display = f"{val:.2f}" if val is not None else "—"
-            name = "PB/inning"
+            name, mkey = "PB/inning", "pb_per_inning"
         else:
+            # DS-75 follow-up: cs_pct comes from compute_catching_metrics
+            # already scaled 0-100 — do not re-multiply (this call site was
+            # missed when card_metric_rows' identical bug was fixed).
             val = f.get("cs_pct")
-            display = f"{val * 100:.1f}%" if val is not None else "—"
-            name = "CS%"
-        chips.append(_chip("Catching", name, val, display, "catching_load", state=catching["state"]))
+            display = f"{val:.1f}%" if val is not None else "—"
+            name, mkey = "CS%", "cs_pct"
+        chips.append(_chip("Catching", name, val, display, "catching_load", state=catching["state"], metric_key=mkey))
 
     return {
         "runs_allowed_per_game": runs_allowed,

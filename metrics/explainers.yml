@@ -1,0 +1,133 @@
+# DS-73: Metric explainer content — authored, not model-generated (req 7).
+# These definitions are stable, reviewed copy, not Claude-generated prose —
+# the one part of this ticket that isn't safe to auto-write and ship
+# unreviewed, since it's the thing coaches trust to be correct.
+#
+# Scope (2026-08-04): only the metrics that currently render as tappable
+# text anywhere in the live UI get an entry — fra, opse, score_pct, def_eff
+# (Team Signals cards + DS-68 bucket chips) and pb_per_inning, cs_pct
+# (Catching card + chip). Every other metrics.yml entry (bat_bb_pct, iso,
+# yrpi, pskl, yral, ...) has no live tap target yet — that's a DS-57
+# (player signals, paused) surface. No fake affordances: an explainer entry
+# for a metric nothing links to would be dead content. Add an entry here
+# only alongside whatever DS-57 work first renders that metric's name.
+#
+# is_novel decides which of req 4's two structures renders. This is
+# deliberately NOT the same flag as metrics.yml's `proprietary` — that flag
+# tracks research-attribution obligations; `is_novel` here tracks whether a
+# typical volunteer coach already has a mental model for this number.
+# def_eff is proprietary: false in metrics.yml (Defensive Efficiency Rating
+# is a known sabermetric term, not this author's invention) but IS novel by
+# this ticket's definition — no youth coach already tracks it, unlike
+# fielding percentage. pb_per_inning/cs_pct are the reverse case: GameChanger
+# itself already computes and displays both, so a coach already has them —
+# familiar despite being newly wired into this compute layer.
+#
+# Attribution: Michael McBride, "Coaching Youth Baseball and Softball with
+# Sabermetrics: Create Customized and Youth-centric Stats to Measure Success
+# and Motivate Your Players" (Youth Sabermetrics Book 3). Shortened for the
+# credit line's limited space — the full subtitle doesn't fit. Only on the
+# metrics metric-attribution.md classifies as the author's own invention
+# (category A) — fra, opse, score_pct here; def_eff is category C (standard
+# sabermetrics he recommends, not his own), no attribution needed.
+
+attribution_text: "Adapted from Michael McBride, Youth Sabermetrics Book 3 — Coaching Youth Baseball and Softball with Sabermetrics."
+
+explainers:
+
+  - metric_key: fra
+    is_novel: true
+    familiar_anchor: {label: "ERA", anchor_key: era, decimals: 2}
+    what_it_measures: >-
+      The share of runs allowed that are fairly the pitching staff's, separated
+      from what the fielders behind them let through.
+    why_more_useful: >-
+      ERA charges the pitcher for every run that scores while they're on the
+      mound, whether or not it was actually their doing. At this age, a lot of
+      it isn't — a routine grounder that gets booted, a fly ball nobody calls
+      for. FRA splits the runs allowed into a pitching share and a fielding
+      share, so you're not judging the mound by what happened behind it.
+    caveat: >-
+      FRA is a modeled estimate, not a play-by-play review of who caused each
+      run — it won't always match what you remember seeing happen in a
+      specific inning. Treat it as a season-long read, not a single-game
+      verdict.
+    attribution: true
+
+  - metric_key: opse
+    is_novel: true
+    familiar_anchor: {label: "OPS", anchor_key: ops, decimals: 3}
+    what_it_measures: >-
+      On-base plus slugging, with one change: reaching base on an error counts
+      as a positive outcome instead of being buried inside "out."
+    why_more_useful: >-
+      Standard OPS treats a reached-on-error at-bat the same as a strikeout —
+      it never shows up as anything good. At this age, error rates are high
+      enough that a lot of hard, well-placed contact turns into an error
+      instead of a hit. OPSE gives that contact credit instead of erasing it.
+    caveat: >-
+      OPSE will run higher than OPS for a team that hits the ball hard into a
+      shaky defense — that's the point, not a flaw. It's not the number to
+      compare against an older team's plain OPS.
+    attribution: true
+
+  - metric_key: score_pct
+    is_novel: true
+    familiar_anchor: {label: "Runs", anchor_key: runs, decimals: 0}
+    what_it_measures: >-
+      Of the times a player reached base, the share that turned into a run.
+    why_more_useful: >-
+      Raw runs scored depends heavily on where a player hits in the order —
+      the leadoff spot gets far more chances to score than the bottom of the
+      lineup. SCORE% looks only at what happened after reaching base, so a
+      player who scores every time they're on gets credit for that
+      regardless of how many times they actually got on.
+    caveat: >-
+      A single game usually gives a player only a couple of times on base —
+      one smart read or one missed sign can swing SCORE% a long way. Read it
+      across a full season, not one box score.
+    attribution: true
+
+  - metric_key: def_eff
+    is_novel: true
+    familiar_anchor: {label: "Fielding Percentage", anchor_key: fielding_pct, decimals: 3}
+    what_it_measures: >-
+      The share of balls put in play against this team that the defense
+      converted into an out.
+    why_more_useful: >-
+      Fielding percentage only counts a play as a "chance" once a fielder
+      gets to the ball and touches it — a ball that sneaks through the gap
+      untouched never counts against it at all. A team can post a spotless
+      fielding percentage while still letting a lot of balls through simply
+      because nobody was in position to reach them. DefEff counts every ball
+      in play, not just the ones a glove got to.
+    caveat: >-
+      A low DefEff is often positioning and range, not hands — don't assume
+      it points at the same players a fielding-percentage number would.
+    attribution: false
+
+  - metric_key: pb_per_inning
+    is_novel: false
+    what_it_measures: >-
+      How often a passed ball gets by the catcher, per inning caught.
+    how_to_read_at_age: >-
+      Passed balls are common below 12U — catchers are still building glove
+      and blocking skills, and pitchers don't yet locate consistently. A rate
+      at or above 1 per inning is normal developmentally at 8U-10U, not a
+      red flag.
+    caveat: null
+    attribution: false
+
+  - metric_key: cs_pct
+    is_novel: false
+    what_it_measures: >-
+      The share of stolen-base attempts against this team that were thrown
+      out.
+    how_to_read_at_age: >-
+      Caught-stealing rate is a battery number, not a catcher grade — a
+      pitcher slow to the plate gives a runner a big enough head start that
+      no catcher's arm can make up the difference. Read a low CS% alongside
+      how quickly the pitchers are getting the ball to the plate before
+      pointing at the catcher specifically.
+    caveat: null
+    attribution: false

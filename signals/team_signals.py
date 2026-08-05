@@ -72,6 +72,33 @@ def compute_team_signals(team_totals_list, pitcher_rows, *, age_level, regulatio
     return cards
 
 
+def compute_familiar_anchors(team_totals_list, *, regulation_innings):
+    """DS-73: the "start with what you know" familiar-stat values a novel
+    metric's explainer opens with (team ERA for FRA, team OPS for OPSE, team
+    Runs for SCORE%, team Fielding Percentage for DefEff). Reuses the exact
+    same aggregation compute_team_signals already does — no new database
+    query, single source of truth. Kept independent of compute_team_signals
+    itself (rather than folded into its return value) so this doesn't touch
+    that function's existing, tested contract or its three call sites."""
+    team_context = compute_team_context(team_totals_list, regulation_innings=regulation_innings)
+    bat_totals = _sum_team_batting(team_totals_list)
+    fld_totals = _sum_team_fielding(team_totals_list)
+
+    obp_den = bat_totals["at_bats"] + bat_totals["walks"] + bat_totals["hit_by_pitch"]
+    obp = safe_div(bat_totals["hits"] + bat_totals["walks"] + bat_totals["hit_by_pitch"], obp_den)
+    ops = (obp + bat_totals["slugging_percentage"]) if obp is not None else None
+
+    tc = fld_totals["total_chances"]
+    fielding_pct = safe_div(tc - fld_totals["errors"], tc)
+
+    return {
+        "era": team_context.get("TmERA"),
+        "ops": ops,
+        "runs": team_context.get("TeamR"),
+        "fielding_pct": fielding_pct,
+    }
+
+
 # ── Team-level aggregation across the window ────────────────────────────────
 # Raw counts sum exactly across games (each games.team_totals row is
 # GameChanger's own per-game aggregate, itself already correct). Rate stats
@@ -282,12 +309,23 @@ def _catching_load(fld_totals, age_level):
 def _command_vs_velocity(pitcher_rows):
     """K% / BB% spread across the staff — a property of individual pitchers,
     not the team aggregate, so this is the one card that works from
-    per-pitcher rows rather than team_totals."""
+    per-pitcher rows rather than team_totals.
+
+    DS-85 fix: the insufficient_attempts branch used to omit
+    k_pct_spread/bb_pct_spread from facts entirely, instead of populating
+    them as None — every other card in this file always populates every
+    fact key (None for missing), and card_metric_rows relies on that
+    convention unconditionally. The omission was a live KeyError crash
+    risk for any 9U+ team with fewer than 2 pitchers recorded across their
+    season so far (most exposed right after a team's first game upload, if
+    that game had a single pitcher) — and since app.py's card_metric_rows
+    loop has no per-card try/except, it took down the whole /dashboard
+    route, not just this card."""
     eligible = [p for p in pitcher_rows if (p.get("batters_faced") or 0) > 0]
     if len(eligible) < 2:
         return {
             "key": "command_vs_velocity", "bucket": "Pitching", "state": "insufficient_attempts",
-            "facts": {"staff_size": len(eligible)},
+            "facts": {"staff_size": len(eligible), "k_pct_spread": None, "bb_pct_spread": None},
         }
 
     k_pcts = [(p["strikeouts"] / p["batters_faced"]) * 100 for p in eligible]
@@ -312,14 +350,19 @@ def _command_vs_velocity(pitcher_rows):
 # invent. `is_zero` marks the design's Inter-600-not-Orbitron typography
 # exception (§7) — a standalone zero, not any number containing one.
 
-def _row(name, value, decimals, comparator, *, is_zero=None):
+def _row(name, value, decimals, comparator, *, is_zero=None, metric_key=None):
+    # DS-73: metric_key (nullable) marks which rows correspond to a real
+    # metrics.yml entry with an explainer — only those render as tappable.
+    # A row like "Fielding remainder" or "Errors" is a raw/derived display
+    # quantity, not a metrics.yml metric, so it stays inert — no fake
+    # affordance for a tap target with nothing to open.
     if value is None:
         return {"name": name, "value": None, "value_display": "—",
-                "comparator": comparator, "is_zero": False}
+                "comparator": comparator, "is_zero": False, "metric_key": metric_key}
     display = f"{value:.{decimals}f}"
     zero = is_zero if is_zero is not None else (round(value, decimals) == 0)
     return {"name": name, "value": value, "value_display": display,
-            "comparator": comparator, "is_zero": zero}
+            "comparator": comparator, "is_zero": zero, "metric_key": metric_key}
 
 
 def card_metric_rows(card):
@@ -330,7 +373,7 @@ def card_metric_rows(card):
         games_note = f"{f['games']} games this season"
         return [
             _row("Runs allowed/game", f["runs_allowed_per_game"], 1, games_note),
-            _row("FRA (pitching)", f["fra_pitching_share"], 2, "fair runs the pitching owns"),
+            _row("FRA (pitching)", f["fra_pitching_share"], 2, "fair runs the pitching owns", metric_key="fra"),
             _row("Fielding remainder", f["fielding_remainder"], 2, "the rest"),
         ]
     if key == "run_gap":
@@ -341,19 +384,19 @@ def card_metric_rows(card):
         ]
     if key == "offence_funnel":
         return [
-            _row("Team OPSE", f["team_opse"], 3, "on-base + slugging, errors included"),
-            _row("Team SCORE%", f["team_score_pct"], 1, "of times on base"),
+            _row("Team OPSE", f["team_opse"], 3, "on-base + slugging, errors included", metric_key="opse"),
+            _row("Team SCORE%", f["team_score_pct"], 1, "of times on base", metric_key="score_pct"),
         ]
     if key == "fielding_conversion":
         return [
-            _row("DefEff", f["def_eff"], 3, "balls in play converted to outs"),
+            _row("DefEff", f["def_eff"], 3, "balls in play converted to outs", metric_key="def_eff"),
             _row("Errors", f["errors"], 0, f"across {f['games']} games", is_zero=(f["errors"] == 0)),
             _row("Runs allowed/game", f["runs_allowed_per_game"], 1, ""),
         ]
     if key == "catching_load":
         if f["metric"] == "pb_per_inning":
             return [
-                _row("Passed balls/inning", f["pb_per_inning"], 2, ""),
+                _row("Passed balls/inning", f["pb_per_inning"], 2, "", metric_key="pb_per_inning"),
                 _row("Passed balls", f["passed_balls"], 0, f"in {f['innings']:.0f} innings caught",
                      is_zero=(f["passed_balls"] == 0)),
             ]
@@ -361,7 +404,7 @@ def card_metric_rows(card):
             # DS-75: cs_pct comes from compute_catching_metrics already scaled
             # 0-100 (same convention as every other percent metric in this
             # layer, e.g. pit_bb_pct) — do not re-multiply by 100 here.
-            _row("Caught stealing %", f["cs_pct"], 1, f"{f['attempts']} attempts all season"),
+            _row("Caught stealing %", f["cs_pct"], 1, f"{f['attempts']} attempts all season", metric_key="cs_pct"),
             _row("Runners caught", f["cs"], 0, f"of {f['attempts']} attempts", is_zero=(f["cs"] == 0)),
         ]
     if key == "command_vs_velocity":

@@ -372,6 +372,87 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   every touched module; `metrics.yml` parses to 23 total metrics (19 + the 4 new catching
   ones).
 
+- **No migration — DS-73, metric explainer, plus a follow-up bug fix and a licensing note**:
+  new `metrics/explainers.yml` (authored, not model-generated, per req 7 — the one part of this
+  ticket that isn't safe to auto-write and ship unreviewed) and `metrics/explainer.py`
+  (assembles the render-time payload: authored copy + real own-team value + real familiar-anchor
+  value, no new database query — reuses the exact facts already on `signal_cards`).
+
+  **Scope decision**: only 6 metrics currently render as tappable text anywhere in the live UI —
+  `fra`, `opse`, `score_pct`, `def_eff`, `pb_per_inning`, `cs_pct` — so only those 6 have an
+  explainer entry. Every other `metrics.yml` metric (`bat_bb_pct`, `iso`, `yrpi`, `pskl`, `yral`,
+  ...) has no live tap target yet; that's a DS-57 (player signals, paused) surface, and adding an
+  explainer for a metric nothing links to would be a fake affordance. Add an entry alongside
+  whatever DS-57 work first renders that metric's name.
+
+  **Attribution**: the research docs (`ds29-metric-extraction.md`, `metric-attribution.md`)
+  deliberately never name the source — flagged "licensing unresolved, pending author permission"
+  — so this needed a direct check with David rather than a guess. He provided the real citation:
+  Michael McBride, *Coaching Youth Baseball and Softball with Sabermetrics* (Youth Sabermetrics
+  Book 3), shortened for the credit line's limited space. Applied to the 3 metrics
+  `metric-attribution.md` classifies as the author's own invention (category A) that are also
+  currently live — `fra`, `opse`, `score_pct`. `def_eff` is category C (a standard sabermetric
+  term he recommends, not his invention) — no attribution, matching its `metrics.yml`
+  `proprietary: false`. `pb_per_inning`/`cs_pct` are classified `is_novel: false` in
+  `explainers.yml` (a separate flag from `metrics.yml`'s `proprietary`, tracking coach-familiarity
+  rather than research-attribution) — GameChanger's own export already computes and displays
+  both, so a coach already has these numbers.
+
+  **"Across your own team" scoping** (req 5): confirmed with David before building — the
+  design spec's "across your staff/lineup" comparison assumes a per-player breakdown that only
+  exists once DS-57 (paused) wires in player-level data. For the live team-level cards, this
+  section instead states the team's own season value plainly (e.g. "Your team's FRA this
+  season: 4.83") rather than fabricating a spread with nothing to compare against.
+
+  **UI**: tapping a metric name — on a signal card row, inside DS-69's explanation view, or in a
+  DS-68 bucket chip — opens the metric explainer using DS-69's exact modal shell (req 3). When
+  opened from *within* an already-open DS-69 signal explanation, it **replaces that sheet's
+  content in place** with a back arrow rather than stacking a second sheet (the 2026-08-03
+  decision) — tapping back restores the signal explanation exactly as it was. Opened fresh (from
+  a card row or bucket chip with no DS-69 sheet already open), it's a normal sheet with an X
+  close. No feedback control on the metric explainer — that's DS-69-specific, not part of this
+  component's spec.
+
+  **Follow-up bug fix, found while wiring tap targets**: `signals/bucket_modules.py`'s Defence
+  bucket chip had a *second* instance of DS-75's `cs_pct` double-scale bug — `card_metric_rows`
+  was fixed, but this call site was missed. `compute_catching_metrics` returns `cs_pct`
+  pre-scaled 0-100; this line still multiplied by 100 again, so the Defence module's CS% chip
+  was showing roughly 100x too large in production since DS-75 shipped. Fixed immediately on
+  discovery.
+
+  **Retroactive ticket note**: the `innings_as_catcher` thirds-notation bug found and fixed
+  during DS-75 was filed retroactively as DS-84 (Bug, Done) at David's request, for an audit
+  trail matching DS-82's precedent — a live bug in already-shipped code deserves its own record
+  even when fixed same-session as the ticket that found it. The `cs_pct` scale mismatch this
+  session (both the original DS-75 instance and this bucket-chip follow-up) was *not* filed
+  separately — caught before either ever reached production, same category as the FB-formula
+  and TmPitchGP bugs caught during DS-74's own development.
+
+  Verified against real production Storm data end-to-end (`compute_team_signals` →
+  `compute_familiar_anchors` → `build_metric_explainers`, real 4-game `team_totals` and 2
+  synthetic-but-realistic pitcher rows): FRA 5.985 against an ERA anchor of 5.32, OPSE 0.804
+  against an OPS anchor of 0.757 (OPSE higher, exactly the "credits ROE" claim in its own copy),
+  DefEff 0.368 against a Fielding Percentage anchor of 0.714 (the large gap illustrates precisely
+  what the copy says FPCT misses), CS% gracefully showing "—" when this sample's 12 attempts sit
+  below the 15-attempt gate (not a crash, not a wrong number). Full Jinja render test with all 6
+  metrics' tap targets present in the rendered HTML; JS syntax-checked with `node --check`;
+  `py_compile` across every touched module.
+
+  **Found while verifying this ticket, filed and fixed as DS-85 (High)**:
+  `_command_vs_velocity`'s `insufficient_attempts` state omitted `k_pct_spread`/`bb_pct_spread`
+  from `facts` entirely instead of populating them as `None` (the convention every other card in
+  the file follows) — `card_metric_rows` reads them unconditionally, and `app.py`'s
+  `/dashboard` route builds every card's rows in a loop with **no per-card try/except**, so this
+  was a live `KeyError` crash of the **entire dashboard route**, not just one broken card,
+  whenever a 9U+ team had recorded `batters_faced` for fewer than 2 distinct pitchers across
+  their whole season so far. Most exposed right after a brand-new team's first game upload, if
+  that game had a single pitcher — common in youth ball, and not a rare edge case. Confirmed
+  Storm/Yankees (today's two real teams) already have 2+ pitchers recorded and aren't currently
+  exposed. Fixed by populating both fields as `None` in that branch; `_row()` already renders
+  `None` as `"—"` gracefully. Reproduced the exact crash against real Storm data pre-fix,
+  confirmed graceful `"—"` rendering post-fix, confirmed the 2+-pitcher path unchanged. Full
+  detail in DS-85.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
