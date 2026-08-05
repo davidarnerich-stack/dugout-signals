@@ -386,6 +386,45 @@ Team errors: {us['e']}. Errors by player: {errs}.
 """)
 
 
+def generate_catching(client, system, data) -> str:
+    """DS-75: counting stats only, per catcher — AC #6 (single-game grain is
+    too small a sample for a per-catcher rate to mean anything). Team-level
+    rates in catching_summary are fine to reference for context but must
+    not be attributed to catchers by number of PB or SB allowed alone; the
+    prompt carries AC #8's caveat explicitly, same discipline as narrative.py
+    elsewhere in this codebase — grounded facts plus an explicit instruction
+    not to overreach beyond them."""
+    cs = data["catching_summary"]
+    catchers = "; ".join(
+        f"{c['name']} #{c['number']}: {c['innings']} innings caught, {c['pb']} PB, "
+        f"{c['sb_allowed']} SB allowed, {c['cs']} CS" + (f", {c['pik']} PIK" if c["pik"] else "")
+        for c in data["catching_stats"]
+    ) or "No catcher recorded innings this game."
+
+    headline_line = ""
+    if cs["headline_metric"] == "cs_pct" and cs["cs_pct"] is not None:
+        headline_line = f"Team caught-stealing rate this game: {cs['cs_pct']:.1f}% ({cs['cs']} of {cs['attempts']} attempts)."
+    elif cs["pb_per_inning"] is not None:
+        headline_line = f"Team passed balls per inning this game: {cs['pb_per_inning']:.2f} ({cs['passed_balls']} PB in {cs['innings_caught']:.1f} innings)."
+
+    return _single_game_call(client, system, f"""Write the "Catching" subsection — catcher
+performance for this game, using ONLY the counting stats below (passed balls, caught stealing,
+innings caught) — never compute or state a per-catcher rate or percentage, the sample within one
+game is too small for that to mean anything (e.g. never say a catcher "threw out X%").
+A catcher with zero passed balls had a clean game behind the plate — state that as a positive
+result, not as an absence of data.
+If a runner was caught stealing or advanced on a passed ball, remember that pitcher delivery time
+to the plate is a material factor in both outcomes — do not credit or fault the catcher alone for
+either.
+If there's enough to cover, split it into 2-3 short paragraphs separated by a blank line rather
+than one dense block — a single short paragraph is fine when there isn't much to say, and a game
+with no innings caught should say so plainly rather than being padded out.
+
+Catching lines: {catchers}
+{headline_line}
+""")
+
+
 def generate_signals(client, system, data) -> list:
     text = _single_game_call(client, system, f"""Write 3-5 "Team Signals" — pattern observations
 phrased as developmental observations, not verdicts. Age/sport calibrated per the system prompt.
@@ -487,6 +526,11 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
         sections["fielding"] = _to_html(_strip_leading_label(generate_fielding(client, system, data, us), "Fielding"))
     except Exception as e:
         sections["fielding"] = f"<p>[Generation error: {e}]</p>"
+
+    try:
+        sections["catching"] = _to_html(_strip_leading_label(generate_catching(client, system, data), "Catching"))
+    except Exception as e:
+        sections["catching"] = f"<p>[Generation error: {e}]</p>"
 
     try:
         sections["signals"] = generate_signals(client, system, data)

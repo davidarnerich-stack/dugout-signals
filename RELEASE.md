@@ -308,6 +308,70 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   deferred-regeneration caution, as the existing DS-38 `fps_pct` UAT item below: don't
   regenerate existing reports to fix this automatically, confirm with David first.
 
+- **No migration — DS-75, catching metrics + single game report section, plus a related
+  live-bug fix found while building it**: added the fourth (of DS-29's original count)
+  metrics bucket — `pb_per_inning`, `sb_per_inning`, `cs_pct`, `innings_caught` — to
+  `metrics/metrics.yml` and a new `compute_catching_metrics()` in `metrics/compute.py`.
+  Derived, not sourced from published research (no attribution required). Sample gates (10
+  innings for the per-inning rates, 15 steal attempts for CS%) are derived defaults
+  calibrated against the ticket's own worked example — Storm's real catchers Garcia (42
+  attempts / 59.0 innings, treated as trustworthy) vs. Butler (7 attempts, flagged
+  misleading) and Vazquez (6.1 innings, flagged misleading) — not research-sourced or a
+  fabricated-precise number; documented as tunable in both the YAML and the code constants.
+
+  **Live bug found and fixed in the process**: `innings_as_catcher` turns out to use the
+  exact same GameChanger thirds notation as `innings_pitched` (`"2.2"` = 2⅔ innings, 8 outs)
+  — confirmed by checking every fractional digit that appears across both full-season
+  reference CSVs (both sports): only `.0`/`.1`/`.2` ever appear for `innings_as_catcher` and
+  for every per-position innings-played column (P/C/1B/2B/3B/SS/LF/CF/RF/SF), never a true
+  decimal fraction. `signals/team_signals.py`'s `_sum_team_fielding` was summing it as a raw
+  float — the exact DS-82 bug class, but live in the already-shipped, Done DS-67 catching
+  card's `pb_per_inning` metric. Fixed the same way DS-82 was: sum outs, reconstruct the
+  thirds-notation string, matching `_sum_team_pitching`'s existing convention in the same
+  file. Checked whether this also affects the per-position innings-played columns (David's
+  own suspicion, confirmed right that they share the notation) — they don't have a live bug
+  today, because that data is only ever *compared* (`_primary_position`, picking a player's
+  most-played position) never summed or divided, and thirds-notation digits happen to
+  preserve correct ordering under naive float comparison (0 < 1 < 2 maps monotonically to
+  0 < ⅓ < ⅔). Not stored anywhere either, so nothing to backfill.
+
+  **New feature**: a "Catching" subsection on the single-game report (`game_report.html`,
+  under Team Performance → Defense, alongside Pitching and Fielding), AI-narrated same as
+  its neighboring subsections but grounded in **counting stats only** per catcher (passed
+  balls, caught stealing, innings caught, pickoffs) — a single game is too small a sample
+  for a per-catcher rate to mean anything (design rule from the ticket, same reasoning DS-57
+  applies to player signals generally). The prompt explicitly instructs the model never to
+  compute or state a per-catcher percentage, to read a catcher's zero passed balls as a
+  positive result rather than missing data, and to never attribute a caught-stealing or
+  passed-ball outcome to the catcher alone — pitcher delivery time to the plate is named
+  explicitly as a material factor in both. The existing DS-67 dashboard catching card is
+  unchanged in shape (still team-level rates, still the 8U-10U-uses-PB / 12U+-uses-CS%
+  headline switch) — DS-75 wired it through the new shared `compute_catching_metrics`
+  instead of its own inline logic, which is what picked up both the sample-gate fix and the
+  innings-notation fix for free.
+
+  One scale bug caught before it shipped: `compute_catching_metrics` returns `cs_pct`
+  already scaled 0-100 (the same convention every other percent metric in this layer uses,
+  e.g. `pit_bb_pct`), but the DS-67 catching card's existing display row still multiplied by
+  100 again (written against the *old* inline `cs_pct = safe_div(cs, attempts)`, a bare 0-1
+  proportion). Left as-is it would have displayed a caught-stealing rate 100x too large.
+  Fixed in `card_metric_rows`.
+
+  Verified against real production data: confirmed a Storm team's actual 4-game
+  `passed_balls`/`innings_as_catcher` totals produce a corrected `innings_caught` (14.67)
+  strictly higher than the old buggy raw-float sum (14.2, since raw thirds-as-decimal always
+  undercounts the true fraction) and a correspondingly lower `pb_per_inning` (0.955 vs the
+  buggy 0.986); confirmed that same real game's 12 combined steal attempts now correctly
+  suppress `cs_pct` under the new 15-attempt gate, where the old code showed a rate off of
+  any attempts > 0. Confirmed the single-game Catching section's sample gates behave
+  correctly against two real Storm catchers (Butler, Garcia) sharing one real game — both
+  team-level per-game rates correctly suppress (4 innings / 1 attempt, both below their
+  gates), which is the expected, common case at single-game grain, not a bug: it's why AC #6
+  restricts the single-game section to counting stats in the first place. Full Jinja render
+  test of `game_report.html` with the new Catching subsection populated. `py_compile` across
+  every touched module; `metrics.yml` parses to 23 total metrics (19 + the 4 new catching
+  ones).
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
@@ -359,6 +423,13 @@ checking the same boxes — that's what catches regressions.
       read as a mismatch on old reports specifically. Tables self-correct automatically on next
       view; only the AI-written prose is stale. Same deferral as DS-38 above — confirm with
       David before regenerating any specific report.
+- [ ] **DS-75:** any `signal_history` row for the `catching_load` (Team Signals) card recorded
+      before this deploy has a cached headline/interpretation narrated against the old, buggy
+      `innings_as_catcher` sum and the old un-gated `cs_pct` — the dashboard will show fresh,
+      corrected numbers (innings, PB/inning, and CS% possibly now suppressed under the new
+      15-attempt gate where it previously showed a value) next to that stale headline text until
+      the next game upload re-narrates it. Same class of staleness as DS-82/DS-38 above, no
+      action needed — it self-corrects on the next real upload.
 
 ---
 

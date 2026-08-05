@@ -401,3 +401,50 @@ def compute_team_context(team_totals_list, *, regulation_innings):
 def compute_team_metrics(team_context):
     """DefEff — team-only; player cells render as a dash, never a value."""
     return {"def_eff": team_context.get("DefEff")}
+
+
+# ── Catching (DS-75) ─────────────────────────────────────────────────────────
+# Derived, not sourced from published research — no attribution required.
+# Thresholds are derived defaults calibrated against the ticket's own worked
+# example (Storm catchers Garcia/Butler/Vazquez), not research-sourced or
+# fabricated-precise; see metrics.yml's catching bucket header note.
+CATCHING_MIN_INNINGS = 10.0
+CATCHING_MIN_ATTEMPTS = 15
+
+
+def compute_catching_metrics(row, *, min_innings=CATCHING_MIN_INNINGS, min_attempts=CATCHING_MIN_ATTEMPTS):
+    """row: a fielding_stats-shaped dict (single catcher/game, or a team/
+    season aggregate — grain-agnostic, same convention as the other
+    compute_X_metrics functions). `innings_as_catcher` must be GameChanger's
+    own thirds notation ("2.2" = 2 2/3 innings) — parsed here via
+    parse_innings_to_outs/corrected_innings, never summed upstream as a raw
+    float (that was DS-75's fix to a live bug in team_signals.py).
+
+    Returns a dict of {metric_key: value}. innings_caught is always present
+    when innings_as_catcher parses to a positive out count; the two
+    per-inning rates are additionally gated on min_innings, and cs_pct on
+    min_attempts — a metric below its gate is simply absent, never present
+    as 0 or null-with-a-caveat (same discipline as every other compute_X_
+    metrics function)."""
+    out = {}
+
+    outs = parse_innings_to_outs(row.get("innings_as_catcher"))
+    innings = corrected_innings(outs)
+    if not innings:
+        return out
+
+    out["innings_caught"] = innings
+
+    pb = row.get("passed_balls") or 0
+    sb = row.get("stolen_bases_allowed") or 0
+    cs = row.get("runners_caught_stealing") or 0
+    attempts = sb + cs
+
+    if innings >= min_innings:
+        out["pb_per_inning"] = safe_div(pb, innings)
+        out["sb_per_inning"] = safe_div(sb, innings)
+
+    if attempts >= min_attempts:
+        out["cs_pct"] = safe_div(cs, attempts) * 100 if safe_div(cs, attempts) is not None else None
+
+    return out

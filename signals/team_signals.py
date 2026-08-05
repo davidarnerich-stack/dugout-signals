@@ -17,7 +17,7 @@ leaning on whatever data survives the 8U no-walk rule.
 
 from metrics.compute import (
     compute_team_context, compute_batting_metrics, compute_pitching_metrics,
-    compute_team_metrics, walks_enabled, safe_div,
+    compute_team_metrics, compute_catching_metrics, walks_enabled, safe_div,
     contact_data_missing_batting, contact_data_missing_pitching,
 )
 
@@ -131,16 +131,26 @@ def _sum_team_pitching(team_totals_list):
 
 
 def _sum_team_fielding(team_totals_list):
+    # DS-75: innings_as_catcher is GameChanger thirds notation ("2.2" = 2 2/3
+    # innings, 8 outs), same as innings_pitched — confirmed across both
+    # full-season reference CSVs, every P/C/1B/2B/3B/SS/LF/CF/RF/SF/Total
+    # innings-played column only ever carries a .0/.1/.2 fractional digit.
+    # Summing it as a raw float here was the exact DS-82 bug, just for
+    # catching instead of pitching: sum outs, reconstruct the thirds-notation
+    # string, same convention _sum_team_pitching already uses for
+    # innings_pitched so compute_catching_metrics can parse it the same way.
+    from metrics.compute import parse_innings_to_outs
+
     fields = ["errors", "passed_balls", "stolen_bases_allowed", "runners_caught_stealing",
               "total_chances"]
     out = {f: 0 for f in fields}
-    innings_as_catcher = 0.0
+    outs_total = 0
     for t in team_totals_list:
         f_ = t.get("fielding") or {}
         for f in fields:
             out[f] += f_.get(f) or 0
-        innings_as_catcher += f_.get("innings_as_catcher") or 0.0
-    out["innings_as_catcher"] = innings_as_catcher
+        outs_total += parse_innings_to_outs(f_.get("innings_as_catcher")) or 0
+    out["innings_as_catcher"] = f"{outs_total // 3}.{outs_total % 3}"
     return out
 
 
@@ -232,25 +242,35 @@ def _catching_load(fld_totals, age_level):
     """PB/inning below 12U (catching is genuinely the headline at 8U-10U —
     the reference Yankees data shows 70 passed balls in 74 innings against
     only 7 steal attempts all season, which is exactly why PB replaces CS%
-    below 12U: there isn't enough attempt volume for CS% to mean anything)."""
+    below 12U: there isn't enough attempt volume for CS% to mean anything).
+
+    DS-75: delegates the actual formulas and sample gates (10 innings for
+    the per-inning rates, 15 attempts for CS%) to compute_catching_metrics,
+    which also fixed a live bug here — innings_as_catcher is GameChanger
+    thirds notation, and _sum_team_fielding was previously summing it as a
+    raw float (same bug class as DS-82, just for catching)."""
     use_pb = (age_level or "").strip().upper() in ("8U", "10U")
+    metrics = compute_catching_metrics(fld_totals)
     pb = fld_totals["passed_balls"]
-    innings = fld_totals["innings_as_catcher"]
+    innings = metrics.get("innings_caught") or 0.0
     cs = fld_totals["runners_caught_stealing"]
     sb = fld_totals["stolen_bases_allowed"]
     attempts = cs + sb
 
     if use_pb:
-        pb_per_inning = safe_div(pb, innings)
-        state = "genuine_zero" if pb == 0 else ("complete" if pb_per_inning is not None else "missing_data")
+        pb_per_inning = metrics.get("pb_per_inning")
+        if pb_per_inning is None:
+            state = "missing_data" if innings == 0 else "insufficient_attempts"
+        else:
+            state = "genuine_zero" if pb == 0 else "complete"
         return {
             "key": "catching_load", "bucket": "Catching", "state": state,
             "facts": {"metric": "pb_per_inning", "pb_per_inning": pb_per_inning,
                       "passed_balls": pb, "innings": innings},
         }
     else:
-        cs_pct = safe_div(cs, attempts)
-        state = "insufficient_attempts" if attempts == 0 else "complete"
+        cs_pct = metrics.get("cs_pct")
+        state = "insufficient_attempts" if cs_pct is None else "complete"
         return {
             "key": "catching_load", "bucket": "Catching", "state": state,
             "facts": {"metric": "cs_pct", "cs_pct": cs_pct, "attempts": attempts, "cs": cs},
@@ -338,8 +358,10 @@ def card_metric_rows(card):
                      is_zero=(f["passed_balls"] == 0)),
             ]
         return [
-            _row("Caught stealing %", (f["cs_pct"] * 100) if f["cs_pct"] is not None else None, 1,
-                 f"{f['attempts']} attempts all season"),
+            # DS-75: cs_pct comes from compute_catching_metrics already scaled
+            # 0-100 (same convention as every other percent metric in this
+            # layer, e.g. pit_bb_pct) — do not re-multiply by 100 here.
+            _row("Caught stealing %", f["cs_pct"], 1, f"{f['attempts']} attempts all season"),
             _row("Runners caught", f["cs"], 0, f"of {f['attempts']} attempts", is_zero=(f["cs"] == 0)),
         ]
     if key == "command_vs_velocity":

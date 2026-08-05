@@ -17,8 +17,16 @@
 # the same mistake DS-79 exists to fix, just in a config file instead of an
 # AI prompt.
 #
-# Catching metrics (PB/inning, CS%, SB/inning) are DS-75's scope, not this
-# file's — DS-29 counts them toward its "twenty" but ships them separately.
+# Catching metrics (bucket: catching, below) are DS-75's scope — DS-29
+# counts them toward its "twenty" but ships them separately, derived rather
+# than sourced from the youth sabermetrics research (no attribution
+# required). Their min_sample/min_attempts thresholds are likewise DS-75's
+# own derived defaults, not research-sourced — the ticket's worked examples
+# (Storm catchers: Garcia 42 attempts/59.0 innings treated as trustworthy;
+# Butler 7 attempts flagged misleading; Vazquez 6.1 innings flagged
+# misleading) calibrate 15 attempts / 10 innings as a defensible floor
+# between the flagged and trusted cases, not a fabricated precise-looking
+# number — configured constants in metrics/compute.py, easy to retune.
 # `pit_fip` is included here even though this layer doesn't compute it (it's
 # read directly from pitching_stats.fip, already provided by GameChanger) —
 # it still needs to flow through this layer's suppression logic, since
@@ -422,3 +430,84 @@ metrics:
     suppressed_when: []
     threshold_mode: team_relative_only
     notes: "Computed per pitcher but bucketed as Team Defense, not Pitching — it predicts what the WHOLE DEFENSE allows with this pitcher in, not the pitcher's own quality. Uses total R, not ER, deliberately. L is configured the same way as FRA's, keeping this player-scoped rather than team-dependent."
+
+  # ── Catching (DS-75) ─────────────────────────────────────────────────────
+  - key: pb_per_inning
+    display_name: PB/inning
+    bucket: catching
+    subject: player
+    formula: "PB / INN@C"
+    source_fields: [passed_balls, innings_as_catcher]
+    scale: {type: rate, range: [0, null], precision: 2}
+    direction: lower_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: 10          # derived, innings-caught floor — see bucket header note
+    min_games: null
+    suppressed_when: []
+    notes: "Headline metric at 8U-10U (see cs_pct below for why). Zero PB is a positive result, not missing data — must never render as a dash. INN@C (innings_as_catcher) is GameChanger thirds notation, same as innings_pitched — sum via outs, never as a raw float (DS-75 fixed a live instance of exactly this bug in the already-shipped DS-67 catching card)."
+
+  - key: sb_per_inning
+    display_name: SB/inning
+    bucket: catching
+    subject: player
+    formula: "SB / INN@C"
+    source_fields: [stolen_bases_allowed, innings_as_catcher]
+    scale: {type: rate, range: [0, null], precision: 2}
+    direction: lower_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: false     # secondary context stat at 12U+, not a signal-card trigger
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: 10          # derived, same innings-caught floor as pb_per_inning
+    min_games: null
+    suppressed_when: []
+    notes: "Secondary at 12U+, alongside cs_pct. Reflects pitcher time-to-plate as much as the catcher — narrative must not attribute solely to the catcher (DS-75 AC #8)."
+
+  - key: cs_pct
+    display_name: CS%
+    bucket: catching
+    subject: player
+    formula: "CS / (SB + CS) * 100"
+    source_fields: [runners_caught_stealing, stolen_bases_allowed]
+    scale: {type: percent, range: [0, 100], precision: 1}
+    direction: higher_better
+    metric_class: skill
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: true
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: 15          # derived attempts floor — see bucket header note
+    min_games: null
+    suppressed_when: []
+    notes: "Headline metric at 12U+ only — suppressed below the attempts floor at any age, and not surfaced at all at 8U-10U where pb_per_inning is the headline (steal attempts are too rare there for CS% to mean anything, per the ticket's own season data: 7 attempts all season at 8U vs 54 at 12U). Narrative must not attribute solely to the catcher — pitcher time-to-plate is a material factor (DS-75 AC #8)."
+
+  - key: innings_caught
+    display_name: Innings caught
+    bucket: catching
+    subject: player
+    formula: "INN@C"
+    source_fields: [innings_as_catcher]
+    scale: {type: rate, range: [0, null], precision: 1}
+    direction: higher_better
+    metric_class: workload
+    proprietary: false
+    attribution_required: false
+    surfaced: true
+    signal_eligible: false
+    contact_dependent: false
+    stabilizes_early: false
+    min_sample: null
+    min_games: null
+    suppressed_when: []
+    notes: "The workload measure and the sample-gate denominator for the two per-inning rates above — always shown, never itself gated."

@@ -469,6 +469,9 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     players_resp = sb.table("players").select("*").eq("team_id", team_id).execute()
     pid_to_player = {p["player_id"]: p for p in players_resp.data}
 
+    team_resp = sb.table("teams").select("age_level").eq("id", team_id).limit(1).execute()
+    age_level = (team_resp.data[0].get("age_level") if team_resp.data else None) or "12U"
+
     def name_of(pid):
         p = pid_to_player.get(pid, {})
         return f"{p.get('first_name','?')} {p.get('last_name','?')}", p.get("number")
@@ -529,6 +532,45 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             "sb_allowed": row.get("stolen_bases_allowed") or 0,
         })
     fielding_stats.sort(key=lambda x: x["number"] or 99)
+
+    # ── Catching (DS-75) ──────────────────────────────────────────────────
+    # Scope rule: player catching at single-game grain gets counting stats
+    # only (~1-8 innings caught per game quantizes any rate to noise) — see
+    # metrics.yml's catching bucket. Team-level rates are fine and drive the
+    # age-band headline switch (pb_per_inning at 8U-10U, cs_pct at 12U+).
+    from metrics.compute import compute_catching_metrics
+    catcher_rows = [r for r in fld_rows if (r.get("innings_as_catcher") or 0) > 0]
+    catching_stats = []
+    for row in catcher_rows:
+        name, number = name_of(row["player_id"])
+        catching_stats.append({
+            "player_id": row["player_id"], "number": number, "name": name,
+            "innings": row.get("innings_as_catcher"),
+            "pb": row.get("passed_balls") or 0,
+            "sb_allowed": row.get("stolen_bases_allowed") or 0,
+            "cs": row.get("runners_caught_stealing") or 0,
+            "pik": row.get("pickoffs") or 0,
+            "ci": row.get("catcher_interference") or 0,
+        })
+    catching_stats.sort(key=lambda x: x["number"] or 99)
+
+    catching_outs = sum(parse_innings_to_outs(r.get("innings_as_catcher")) or 0 for r in catcher_rows)
+    catching_team_totals = {
+        "innings_as_catcher": f"{catching_outs // 3}.{catching_outs % 3}",
+        "passed_balls": sum(r.get("passed_balls") or 0 for r in catcher_rows),
+        "stolen_bases_allowed": sum(r.get("stolen_bases_allowed") or 0 for r in catcher_rows),
+        "runners_caught_stealing": sum(r.get("runners_caught_stealing") or 0 for r in catcher_rows),
+    }
+    catching_metrics = compute_catching_metrics(catching_team_totals)
+    catching_summary = {
+        "headline_metric": "pb_per_inning" if (age_level or "").strip().upper() in ("8U", "10U") else "cs_pct",
+        "innings_caught": catching_metrics.get("innings_caught"),
+        "pb_per_inning": catching_metrics.get("pb_per_inning"),
+        "cs_pct": catching_metrics.get("cs_pct"),
+        "passed_balls": catching_team_totals["passed_balls"],
+        "attempts": catching_team_totals["stolen_bases_allowed"] + catching_team_totals["runners_caught_stealing"],
+        "cs": catching_team_totals["runners_caught_stealing"],
+    }
 
     # ── Header block (structured, never AI-generated) ───────────────────
     team_h = sum(b["h"] for b in batting_stats)
@@ -606,6 +648,9 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "batting_stats": batting_stats,
         "pitching_stats": pitching_stats,
         "fielding_stats": fielding_stats,
+        "catching_stats": catching_stats,
+        "catching_summary": catching_summary,
+        "age_level": age_level,
         "has_pbp": has_pbp,
         "sb_count": sb_count, "cs_count": cs_count,
         "team_h": team_h, "team_e": team_e,
