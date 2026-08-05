@@ -453,6 +453,30 @@ views/columns nothing live was reading yet — but it's worth checking deliberat
   confirmed graceful `"—"` rendering post-fix, confirmed the 2+-pitcher path unchanged. Full
   detail in DS-85.
 
+- **Post-Sprint-2 incident, no migration — missing `PyYAML` dependency, ~production outage**:
+  found live 2026-08-05, right after the DS-73 deploy. `metrics/explainer.py` calls
+  `yaml.safe_load()` to read `metrics.yml`/`explainers.yml` at request time — the first place in
+  the app that loads YAML at runtime rather than as a local verification script. `PyYAML` was
+  never added to `requirements.txt`. Every local check that session passed because `yaml`
+  happens to be installed system-wide on the dev machine, independent of the project's
+  `requirements.txt` — Render's clean `pip install` never had it. Every `/dashboard` request for
+  a team with games (both Storm and Yankees) hit an unhandled `ModuleNotFoundError` and 500'd —
+  reported directly by David within minutes of the deploy.
+
+  Fixed by adding `PyYAML>=6.0` to `requirements.txt`. Also wrapped the DS-73 metric-explainer
+  build in `app.py` in a try/except — a future failure there now degrades to plain, non-tappable
+  metric names instead of crashing the entire dashboard route, the same "no single point of
+  failure should take down the whole page" fix already applied to the command-vs-velocity card
+  in DS-85. Filed as DS-86 for the audit trail (Sprint 2 was already closed when this was found;
+  pull into Sprint 3 planning). Confirmed resolved directly by David after the redeploy.
+
+  **Process gap this exposes**: local `py_compile`/import checks on this machine cannot catch a
+  missing-from-`requirements.txt` dependency if that dependency happens to already be installed
+  system-wide — the two environments silently diverge. Worth a real fix in Sprint 3: either a
+  clean-venv smoke test before any deploy that adds a new import, or at minimum a habit of
+  diffing new top-level imports against `requirements.txt` explicitly as part of a ticket's own
+  verification step, not assuming a successful local run proves the dependency is declared.
+
 If a future migration *would* break currently-deployed code, consider a Supabase branch
 (`create_branch` / `merge_branch` are available via the MCP tools) to test the migration against
 a copy of the schema before applying it to production. Not needed yet at this scale, but the
