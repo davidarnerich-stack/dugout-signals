@@ -609,12 +609,24 @@ def dashboard():
         # note). team_totals_list/team are only reachable here because
         # signal_cards is non-empty, which requires the same all_games /
         # team_totals_list block above to have run.
-        from signals.team_signals import compute_familiar_anchors as _compute_familiar_anchors
-        from metrics.explainer import build_metric_explainers
-        familiar_anchors = _compute_familiar_anchors(
-            team_totals_list, regulation_innings=team.get("regulation_innings") or 6,
-        )
-        metric_explainers = build_metric_explainers(signal_cards, familiar_anchors)
+        #
+        # Wrapped defensively (found via a live incident: DS-73 shipped
+        # without PyYAML in requirements.txt, and this call — unguarded —
+        # took down the entire /dashboard route for every team with games,
+        # not just the metric-explainer feature). A failure here now
+        # degrades to plain, non-tappable metric names rather than a
+        # server error — same "no single point of failure should crash
+        # the whole page" lesson as DS-85.
+        try:
+            from signals.team_signals import compute_familiar_anchors as _compute_familiar_anchors
+            from metrics.explainer import build_metric_explainers
+            familiar_anchors = _compute_familiar_anchors(
+                team_totals_list, regulation_innings=team.get("regulation_innings") or 6,
+            )
+            metric_explainers = build_metric_explainers(signal_cards, familiar_anchors)
+        except Exception:
+            app.logger.exception("DS-73 metric explainer build failed — degrading to plain metric names")
+            metric_explainers = {}
 
     return render_template(
         "dashboard.html",
