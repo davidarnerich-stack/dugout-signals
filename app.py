@@ -596,6 +596,19 @@ def dashboard():
         # just without a precise window count.
         card["context_chips"] = _card_context_chips(card, card.get("games_in_sample") or 0)
 
+    # DS-90: TEAM OFFENCE / TEAM DEFENCE section grouping — explicit order
+    # per signal_cards.py's SECTION_*_KEYS, not CARD_ORDER's order (which
+    # only governs the cached-narrative T-index). Empty list, not None, when
+    # signal_cards is empty — the template's section rule already collapses
+    # on an empty list (spec: "a section with no signals collapses
+    # entirely, heading included").
+    from signals.team_signals import (
+        cards_by_keys as _cards_by_keys,
+        SECTION_TEAM_OFFENCE_KEYS as _OFFENCE_KEYS, SECTION_TEAM_DEFENCE_KEYS as _DEFENCE_KEYS,
+    )
+    offence_section_cards = _cards_by_keys(signal_cards, _OFFENCE_KEYS)
+    defence_section_cards = _cards_by_keys(signal_cards, _DEFENCE_KEYS)
+
     # DS-68: reshapes the same signal_cards facts into the Offence/Defence
     # containment hierarchy — not a second computation pass. See
     # signals/bucket_modules.py's module docstring.
@@ -641,7 +654,8 @@ def dashboard():
         last_game=last_game,
         last_game_report=last_game_report,
         signal_cards=signal_cards,
-        summary_line=summary_line,
+        offence_section_cards=offence_section_cards,
+        defence_section_cards=defence_section_cards,
         show_age_footnote=show_age_footnote,
         offence_module=bucket_hierarchy["offence"],
         defence_module=bucket_hierarchy["defence"],

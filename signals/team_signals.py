@@ -1,18 +1,20 @@
 """
-DS-67: Team Signals module — the six fixed-order signal cards.
+DS-67: Team Signals module — the fixed-order signal cards.
 
-Phase 1: all six (five at 8U) always render, in fixed order, no ranking, no
-confidence meter (team sample size, ~20 PA/game, behaves normally from game
-one — confidence is a player-signal concept, paused with DS-57). This module
+Phase 1: all cards always render, in fixed order, no ranking, no confidence
+meter (team sample size, ~20 PA/game, behaves normally from game one —
+confidence is a player-signal concept, paused with DS-57). This module
 computes only the DATA each card needs: numbers, states (genuine zero /
 missing data / insufficient attempts), and the raw facts a narrative layer
 grounds its copy in. Card narrative text is model-generated elsewhere
-(team_signals_narrative.py) — "the six cards themselves are code-defined ...
-the model writes copy, it does not decide what appears" (DS-67 requirements).
+(narrative.py) — "the cards themselves are code-defined ... the model
+writes copy, it does not decide what appears" (DS-67 requirements).
 
-Card 6 (Command vs velocity) does not exist at 8U — not computed, not
-suppressed-with-a-note, absent. Every other card renders at every age band,
-leaning on whatever data survives the 8U no-walk rule.
+DS-90 (Aug 6 2026): command_vs_velocity retired — no place in the new fixed
+TEAM OFFENCE/TEAM DEFENCE page IA — replaced by _pitching (K-BB%/S%/BB%),
+which does still vary by age band: K-BB% collapses to K% and BB% is absent
+under the 8U no-walk rule, same convention as everything else gated on
+walks_enabled().
 """
 
 from metrics.compute import (
@@ -23,17 +25,41 @@ from metrics.compute import (
 
 CARD_ORDER = [
     "defensive_split", "run_gap", "offence_funnel",
-    "fielding_conversion", "catching_load", "command_vs_velocity",
+    "fielding_conversion", "catching_load",
     # DS-89: appended, not inserted — app.py's cached-narrative lookup keys
-    # signal_history rows by CARD_ORDER *position* (T1..T6), so inserting
+    # signal_history rows by CARD_ORDER *position* (T1..Tn), so inserting
     # these in the middle would shift every card after them onto the wrong
     # cached headline until the next game commit regenerates everything.
-    # Appending at the end costs these two cards a stale/blank headline on
-    # first render (no prior T7/T8 history exists yet) but disturbs nothing
-    # else. TEAM OFFENCE/TEAM DEFENCE display grouping (DS-90) is driven by
-    # each card's own key, not by this list's order.
+    # TEAM OFFENCE/TEAM DEFENCE display grouping (DS-90) is driven by each
+    # card's own key, not by this list's order.
     "hitting", "baserunning",
+    # DS-90: command_vs_velocity retired (see _pitching below) — its old T6
+    # slot is unavoidably reused by "hitting" now that it's gone, so any
+    # signal_history row cached under T6 before this deploy will show the
+    # wrong card's stale headline until that team's next game commit. Known
+    # and accepted (flagged to David 2026-08-06 before this change).
+    "pitching",
 ]
+
+# DS-90: the new fixed page IA's two section groupings — explicit display
+# order within each section (spec §9), independent of CARD_ORDER above
+# (which exists only for the cached-narrative T-index, not for display).
+# defensive_split and run_gap are in neither list: both are still computed
+# (their facts feed the Defence module and the Offence/Defence bridge card
+# respectively) but neither renders as a standalone ledger card any more —
+# defensive_split's content was "on the page twice" per the design doc,
+# run_gap has its own dedicated bridge-card rendering (DS-88).
+SECTION_TEAM_OFFENCE_KEYS = ["offence_funnel", "hitting", "baserunning"]
+SECTION_TEAM_DEFENCE_KEYS = ["pitching", "catching_load", "fielding_conversion"]
+
+
+def cards_by_keys(signal_cards, keys):
+    """Reorders/filters signal_cards to exactly `keys`, in that order —
+    silently drops any key not present (e.g. command_vs_velocity's old
+    Pitching slot at 8U had no card; a section with nothing to show should
+    collapse, not error)."""
+    by_key = {c["key"]: c for c in signal_cards}
+    return [by_key[k] for k in keys if k in by_key]
 
 
 def _games_played(team_totals_list):
@@ -43,17 +69,16 @@ def _games_played(team_totals_list):
 def compute_team_signals(team_totals_list, pitcher_rows, *, age_level, regulation_innings):
     """team_totals_list: one games.team_totals dict per game in the window
     (see metrics.compute.compute_team_context for the shape).
-    pitcher_rows: individual pitching_stats-shaped dicts, one per pitcher,
-    aggregated across the same window — needed for card 6's staff spread,
-    which is undefined at the team-totals level (a spread is a property of
-    individuals, not an aggregate).
+    pitcher_rows: unused since DS-90 retired command_vs_velocity (the one
+    card that needed per-pitcher rows for its staff spread) — kept as a
+    parameter rather than changed to avoid rippling a signature change into
+    app.py's call site for no functional benefit.
 
-    Returns a list of card dicts in CARD_ORDER (five entries at 8U — card 6
-    is simply absent from the list, not present with a suppressed flag).
-    Each card dict carries `facts` (the grounding data a narrative layer
-    needs) and `state` (complete / genuine_zero / missing_data /
-    insufficient_attempts) — never prose. No card here decides whether it
-    "deserves" to show; Phase 1 shows all of them unconditionally.
+    Returns a list of card dicts in CARD_ORDER. Each card dict carries
+    `facts` (the grounding data a narrative layer needs) and `state`
+    (complete / genuine_zero / missing_data / insufficient_attempts) — never
+    prose. No card here decides whether it "deserves" to show; Phase 1
+    shows all of them unconditionally.
     """
     walks_ok = walks_enabled(age_level)
     games = _games_played(team_totals_list)
@@ -75,10 +100,9 @@ def compute_team_signals(team_totals_list, pitcher_rows, *, age_level, regulatio
     cards.append(_offence_funnel(bat_totals, contact_ok_batting))
     cards.append(_fielding_conversion(fld_totals, pit_totals, team_context, games))
     cards.append(_catching_load(fld_totals, age_level))
-    if walks_ok:
-        cards.append(_command_vs_velocity(pitcher_rows))
     cards.append(_hitting(bat_totals, contact_ok_batting))
     cards.append(_baserunning(bat_totals))
+    cards.append(_pitching(pit_totals, team_context, walks_ok=walks_ok))
 
     return cards
 
@@ -160,6 +184,9 @@ def _sum_team_pitching(team_totals_list):
         "batters_faced", "walks_allowed", "hit_batters", "strikeouts",
         "hits_allowed", "home_runs_allowed", "runs_allowed", "earned_runs",
         "games_pitched",
+        # DS-90: raw pitch count — summed like every other count above, and
+        # also the weight for this function's strike_pct aggregation below.
+        "total_pitches",
     ]
     out = {f: 0 for f in fields}
     outs_total = 0
@@ -183,6 +210,19 @@ def _sum_team_pitching(team_totals_list):
         weight += w
     out["babip"] = safe_div(babip_num, weight)
     out["fly_ball_pct"] = safe_div(fb_num, weight)
+
+    # DS-90: team S% (strike rate) for the new Pitching card — pitch-weighted
+    # rather than outs-weighted like babip/fly_ball_pct above, since its
+    # natural sample unit is pitches thrown, not innings recorded.
+    strike_num, strike_weight = 0.0, 0
+    for t in team_totals_list:
+        p = t.get("pitching") or {}
+        tp = p.get("total_pitches") or 0
+        if p.get("strike_pct") is not None:
+            strike_num += p["strike_pct"] * tp
+            strike_weight += tp
+    out["strike_pct"] = safe_div(strike_num, strike_weight)
+
     return out
 
 
@@ -374,39 +414,41 @@ def _catching_load(fld_totals, age_level):
         }
 
 
-# ── Card 6: Command vs velocity (not at 8U) ─────────────────────────────────
+# ── Card: Pitching (DS-90) ───────────────────────────────────────────────────
+# Replaces command_vs_velocity — no place in the new fixed TEAM OFFENCE/TEAM
+# DEFENCE page IA for a staff-spread card. K-BB%/BB% reuse
+# compute_pitching_metrics's existing formulas (already correct, already
+# walks_ok-gated); S% is new — team-level strike rate, pitch-weighted (see
+# _sum_team_pitching's strike_pct aggregation below).
 
-def _command_vs_velocity(pitcher_rows):
-    """K% / BB% spread across the staff — a property of individual pitchers,
-    not the team aggregate, so this is the one card that works from
-    per-pitcher rows rather than team_totals.
+def _pitching(pit_totals, team_context, *, walks_ok):
+    team_pit_metrics = compute_pitching_metrics(
+        pit_totals, team_context, walks_ok=walks_ok, contact_ok=True,
+        regulation_innings=None, typical_game_innings=team_context.get("L"),
+    )
+    s_pct = pit_totals.get("strike_pct")
 
-    DS-85 fix: the insufficient_attempts branch used to omit
-    k_pct_spread/bb_pct_spread from facts entirely, instead of populating
-    them as None — every other card in this file always populates every
-    fact key (None for missing), and card_metric_rows relies on that
-    convention unconditionally. The omission was a live KeyError crash
-    risk for any 9U+ team with fewer than 2 pitchers recorded across their
-    season so far (most exposed right after a team's first game upload, if
-    that game had a single pitcher) — and since app.py's card_metric_rows
-    loop has no per-card try/except, it took down the whole /dashboard
-    route, not just this card."""
-    eligible = [p for p in pitcher_rows if (p.get("batters_faced") or 0) > 0]
-    if len(eligible) < 2:
-        return {
-            "key": "command_vs_velocity", "bucket": "Pitching", "state": "insufficient_attempts",
-            "facts": {"staff_size": len(eligible), "k_pct_spread": None, "bb_pct_spread": None},
-        }
+    if walks_ok:
+        k_minus_bb_pct = team_pit_metrics.get("k_minus_bb_pct")
+        bb_pct = team_pit_metrics.get("pit_bb_pct")
+    else:
+        # §6 no-walk rule: K-BB% collapses to K% (same row, different
+        # content — compute_pitching_metrics only derives k_pct internally
+        # to build k_minus_bb_pct, gated behind walks_ok, so it's recomputed
+        # here directly from raw counts since K% itself doesn't depend on
+        # walks at all). BB% is genuinely absent, not zero — same
+        # convention SUPPRESSED_AT_8U already applies to pit_bb_pct.
+        bf = pit_totals.get("batters_faced") or 0
+        k = pit_totals.get("strikeouts") or 0
+        k_minus_bb_pct = safe_div(k, bf) * 100 if safe_div(k, bf) is not None else None
+        bb_pct = None
 
-    k_pcts = [(p["strikeouts"] / p["batters_faced"]) * 100 for p in eligible]
-    bb_pcts = [(p.get("walks_allowed") or 0) / p["batters_faced"] * 100 for p in eligible]
-
+    state = "complete" if s_pct is not None else "missing_data"
     return {
-        "key": "command_vs_velocity", "bucket": "Pitching", "state": "complete",
+        "key": "pitching", "bucket": "Pitching", "state": state,
         "facts": {
-            "k_pct_spread": max(k_pcts) - min(k_pcts),
-            "bb_pct_spread": max(bb_pcts) - min(bb_pcts),
-            "staff_size": len(eligible),
+            "k_minus_bb_pct": k_minus_bb_pct, "s_pct": s_pct, "bb_pct": bb_pct,
+            "walks_ok": walks_ok,
         },
     }
 
@@ -458,10 +500,13 @@ def card_metric_rows(card):
             _row("Team SCORE%", f["team_score_pct"], 1, "of times on base", metric_key="score_pct"),
         ]
     if key == "fielding_conversion":
+        # DS-90: trimmed to two rows per the new metric-sets table — runs
+        # allowed/game now lives on the Defence module above, not repeated
+        # here (the funnel's `f["runs_allowed_per_game"]` fact stays
+        # populated in _fielding_conversion below; just not rendered here).
         return [
             _row("DefEff", f["def_eff"], 3, "balls in play converted to outs", metric_key="def_eff"),
             _row("Errors", f["errors"], 0, f"across {f['games']} games", is_zero=(f["errors"] == 0)),
-            _row("Runs allowed/game", f["runs_allowed_per_game"], 1, ""),
         ]
     if key == "catching_load":
         if f["metric"] == "pb_per_inning":
@@ -489,10 +534,17 @@ def card_metric_rows(card):
             _row("Caught stealing", f["cs"], 0, f"of {f['attempts']} attempts", is_zero=(f["cs"] == 0)),
             _row("Picked off", f["pik"], 0, "picked off base", is_zero=(f["pik"] == 0)),
         ]
-    if key == "command_vs_velocity":
+    if key == "pitching":
+        k_bb_name = "K-BB%" if f["walks_ok"] else "K%"
+        k_bb_comparator = (
+            "strikeouts minus walks, per batter faced" if f["walks_ok"]
+            else "of batters faced strike out"
+        )
+        bb_comparator = "" if not f["walks_ok"] else "of batters faced, not a per-game count"
         return [
-            _row("K% spread", f["k_pct_spread"], 1, f"across {f['staff_size']} pitchers"),
-            _row("BB% spread", f["bb_pct_spread"], 1, f"across {f['staff_size']} pitchers"),
+            _row(k_bb_name, f["k_minus_bb_pct"], 1, k_bb_comparator),
+            _row("S%", f["s_pct"], 1, "of pitches are strikes"),
+            _row("BB%", f["bb_pct"], 1, bb_comparator),
         ]
     return []
 
@@ -500,16 +552,11 @@ def card_metric_rows(card):
 # ── DS-69: explanation-view context chips (bucket / window / players) ──────
 # Code-generated, same discipline as card_metric_rows — no model call, no
 # new computation, just reshaping facts already on the card. Team signals
-# rarely name individual players (that's a player-signal/DS-57 concept);
-# command_vs_velocity is the one card with a staff-size fact worth surfacing
-# as a chip here.
+# rarely name individual players (that's a player-signal/DS-57 concept) —
+# no card currently has a chip-worthy extra fact beyond bucket/window.
 
 def card_context_chips(card, games_in_sample):
-    f = card["facts"]
-    chips = [
+    return [
         {"label": "Bucket", "value": card["bucket"]},
         {"label": "Window", "value": f"{games_in_sample} game{'s' if games_in_sample != 1 else ''} this season"},
     ]
-    if card["key"] == "command_vs_velocity" and f.get("staff_size"):
-        chips.append({"label": "Staff", "value": f"{f['staff_size']} pitchers compared"})
-    return chips

@@ -1,5 +1,5 @@
 """
-DS-67: narrative generation for the six team signal cards.
+DS-67: narrative generation for the team signal cards.
 
 "Card narrative text is model-generated; the six cards themselves are
 code-defined. The model writes copy, it does not decide what appears"
@@ -209,20 +209,22 @@ Caught-stealing rate: {f['cs_pct']}
     return _parse_narrative_lines(_call(client, system, prompt))
 
 
-def generate_command_vs_velocity(client, sport, team_name, age_level, card):
+def generate_pitching(client, sport, team_name, age_level, card):
     f = card["facts"]
     system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
-    if card["state"] == "insufficient_attempts":
-        state_note = _insufficient_attempts_prompt(
-            f"only {f['staff_size']} pitcher(s) with enough innings to compare")
+    if f["walks_ok"]:
+        k_line = f"K-BB% (strikeouts minus walks, per batter faced): {f['k_minus_bb_pct']}"
+        bb_line = f"BB% (share of batters faced who walk): {f['bb_pct']}"
     else:
-        state_note = ""
-    prompt = f"""Write the "Command vs velocity" card — Pitching bucket. This compares strike-
-throwing consistency across the pitching staff.
+        k_line = f"K% (share of batters faced who strike out — this team is at an age with no walks, so K-BB% collapses to plain K%): {f['k_minus_bb_pct']}"
+        bb_line = "BB% does not apply at this age (no-walk rule) — do not mention walks."
+    state_note = _missing_data_prompt("some", "recent") if card["state"] != "complete" else ""
+    prompt = f"""Write the "Pitching" card — Pitching bucket. This describes strike-throwing:
+how often pitches are strikes, and how that trades off against walks (where walks apply).
 
-K% spread across the staff (highest minus lowest): {f.get('k_pct_spread')}
-BB% spread across the staff (highest minus lowest): {f.get('bb_pct_spread')}
-Staff size compared: {f['staff_size']}
+{k_line}
+S% (share of pitches that are strikes): {f['s_pct']}
+{bb_line}
 
 {state_note}
 {_NO_INVENTION_NOTE}
@@ -276,9 +278,9 @@ GENERATORS = {
     "offence_funnel": generate_offence_funnel,
     "fielding_conversion": generate_fielding_conversion,
     "catching_load": generate_catching_load,
-    "command_vs_velocity": generate_command_vs_velocity,
     "hitting": generate_hitting,
     "baserunning": generate_baserunning,
+    "pitching": generate_pitching,
 }
 
 

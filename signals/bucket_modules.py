@@ -85,9 +85,15 @@ def build_defence_module(signal_cards):
     fielding_pct = safe_div(fielding_share, runs_allowed) if fielding_share is not None else None
 
     chips = [
+        # DS-90: anchors to "pitching" (the new K-BB%/S%/BB% card), not
+        # "defensive_split" — the standalone FRA-split ledger card no
+        # longer renders (its content is this module's split bar), so its
+        # old anchor target is gone. The FRA number itself is fully shown
+        # right here; this chip's job is defensive navigation to the
+        # Pitching bucket, not a repeat of FRA.
         _chip("Pitching", "FRA", pitching_share,
               f"{pitching_share:.2f}" if pitching_share is not None else "—",
-              "defensive_split", state=split["state"], metric_key="fra"),
+              "pitching", state=split["state"], metric_key="fra"),
     ]
     if fielding:
         def_eff = fielding["facts"].get("def_eff")
