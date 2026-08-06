@@ -255,6 +255,26 @@
     .run-gap-fill { height: 100%; background: #6e7681; border-radius: 4px; }
     .run-gap-row-value { font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700; color: #e6edf3; min-width: 34px; text-align: right; }
 
+    /* ── DS-88: Offence/Defence bridge card ──
+       run_gap's dedicated full-width rendering — the .run-gap-* rules
+       above were scaffolded for this and never wired up until now. */
+    .bridge-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px; margin-bottom: 14px;
+      cursor: pointer; transition: background .15s, border-color .15s;
+    }
+    .bridge-card:hover { background: #1a1f26; border-color: rgba(56,189,248,.3); }
+    .bridge-card-left { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; }
+    .bridge-card-bucket {
+      font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: .12em; color: #6e7681;
+    }
+    .bridge-card-interpretation { font-size: 12px; color: #8b949e; line-height: 1.5; }
+    .bridge-card-right { flex: 1 1 260px; display: flex; flex-direction: column; gap: 10px; }
+    /* .bridge-card-left already gives 8px rhythm via flex gap — the
+       ledger-card version of .run-gap-headline's own margin would double up. */
+    .bridge-card-left .run-gap-headline { margin-bottom: 0; }
+
     .bucket-modules { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 20px; }
     @media (min-width: 768px) { .bucket-modules { grid-template-columns: repeat(2, 1fr); } }
 
@@ -529,6 +549,7 @@
 
     <div class="signal-grid">
       {% for card in signal_cards %}
+      {% if card.key != 'run_gap' %}
       <div class="signal-card tappable{{ ' dashed' if card.state in ('missing_data', 'insufficient_attempts') else '' }}" id="signal-{{ card.key }}" onclick="openExplain('{{ card.key }}')">
         <div class="signal-bucket">{{ card.bucket }}</div>
         {% if card.headline %}<div class="signal-headline">{{ card.headline }}</div>{% endif %}
@@ -547,8 +568,48 @@
         </div>
         {% if card.interpretation %}<div class="signal-interpretation">{{ card.interpretation }}</div>{% endif %}
       </div>
+      {% endif %}
       {% endfor %}
     </div>
+
+    <!-- DS-88: Offence/Defence bridge card — run_gap gets its own
+         full-width treatment (headline sentence + SCORED/ALLOWED bars)
+         instead of the generic ledger card the loop above now skips it
+         from. Kept in signal_cards/CARD_ORDER (not removed) because
+         bucket_modules.build_offence_module still reads its
+         runs_scored_per_game fact for the Offence module's headline
+         number — only its rendering changes here, not its position in
+         the computed set. Interim placement: DS-90 moves the Offence/
+         Defence modules above the signal grid and will relocate this
+         card to sit between them and the grid per the final page IA;
+         until then it renders where run_gap used to sit in the flow. -->
+    {% set run_gap_card = (signal_cards | selectattr('key', 'equalto', 'run_gap') | list | first) %}
+    {% if run_gap_card %}
+    {% set scored = run_gap_card.facts.runs_scored_per_game %}
+    {% set allowed = run_gap_card.facts.runs_allowed_per_game %}
+    <div class="bridge-card tappable" onclick="openExplain('run_gap')">
+      <div class="bridge-card-left">
+        <div class="bridge-card-bucket">{{ run_gap_card.bucket }}</div>
+        {% if run_gap_card.headline %}<div class="run-gap-headline">{{ run_gap_card.headline }}</div>{% endif %}
+        {% if run_gap_card.interpretation %}<div class="bridge-card-interpretation">{{ run_gap_card.interpretation }}</div>{% endif %}
+      </div>
+      {% if scored is not none and allowed is not none %}
+      {% set peak = [scored, allowed] | max %}
+      <div class="bridge-card-right">
+        <div class="run-gap-row">
+          <span class="run-gap-row-label">SCORED</span>
+          <div class="run-gap-track"><div class="run-gap-fill" style="width: {{ ((scored / peak) * 100) | round(1) if peak else 0 }}%;"></div></div>
+          <span class="run-gap-row-value">{{ "%.1f"|format(scored) }}</span>
+        </div>
+        <div class="run-gap-row">
+          <span class="run-gap-row-label">ALLOWED</span>
+          <div class="run-gap-track"><div class="run-gap-fill" style="width: {{ ((allowed / peak) * 100) | round(1) if peak else 0 }}%;"></div></div>
+          <span class="run-gap-row-value">{{ "%.1f"|format(allowed) }}</span>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
 
     {% if offence_module or defence_module %}
     <div class="bucket-section">
