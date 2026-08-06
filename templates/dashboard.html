@@ -131,6 +131,57 @@
     .badge-l { background:#2e0d0d; color:#f85149; border:1px solid #da3633; }
     .badge-t { background:#1c1a2e; color:#a371f7; border:1px solid #6e40c9; }
 
+    /* ── DS-87: Populated dashboard shell v2 — team row + Last Game strip ──
+       Replaces the onboarding-card shell (.stage/.card, 480px, brand mark,
+       "Welcome back") for teams with games. Design spec: design handoff
+       bundle README.md §"Team row" / §"Last Game strip", SPEC-coach-
+       dashboard.md §9. Zero-games state (.stage/.card below) is untouched. */
+    .team-row {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+      gap: 8px 16px; margin-bottom: 18px;
+    }
+    .team-row-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .team-row-name {
+      font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 700; color: #e6edf3;
+      letter-spacing: .02em; line-height: 1.2; margin: 0;
+    }
+    .team-row-meta { font-size: 12px; color: #6e7681; }
+
+    .lastgame-strip {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-bottom: 18px;
+    }
+    .lgs-score-block { flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; }
+    .lgs-label { font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: .12em; color: #6e7681; }
+    .lgs-score-row { display: flex; align-items: center; gap: 8px; }
+    .lgs-score { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 700; color: #e6edf3; }
+    /* No filled background, unlike the onboarding shell's .badge — spec
+       calls for outline-only result tags on the strip. */
+    .lgs-result {
+      font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      border-radius: 4px; padding: 2px 5px; line-height: 1.4;
+    }
+    .lgs-result.result-l { color: #f85149; border: 1px solid rgba(248,81,73,.45); }
+    .lgs-result.result-w { color: #3fb950; border: 1px solid rgba(63,185,80,.45); }
+    .lgs-result.result-t { color: #a371f7; border: 1px solid rgba(163,113,247,.45); }
+    .lgs-opponent { flex: 1 1 210px; min-width: 180px; }
+    .lgs-opponent-name { font-size: 13px; font-weight: 600; color: #e6edf3; }
+    .lgs-opponent-date { font-size: 11px; color: #6e7681; margin-top: 2px; }
+    .lgs-recap { flex: 1 1 300px; font-size: 12px; color: #8b949e; line-height: 1.5; text-wrap: pretty; }
+    .lgs-recap.lg-muted { color: #6e7681; font-style: italic; }
+    .lgs-link { flex: 0 0 auto; }
+    .lgs-link a { font-size: 12px; font-weight: 500; color: #38bdf8; text-decoration: none; }
+    .lgs-link a:hover { text-decoration: underline; }
+    .lgs-generating { flex: 1 1 300px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6e7681; }
+    .lgs-generating-dot { width: 7px; height: 7px; border-radius: 50%; background: #8b949e; flex-shrink: 0; }
+    .lgs-failed { flex: 1 1 300px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: #6e7681; }
+    .lgs-retry-link {
+      background: none; border: none; padding: 0; color: #38bdf8; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 500; cursor: pointer; text-decoration: none;
+    }
+    .lgs-retry-link:hover:not(:disabled) { text-decoration: underline; }
+    .lgs-retry-link:disabled { opacity: .6; cursor: default; }
+
     /* ── DS-67: Team Signals ── */
     /* Design spec calls for a ~1160px app container here, wider than the
        480px onboarding .card above — this is a data/app view, not a
@@ -402,6 +453,7 @@
   </a>
 </nav>
 
+{% if not has_games %}
 <div class="stage">
   <div class="card">
     <div class="logo-block">
@@ -411,7 +463,6 @@
       <span class="sport-pill">{{ sport }}</span>
     </div>
 
-    {% if not has_games %}
     <h1>Welcome to Dugout Signals,<br><span class="team-name">{{ team_name }}.</span></h1>
     <p class="subtext">Your dashboard comes alive after your first upload. It takes about 60 seconds.</p>
 
@@ -423,61 +474,53 @@
 
     <a href="/upload" class="btn-primary">Upload Your First Game</a>
     <div class="export-link"><a href="#">How to export from GameChanger →</a></div>
-    {% else %}
-    <h1>Welcome back,<br><span class="team-name">{{ team_name }}.</span></h1>
+  </div>
+</div>
+{% else %}
+<!-- DS-87: populated dashboard shell v2 — team row + Last Game strip replace
+     the onboarding-card shell (brand mark, "Welcome back", full-width CTA).
+     No brand mark, no welcome line, no primary button here — Reports is
+     already in the nav; "Read report →" is the only exit off this strip. -->
+<div class="signals-section">
+  <div class="signals-container">
+    <div class="team-row">
+      <div class="team-row-heading">
+        <h1 class="team-row-name">{{ team_name }}</h1>
+        <span class="sport-pill">{{ sport }}</span>
+      </div>
+      <div class="team-row-meta">{{ games_played }} game{{ 's' if games_played != 1 else '' }} · updated {{ last_game.game_date }}</div>
+    </div>
 
-    <div class="last-game-card">
-      <div class="last-game-label">LAST GAME</div>
+    <div class="lastgame-strip">
+      <div class="lgs-score-block">
+        <div class="lgs-label">LAST GAME</div>
+        <div class="lgs-score-row">
+          <span class="lgs-score">{{ last_game.team_runs }}–{{ last_game.opponent_runs }}</span>
+          <span class="lgs-result result-{{ last_game.result | lower }}">{{ last_game.result }}</span>
+        </div>
+      </div>
+      <div class="lgs-opponent">
+        <div class="lgs-opponent-name">vs {{ last_game.opponent_name or 'Opponent' }}</div>
+        <div class="lgs-opponent-date">{{ last_game.game_date }}</div>
+      </div>
 
       {% if not last_game_report %}
-      <a href="/reports" class="last-game-body">
-        <div class="last-game-top">
-          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
-          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
-        </div>
-        <div class="lg-date">{{ last_game.game_date }}</div>
-        <div class="lg-headline lg-muted">Report not available for this game.</div>
-      </a>
+      <div class="lgs-recap lg-muted">Report not available for this game.</div>
       {% elif last_game_report.status == 'generating' %}
-      <div class="last-game-body">
-        <div class="last-game-top">
-          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
-          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
-        </div>
-        <div class="lg-date">{{ last_game.game_date }}</div>
-        <div class="lg-pending"><span class="lg-spinner"></span> Generating report…</div>
-      </div>
+      <div class="lgs-generating"><span class="lgs-generating-dot"></span> Report writing…</div>
       {% elif last_game_report.status == 'error' %}
-      <div class="last-game-body">
-        <div class="last-game-top">
-          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
-          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
-        </div>
-        <div class="lg-date">{{ last_game.game_date }}</div>
-        <div class="lg-error">Report failed to generate.</div>
-        <button type="button" class="lg-retry-btn" id="lg-retry-btn" data-report-id="{{ last_game_report.report_id }}">Retry</button>
-        <p class="lg-retry-note" id="lg-retry-note" style="display:none;"></p>
+      <div class="lgs-failed">
+        <span>Report didn't finish</span>
+        <button type="button" class="lgs-retry-link" id="lg-retry-btn" data-report-id="{{ last_game_report.report_id }}">Try again</button>
       </div>
+      <p class="lg-retry-note" id="lg-retry-note" style="display:none;"></p>
       {% else %}
-      <a href="/reports/{{ last_game_report.report_id }}" class="last-game-body">
-        <div class="last-game-top">
-          <span class="lg-opponent">vs {{ last_game.opponent_name or 'Opponent' }}</span>
-          <span class="badge badge-{{ last_game.result | lower }}">{{ last_game.team_runs }}–{{ last_game.opponent_runs }} {{ last_game.result }}</span>
-        </div>
-        <div class="lg-date">{{ last_game.game_date }}</div>
-        <div class="lg-headline">{{ last_game_report.report_headline }}</div>
-      </a>
+      <div class="lgs-recap">{{ last_game_report.report_headline }}</div>
+      <div class="lgs-link"><a href="/reports/{{ last_game_report.report_id }}">Read report →</a></div>
       {% endif %}
     </div>
 
-    <a href="/reports" class="btn-primary">View All Reports</a>
-    {% endif %}
-  </div>
-</div>
-
-{% if has_games and signal_cards %}
-<div class="signals-section">
-  <div class="signals-container">
+    {% if signal_cards %}
     {% if summary_line %}<p class="signals-summary">{{ summary_line }}</p>{% endif %}
 
     {% if show_age_footnote %}
@@ -566,6 +609,7 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>

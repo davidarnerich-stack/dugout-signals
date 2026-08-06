@@ -472,6 +472,7 @@ def dashboard():
     )
     all_games = games_resp.data or []
     last_game = all_games[0] if all_games else None
+    games_played = len(all_games)
 
     # DS-66: the report row for the last game — DS-62's unique (game_id,
     # report_type) constraint guarantees at most one, so .limit(1) already
@@ -636,6 +637,7 @@ def dashboard():
         # DS-66 (Last Game), DS-67 (Team Signals) and DS-68 (bucket modules)
         # are the real content that replaces DS-65's interim placeholder.
         has_games=last_game is not None,
+        games_played=games_played,
         last_game=last_game,
         last_game_report=last_game_report,
         signal_cards=signal_cards,
