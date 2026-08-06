@@ -168,6 +168,12 @@ def compute_batting_metrics(row, team_context, *, league_age_at_game, walks_ok, 
     if walks_ok:
         out["bat_bb_pct"] = safe_div(bb, pa) * 100 if safe_div(bb, pa) is not None else None
 
+    # DS-89: contact rate, per the CSV stats glossary — (AB-K)/AB. Unlike
+    # hh_pct below, this only needs AB/K (always present on a totals row),
+    # not batted-ball data, so it isn't gated behind contact_ok.
+    c_pct = safe_div(ab - k, ab)
+    out["c_pct"] = c_pct * 100 if c_pct is not None else None
+
     out["iso"] = slg - avg
 
     obpe_den = ab + bb + hbp + sf

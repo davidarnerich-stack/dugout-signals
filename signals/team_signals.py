@@ -24,6 +24,15 @@ from metrics.compute import (
 CARD_ORDER = [
     "defensive_split", "run_gap", "offence_funnel",
     "fielding_conversion", "catching_load", "command_vs_velocity",
+    # DS-89: appended, not inserted — app.py's cached-narrative lookup keys
+    # signal_history rows by CARD_ORDER *position* (T1..T6), so inserting
+    # these in the middle would shift every card after them onto the wrong
+    # cached headline until the next game commit regenerates everything.
+    # Appending at the end costs these two cards a stale/blank headline on
+    # first render (no prior T7/T8 history exists yet) but disturbs nothing
+    # else. TEAM OFFENCE/TEAM DEFENCE display grouping (DS-90) is driven by
+    # each card's own key, not by this list's order.
+    "hitting", "baserunning",
 ]
 
 
@@ -68,6 +77,8 @@ def compute_team_signals(team_totals_list, pitcher_rows, *, age_level, regulatio
     cards.append(_catching_load(fld_totals, age_level))
     if walks_ok:
         cards.append(_command_vs_velocity(pitcher_rows))
+    cards.append(_hitting(bat_totals, contact_ok_batting))
+    cards.append(_baserunning(bat_totals))
 
     return cards
 
@@ -113,6 +124,9 @@ def _sum_team_batting(team_totals_list):
         "reached_on_error", "fielders_choice", "catcher_interference",
         "strikeouts", "hard_hit_balls", "extra_base_hits", "runs_scored",
         "runs_batted_in", "ground_ball_pct", "line_drive_pct", "fly_ball_pct",
+        # DS-89: Baserunning card's raw counts — plain sums like every
+        # other counting field above, no weighting needed.
+        "stolen_bases", "caught_stealing", "picked_off",
     ]
     out = {f: 0 for f in fields}
     for t in team_totals_list:
@@ -123,6 +137,21 @@ def _sum_team_batting(team_totals_list):
     tb = h + out["doubles"] + 2 * out["triples"] + 3 * out["home_runs"]
     out["batting_average"] = safe_div(h, ab) or 0.0
     out["slugging_percentage"] = safe_div(tb, ab) or 0.0
+
+    # DS-89: babip is a directly-parsed per-game GameChanger field (per the
+    # CSV stats glossary), same convention as pitching's babip below in
+    # _sum_team_pitching — not a formula to derive here, only an aggregate.
+    # Weight-averaged by at-bats, the batting-side analogue of how pitching
+    # weights its babip by innings-pitched outs.
+    babip_num, babip_weight = 0.0, 0
+    for t in team_totals_list:
+        b = t.get("batting") or {}
+        game_ab = b.get("at_bats") or 0
+        if b.get("babip") is not None:
+            babip_num += b["babip"] * game_ab
+            babip_weight += game_ab
+    out["babip"] = safe_div(babip_num, babip_weight)
+
     return out
 
 
@@ -244,6 +273,47 @@ def _offence_funnel(bat_totals, contact_ok):
         # re-derived there, read from here, single source of truth for both
         # DS-67's ledger and DS-68's bar geometry.
         "facts": {"team_obpe": obpe, "team_opse": opse, "team_score_pct": score_pct},
+    }
+
+
+# ── Card: Hitting (DS-89) ───────────────────────────────────────────────────
+# Placeholder metric set per the Aug 6 2026 design handoff (README.md
+# "Signal content" table) — card anatomy (3 ledger rows) is final, the
+# metrics themselves are flagged pending final definition. C% formula per
+# David 2026-08-06: (AB-K)/AB, from the CSV stats glossary. HH% reuses the
+# existing metrics.yml entry (already tappable elsewhere); BABIP is a raw
+# parsed field, not computed here (see _sum_team_batting).
+
+def _hitting(bat_totals, contact_ok):
+    team_bat_metrics = compute_batting_metrics(
+        bat_totals, None, league_age_at_game=None, walks_ok=False, contact_ok=contact_ok,
+    )
+    c_pct = team_bat_metrics.get("c_pct")
+    hh_pct = team_bat_metrics.get("hh_pct")
+    babip = bat_totals.get("babip")
+    state = "complete" if c_pct is not None else "missing_data"
+    return {
+        "key": "hitting", "bucket": "Hitting", "state": state,
+        "facts": {"c_pct": c_pct, "hh_pct": hh_pct, "babip": babip},
+    }
+
+
+# ── Card: Baserunning (DS-89) ────────────────────────────────────────────────
+# Also placeholder metrics per the design handoff. Unlike Hitting, none of
+# SB%/CS/PIK need a new formula — stolen_bases/caught_stealing/picked_off
+# are plain parsed counts (_sum_team_batting), same treatment as every other
+# raw count elsewhere in this file.
+
+def _baserunning(bat_totals):
+    sb = bat_totals["stolen_bases"]
+    cs = bat_totals["caught_stealing"]
+    pik = bat_totals["picked_off"]
+    attempts = sb + cs
+    sb_pct = safe_div(sb, attempts) * 100 if safe_div(sb, attempts) is not None else None
+    state = "insufficient_attempts" if attempts == 0 else "complete"
+    return {
+        "key": "baserunning", "bucket": "Baserunning", "state": state,
+        "facts": {"sb_pct": sb_pct, "cs": cs, "pik": pik, "attempts": attempts},
     }
 
 
@@ -406,6 +476,18 @@ def card_metric_rows(card):
             # layer, e.g. pit_bb_pct) — do not re-multiply by 100 here.
             _row("Caught stealing %", f["cs_pct"], 1, f"{f['attempts']} attempts all season", metric_key="cs_pct"),
             _row("Runners caught", f["cs"], 0, f"of {f['attempts']} attempts", is_zero=(f["cs"] == 0)),
+        ]
+    if key == "hitting":
+        return [
+            _row("Contact %", f["c_pct"], 1, "of at-bats that avoid a strikeout"),
+            _row("Hard-hit %", f["hh_pct"], 1, "of balls in play hit hard", metric_key="hh_pct"),
+            _row("BABIP", f["babip"], 3, "hits per ball in play"),
+        ]
+    if key == "baserunning":
+        return [
+            _row("Stolen base %", f["sb_pct"], 1, f"of {f['attempts']} attempts"),
+            _row("Caught stealing", f["cs"], 0, f"of {f['attempts']} attempts", is_zero=(f["cs"] == 0)),
+            _row("Picked off", f["pik"], 0, "picked off base", is_zero=(f["pik"] == 0)),
         ]
     if key == "command_vs_velocity":
         return [

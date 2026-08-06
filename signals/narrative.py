@@ -231,6 +231,45 @@ Staff size compared: {f['staff_size']}
     return _parse_narrative_lines(_call(client, system, prompt))
 
 
+def generate_hitting(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    state_note = _missing_data_prompt("some", "recent") if card["state"] != "complete" else ""
+    prompt = f"""Write the "Hitting" card — Hitting bucket. This describes contact quality: how
+often the lineup puts the ball in play, and how hard it hits when it does.
+
+Contact % (share of at-bats that avoid a strikeout): {f['c_pct']}
+Hard-hit % (share of balls in play hit hard): {f['hh_pct']}
+BABIP (hits per ball in play): {f['babip']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_narrative_lines(_call(client, system, prompt))
+
+
+def generate_baserunning(client, sport, team_name, age_level, card):
+    f = card["facts"]
+    system = SIGNAL_SYSTEM.format(sport=sport, team_name=team_name, age_level=age_level)
+    if card["state"] == "insufficient_attempts":
+        state_note = _insufficient_attempts_prompt("no stolen base attempts yet this season")
+    else:
+        state_note = ""
+    prompt = f"""Write the "Baserunning" card — Baserunning bucket.
+
+Stolen base % (of attempts): {f['sb_pct']}
+Caught stealing: {f['cs']}
+Picked off: {f['pik']}
+Total steal attempts: {f['attempts']}
+
+{state_note}
+{_NO_INVENTION_NOTE}
+
+{_RESPONSE_FORMAT}"""
+    return _parse_narrative_lines(_call(client, system, prompt))
+
+
 GENERATORS = {
     "defensive_split": generate_defensive_split,
     "run_gap": generate_run_gap,
@@ -238,6 +277,8 @@ GENERATORS = {
     "fielding_conversion": generate_fielding_conversion,
     "catching_load": generate_catching_load,
     "command_vs_velocity": generate_command_vs_velocity,
+    "hitting": generate_hitting,
+    "baserunning": generate_baserunning,
 }
 
 
