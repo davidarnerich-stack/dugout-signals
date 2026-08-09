@@ -98,6 +98,80 @@ def team_name_regex(team_name: str) -> str:
 
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
+def parse_line_score(raw: str) -> dict | None:
+    """
+    Parse the full line-score grid from box score PDF text — the official,
+    authoritative record of runs per inning (DS-91).
+
+    Runs per inning must come from here and not from play-by-play. Youth
+    games are shortened by mercy rules (a per-inning run cap), time limits,
+    and drop-dead innings that revert to the last complete inning; none of
+    those appear in the play-by-play stream, and scorekeepers additionally
+    issue mid-game corrections. The box score already accounts for all of it.
+
+    Row order is the visiting team first, home team second — verified across
+    both home and away games. That ordering, combined with the venue marker
+    parsed separately, is what identifies which row is ours; no team-name
+    matching is involved.
+
+    Cells are ints, or the literal "X" where a team did not bat (a home team
+    ahead after the top of the final inning). "X" is preserved in place so
+    later innings are not shifted.
+
+    Returns {innings, rows: [visitor, home], consistent} or None when the
+    grid can't be parsed. `consistent` is False when a row's cells don't sum
+    to its R — a signal the grid should not be trusted or rendered.
+    """
+    innings: list[str] = []
+    rows: list[dict] = []
+    in_score = False
+
+    for line in raw.splitlines():
+        s = line.strip()
+        if not in_score:
+            # Header row: "1 2 3 4 R H E"
+            if re.match(r"^1\s+2\s+3", s):
+                toks = s.split()
+                if "R" in toks:
+                    innings = toks[:toks.index("R")]
+                    in_score = True
+            continue
+
+        if not s or s.startswith("BATTING"):
+            break
+        # Data row: "PSWS 0 4 3 0 7 5 1"  /  "PSWS 1 0 5 0 X 6 0 1"
+        m = re.match(r"^([A-Z0-9]{2,6})\s+([\dX\s]+)$", s)
+        if not m:
+            continue
+        toks = m.group(2).split()
+        if len(toks) < 4:          # need at least one inning plus R/H/E
+            continue
+        cells_raw, rhe = toks[:-3], toks[-3:]
+        cells = [t if t.upper() == "X" else int(t) for t in cells_raw]
+        rows.append({
+            "abbr":  m.group(1),
+            "cells": cells,
+            "r": int(rhe[0]) if rhe[0].isdigit() else None,
+            "h": int(rhe[1]) if rhe[1].isdigit() else None,
+            "e": int(rhe[2]) if rhe[2].isdigit() else None,
+        })
+
+    if len(rows) < 2 or not innings:
+        return None
+
+    rows = rows[:2]
+    # Pad/trim so every row lines up with the inning header.
+    for row in rows:
+        row["cells"] = (row["cells"] + [""] * len(innings))[:len(innings)]
+
+    consistent = all(
+        row["r"] is not None
+        and sum(c for c in row["cells"] if isinstance(c, int)) == row["r"]
+        for row in rows
+    )
+    return {"innings": innings, "rows": rows, "consistent": consistent}
+
+
 def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
     """
     Parse the line-score grid and opponent name from already-extracted box
@@ -111,34 +185,15 @@ def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
     """
     is_away = bool(re.search(r"\bAway\b", raw[:400]))
 
-    # Line score: two rows appear under the "1 2 3 ..." inning header, one
-    # per team. The visiting team's row always comes first (they bat the
-    # top of the inning) and the home team's row second — that ordering
-    # tells us which row is ours without needing to recognize any specific
-    # team abbreviation (GameChanger auto-generates these per team, e.g.
-    # "STRM" for Storm, "YANK" for Yankees — not worth trying to predict).
-    score_rows = []
-    in_score = False
-    for line in raw.splitlines():
-        s = line.strip()
-        if re.match(r"^1\s+2\s+3", s):
-            in_score = True
-            continue
-        if in_score:
-            if not s or s.startswith("BATTING"):
-                break
-            m = re.match(r"^([A-Z0-9]{2,6})\s+([\dX\s]+)$", s)
-            if m:
-                nums = [int(n) for n in re.findall(r"\d+", m.group(2))]
-                if len(nums) >= 3:
-                    score_rows.append(nums[-3])
-
+    # Runs come from the full line score — one parser, one source of truth.
+    # The visiting team's row is always first; the venue marker above says
+    # whether that row is ours. No team-name matching involved.
+    line_score = parse_line_score(raw)
     our_runs = opp_runs = None
-    if len(score_rows) >= 2:
-        if is_away:
-            our_runs, opp_runs = score_rows[0], score_rows[1]
-        else:
-            opp_runs, our_runs = score_rows[0], score_rows[1]
+    if line_score:
+        visitor_r = line_score["rows"][0]["r"]
+        home_r    = line_score["rows"][1]["r"]
+        our_runs, opp_runs = (visitor_r, home_r) if is_away else (home_r, visitor_r)
 
     # Opponent name. The header reads "{Team A} {score} - {score} {Team B}
     # {Home|Away}" — but pdfplumber's text extraction can interleave a
@@ -186,13 +241,15 @@ def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
         "our_runs":      our_runs,
         "opponent_runs": opp_runs,
         "is_away":       is_away,
+        "line_score":    line_score,
     }
 
 
 def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name: str = "") -> dict:
     """
     Parse a box score PDF and return game metadata — no filename needed.
-    Returns: {game_date, opponent_name, storm_runs, opponent_runs, is_away}
+    Returns: {game_date, opponent_name, storm_runs, opponent_runs, is_away,
+              line_score}
     """
     import pdfplumber
 
@@ -228,6 +285,7 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name:
         "storm_runs":    score_info["our_runs"],
         "opponent_runs": score_info["opponent_runs"],
         "is_away":       score_info["is_away"],
+        "line_score":    score_info["line_score"],
     }
 
 
@@ -236,8 +294,15 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name:
 def find_or_create_game(sb, game_date: str, opponent_name: str,
                          storm_runs, opponent_runs, tournament_id,
                          game_number: int, team_id: str, team_name: str,
-                         game_type: str = "tournament") -> str:
-    """Find an existing game or create one. Returns game_id."""
+                         game_type: str = "tournament",
+                         is_away=None, line_score=None) -> str:
+    """Find an existing game or create one. Returns game_id.
+
+    is_away / line_score come straight from the box score PDF (DS-91) and
+    are the authoritative record of venue and runs per inning. Both are
+    written on create and refreshed on re-upload, so re-processing a game
+    corrects a previously bad line score rather than leaving it stale.
+    """
     existing = (
         sb.table("games")
         .select("game_id")
@@ -259,6 +324,10 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
             update["tournament_id"] = tournament_id
         if game_type:
             update["game_type"]     = game_type
+        if is_away is not None:
+            update["is_away"]       = is_away
+        if line_score is not None:
+            update["line_score"]    = line_score
         if update:
             sb.table("games").update(update).eq("game_id", game_id).execute()
         return game_id
@@ -283,6 +352,8 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
         "tournament_id": tournament_id,
         "game_type":     game_type,
         "result":        calc_result(storm_runs, opponent_runs),
+        "is_away":       is_away,
+        "line_score":    line_score,
     }).execute()
     return resp.data[0]["game_id"]
 

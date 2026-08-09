@@ -256,7 +256,7 @@ def _line_score_note(data, opp, us) -> str:
     if not hb["has_line_score"]:
         return ""
     return (f"Inning-by-inning ({', '.join(hb['line_header'])}): "
-            f"{us['short']} {hb['home']['cells']}, {opp['short']} {hb['visitor']['cells']}.")
+            f"{us['short']} {us['cells']}, {opp['short']} {opp['cells']}.")
 
 
 def _game_facts_note(data, opp, us) -> str:
@@ -486,7 +486,7 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
     client = anthropic.Anthropic(api_key=anthropic_key)
 
     hb = data["header_block"]
-    us, opp = hb["home"], hb["visitor"]
+    us, opp = hb["us"], hb["opponent"]
 
     sections = {}
     try:

@@ -1021,6 +1021,8 @@ def upload():
                 team_id       = team_id,
                 team_name     = team_name,
                 game_type     = game_type,
+                is_away       = info.get("is_away"),
+                line_score    = info.get("line_score"),
             )
         except Exception as e:
             results.append({"filename": bs_name, "status": "error",
@@ -1441,13 +1443,16 @@ def report_view(report_id):
     sections = json.loads(report["sections"]) if isinstance(report["sections"], str) else report["sections"]
 
     if report.get("report_type") == "single_game":
-        header_block = report.get("header_block")
-        if isinstance(header_block, str):
-            header_block = json.loads(header_block)
         # Reload live data (so edits to game stats after generation show fresh
         # in the box score / player lines, same freshness contract as tournament).
         from reports.data import get_single_game_data
         d = get_single_game_data(sb, report["game_id"], session["team_id"], report["team_name"])
+        # Render the freshly computed header block, not the copy frozen into
+        # the report row at generation time. The box score must match the
+        # official PDF (DS-91), so a corrected line score has to reach an
+        # existing report on re-upload without needing regeneration. The
+        # stored copy is kept as the historical record of what was generated.
+        header_block = d["header_block"]
         return render_template("game_report.html", report=report, sections=sections,
                                 header_block=header_block, d=d,
                                 game_type=d["game"].get("game_type"))

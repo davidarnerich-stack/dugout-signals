@@ -3,6 +3,24 @@ Pull all data needed to generate a tournament analysis report.
 Returns a structured dict that gets passed to the AI and rendered into tables.
 """
 
+def _ordered_rows(us: dict, opponent: dict, is_away) -> list:
+    """
+    Box score row order: visiting team on top, home team below — the
+    convention every printed box score follows (DS-91).
+
+    Whether our team is home or away is set by the schedule and read from
+    the box score's venue marker, so either row can be ours. Our team keeps
+    its accent wherever it lands; `is_us` is what drives that in the
+    template, so ordering and emphasis stay independent.
+
+    `is_away` may be None on games ingested before the venue was persisted;
+    those fall back to home, matching the previous behaviour.
+    """
+    if is_away:
+        return [dict(us, is_us=True), dict(opponent, is_us=False)]
+    return [dict(opponent, is_us=False), dict(us, is_us=True)]
+
+
 def _distinct_short_names(name_a, name_b, fallback_a="A", fallback_b="B"):
     """
     Line-score short labels for two teams shown side by side. Taking each
@@ -583,36 +601,61 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     opp_h = sum(p["h"] for p in pitching_stats)
     opp_e = sum(b["roe"] for b in batting_stats)
 
-    # Inning-by-inning line score is only ever populated by the play-by-play
-    # parser (the box score PDF parser doesn't extract per-inning detail) —
-    # so this is the one header_block piece that degrades without PBP.
-    inning_rows = (
-        sb.table("inning_scores").select("inning,team,runs")
-        .eq("game_id", game_id).order("inning").execute()
-    ).data
-    has_line_score = bool(inning_rows)
-    max_inning = max((r["inning"] for r in inning_rows), default=0)
-
-    def cells_for(side):
-        by_inning = {}
-        for r in inning_rows:
-            if r["team"] == side:
-                by_inning[r["inning"]] = by_inning.get(r["inning"], 0) + (r["runs"] or 0)
-        return [by_inning.get(i, "") for i in range(1, max_inning + 1)]
+    # ── Line score (DS-91) ──────────────────────────────────────────────
+    # Comes from the official box score PDF, stored on the game at upload.
+    # Play-by-play is NOT a valid source: mercy rules, time limits,
+    # drop-dead innings and scorekeeper corrections never appear in it, so
+    # derived per-inning runs disagree with the official record. When the
+    # PDF grid is missing or internally inconsistent we show nothing rather
+    # than something plausible-looking and wrong.
+    line_score = game.get("line_score") or None
+    if isinstance(line_score, str):
+        import json as _json
+        try:
+            line_score = _json.loads(line_score)
+        except ValueError:
+            line_score = None
+    if line_score and not line_score.get("consistent", True):
+        line_score = None
 
     opponent_name = game.get("opponent_name") or "Opponent"
     opp_short, team_short = _distinct_short_names(opponent_name, team_name, "Opp", "Team")
+
+    # Venue decides row order; it does not decide which team is "ours".
+    # is_away is recorded from the box score's own venue marker.
+    is_away = game.get("is_away")
+
+    us_cells, opp_cells = [], []
+    line_header = []
+    if line_score:
+        line_header = line_score.get("innings", [])
+        visitor_row, home_row = line_score["rows"][0], line_score["rows"][1]
+        our_row, their_row = (visitor_row, home_row) if is_away else (home_row, visitor_row)
+        us_cells, opp_cells = our_row["cells"], their_row["cells"]
+        # H and E come from the PDF too — the derived team_h undercounts
+        # whenever a player was dropped for having no jersey number (DS-94a).
+        team_h = our_row["h"]   if our_row["h"]   is not None else team_h
+        team_e = our_row["e"]   if our_row["e"]   is not None else team_e
+        opp_h  = their_row["h"] if their_row["h"] is not None else opp_h
+        opp_e  = their_row["e"] if their_row["e"] is not None else opp_e
+
+    us = {
+        "label": team_name, "short": team_short, "cells": us_cells,
+        "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
+    }
+    opponent = {
+        "label": opponent_name, "short": opp_short, "cells": opp_cells,
+        "r": game.get("opponent_runs") or 0, "h": opp_h, "e": opp_e,
+    }
+
+    rows = _ordered_rows(us, opponent, is_away)
+
     header_block = {
-        "has_line_score": has_line_score,
-        "line_header": [str(i) for i in range(1, max_inning + 1)],
-        "visitor": {
-            "label": opponent_name, "short": opp_short,
-            "cells": cells_for("opponent"), "r": game.get("opponent_runs") or 0, "h": opp_h, "e": opp_e,
-        },
-        "home": {
-            "label": team_name, "short": team_short,
-            "cells": cells_for("our_team"), "r": game.get("team_runs") or 0, "h": team_h, "e": team_e,
-        },
+        "has_line_score": bool(line_score),
+        "line_header": line_header,
+        "us": us,
+        "opponent": opponent,
+        "rows": rows,
     }
 
     # ── Play-by-play presence + baserunning ─────────────────────────────

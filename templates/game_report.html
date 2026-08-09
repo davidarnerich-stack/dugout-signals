@@ -202,27 +202,35 @@
 
 <div class="col">
   <span class="report-tag">{{ "Scrimmage Report" if game_type == "scrimmage" else "Game Report" }}</span>
-  <h1 class="game-title">vs {{ header_block.visitor.label }}</h1>
+  <h1 class="game-title">vs {{ header_block.opponent.label }}</h1>
   <p class="game-meta">{{ d.game.game_date }} · Game {{ d.game_number_in_season }} of season</p>
 
-  <!-- HEADER BLOCK: structured box score, not AI -->
+  <!-- HEADER BLOCK: structured box score, not AI.
+       header_block.rows is ordered visiting team first, home team second —
+       the convention every box score follows (DS-91). Our team keeps the
+       sky accent wherever it lands, via is_us. -->
   <div class="box-score">
     <div class="box-score-top">
-      <div class="bs-row">
-        <div class="bs-team-label">{{ header_block.visitor.label }}</div>
-        <div class="bs-team-runs">{{ header_block.visitor.r }}</div>
-      </div>
+      {% for row in header_block.rows %}
+      {% if not loop.first %}
       <div class="bs-final-row">
         <span class="bs-final-badge">FINAL</span>
         <span class="bs-hr"></span>
       </div>
+      {% endif %}
       <div class="bs-row">
+        {% if row.is_us %}
         <div class="bs-home-label">
           <span class="bs-home-bar"></span>
-          <span class="bs-home-name">{{ header_block.home.label }}</span>
+          <span class="bs-home-name">{{ row.label }}</span>
         </div>
-        <div class="bs-home-runs">{{ header_block.home.r }}</div>
+        <div class="bs-home-runs">{{ row.r }}</div>
+        {% else %}
+        <div class="bs-team-label">{{ row.label }}</div>
+        <div class="bs-team-runs">{{ row.r }}</div>
+        {% endif %}
       </div>
+      {% endfor %}
     </div>
 
     {% if header_block.has_line_score %}
@@ -233,25 +241,20 @@
         <div></div>
         <div class="hdr rhe">R</div><div class="hdr rhe">H</div><div class="hdr rhe">E</div>
 
-        <div class="lbl">{{ header_block.visitor.short }}</div>
-        {% for c in header_block.visitor.cells %}<div class="cell">{{ c }}</div>{% endfor %}
+        {% for row in header_block.rows %}
+        <div class="lbl{% if row.is_us %} home{% endif %}">{{ row.short }}</div>
+        {% for c in row.cells %}<div class="cell">{{ c }}</div>{% endfor %}
         <div></div>
-        <div class="cell total">{{ header_block.visitor.r }}</div>
-        <div class="cell">{{ header_block.visitor.h }}</div>
-        <div class="cell">{{ header_block.visitor.e }}</div>
-
-        <div class="lbl home">{{ header_block.home.short }}</div>
-        {% for c in header_block.home.cells %}<div class="cell">{{ c }}</div>{% endfor %}
-        <div></div>
-        <div class="cell total home">{{ header_block.home.r }}</div>
-        <div class="cell">{{ header_block.home.h }}</div>
-        <div class="cell">{{ header_block.home.e }}</div>
+        <div class="cell total{% if row.is_us %} home{% endif %}">{{ row.r }}</div>
+        <div class="cell">{{ row.h }}</div>
+        <div class="cell">{{ row.e }}</div>
+        {% endfor %}
       </div>
     </div>
     {% else %}
     <div class="no-line-score">
-      R {{ header_block.visitor.r }}–{{ header_block.home.r }} · H {{ header_block.visitor.h }}–{{ header_block.home.h }} · E {{ header_block.visitor.e }}–{{ header_block.home.e }}
-      &nbsp;·&nbsp; Add play-by-play for an inning-by-inning line score.
+      R {{ header_block.opponent.r }}–{{ header_block.us.r }} · H {{ header_block.opponent.h }}–{{ header_block.us.h }} · E {{ header_block.opponent.e }}–{{ header_block.us.e }}
+      &nbsp;·&nbsp; Inning-by-inning line score unavailable — re-upload the box score PDF for this game.
     </div>
     {% endif %}
   </div>
