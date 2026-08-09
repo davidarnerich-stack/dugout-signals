@@ -94,8 +94,15 @@
     .section-h2 { font-family: 'Orbitron', sans-serif; font-size: 16px; font-weight: 700;
                   color: #e6edf3; letter-spacing: -.01em; margin: 38px 0 16px; }
     .section-h2.tight { margin-bottom: 8px; }
-    p.body-text { font-size: 14.5px; line-height: 1.72; color: #c9d1d9; margin-bottom: 18px; }
-    p.body-text:last-child { margin-bottom: 0; }
+    /* Narrative sections arrive as generated HTML containing their own <p>
+       elements, so the wrapper must be a <div>. A <p> wrapper is auto-closed
+       by the parser at the first inner <p>, which strips this class from the
+       real paragraphs and — with the global `* { margin: 0 }` reset above —
+       leaves them with no spacing at all (DS-96). */
+    .body-text { font-size: 14.5px; line-height: 1.72; color: #c9d1d9; }
+    .body-text p { margin-bottom: 18px; }
+    .body-text p:last-child { margin-bottom: 0; }
+    .body-text > :last-child { margin-bottom: 0; }
     .recap-label { font-size: 13px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 7px; }
     .recap-block { margin-bottom: 18px; }
 
@@ -257,7 +264,7 @@
 
   <!-- A: GAME SNAPSHOT -->
   <h2 class="section-h2">Game Snapshot</h2>
-  <p class="body-text">{{ sections.snapshot | safe }}</p>
+  <div class="body-text">{{ sections.snapshot | safe }}</div>
 
   <!-- B: HOW IT HAPPENED -->
   <h2 class="section-h2">How It Happened</h2>
@@ -265,7 +272,7 @@
     {% for g in sections.how_it_happened %}
     <div class="recap-block">
       <div class="recap-label">{{ g.label }}</div>
-      <p class="body-text">{{ g.text | safe }}</p>
+      <div class="body-text">{{ g.text | safe }}</div>
     </div>
     {% endfor %}
   {% else %}
@@ -284,12 +291,12 @@
   </div>
   <div class="subsection">
     <h3>Hitting</h3>
-    <p class="body-text">{{ sections.hitting | safe }}</p>
+    <div class="body-text">{{ sections.hitting | safe }}</div>
   </div>
   <div class="subsection">
     <h3>Baserunning</h3>
     {% if sections.baserunning %}
-    <p class="body-text">{{ sections.baserunning | safe }}</p>
+    <div class="body-text">{{ sections.baserunning | safe }}</div>
     {% else %}
     <div class="baserunning-fallback">
       <span class="icon">ⓘ</span> Baserunning data was limited for this game — add play-by-play for a fuller picture.
@@ -303,15 +310,15 @@
   </div>
   <div class="subsection">
     <h3>Pitching</h3>
-    <p class="body-text">{{ sections.pitching | safe }}</p>
+    <div class="body-text">{{ sections.pitching | safe }}</div>
   </div>
   <div class="subsection">
     <h3>Fielding</h3>
-    <p class="body-text">{{ sections.fielding | safe }}</p>
+    <div class="body-text">{{ sections.fielding | safe }}</div>
   </div>
   <div class="subsection">
     <h3>Catching</h3>
-    <p class="body-text">{{ sections.catching | safe }}</p>
+    <div class="body-text">{{ sections.catching | safe }}</div>
   </div>
 
   <!-- D: TEAM SIGNALS -->
