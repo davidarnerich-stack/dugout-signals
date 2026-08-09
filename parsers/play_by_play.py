@@ -2,7 +2,7 @@
 import io
 import re
 from docx import Document
-from .common import build_player_map, resolve_player, team_name_regex
+from .common import build_player_map, resolve_player
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 RESULT_TYPES = {
@@ -53,6 +53,13 @@ NARR_RESULT_PATTERNS = [
 
 SCORE_RE = re.compile(r"([A-Z0-9]{2,6})\s+(\d+)\s*-\s*([A-Z0-9]{2,6})\s+(\d+)(?:\s*\|\s*(\d+)\s*Out)?",re.I)
 OUTS_RE  = re.compile(r"^(\d)\s+Outs?$",re.I)
+# KNOWN GAP (DS-92): still keyed to one team's abbreviation, so it only
+# resolves scores for that team. Left as-is deliberately — this pattern is
+# only reached by the narrative format (pasted text whose first paragraphs
+# contain "PLAY-BY-PLAY"), which GameChanger's current export does not
+# produce, and no real sample exists to verify which side it prints first.
+# Guessing a convention here would risk writing wrong scores where today it
+# simply no-ops. Fix when a real sample is available.
 NARR_SCORE_RE = re.compile(r"STRM\s+(\d+)\s*[-–]\s*\w+\s+(\d+)|(\w+)\s+(\d+)\s*[-–]\s*STRM\s+(\d+)",re.I)
 NARR_VERB_RE  = re.compile(
     r"\b(singles?|doubles?|triples?|home\s+run|walks?|hit\s+by\s+pitch|"
@@ -83,24 +90,18 @@ def _get_paras_from_text(raw_text: str):
 def _is_narrative(paras):
     return any("PLAY-BY-PLAY" in p.upper() for p in paras[:3])
 
-def _parse_score(text, we_are_away=None):
+def _parse_score(text, we_are_away: bool):
     """
-    Score lines use GameChanger's auto-generated per-team abbreviation (e.g.
-    "STRM" for Storm, "YANK" for Yankees — unpredictable, not worth trying to
-    recognize by name). Instead, rely on the same left-is-visitor convention
-    already verified for the box score PDF's line score: whichever side is
-    us was already determined once from the game's first inning header
-    (`we_are_away`, passed in by the caller) — that determines which column
-    is ours here, not the abbreviation text itself. `we_are_away=None` (not
-    yet determined) falls back to the literal "STRM" match rather than
-    guessing, so it degrades no worse than before this fix.
+    Score lines carry GameChanger's auto-generated per-team abbreviation
+    ("STRM", "YANK", "PSWS" …) which is unpredictable and must never be
+    matched by name. The visiting team is printed first — the same
+    left-is-visitor convention verified for the box score line score — so
+    `we_are_away` alone says which column is ours (DS-92).
     """
     m = SCORE_RE.search(text)
     if not m: return None,None,None
-    t1,s1,t2,s2 = m.group(1),int(m.group(2)),m.group(3),int(m.group(4))
+    s1,s2 = int(m.group(2)), int(m.group(4))
     outs = int(m.group(5)) if m.group(5) else None
-    if we_are_away is None:
-        return (s1,s2,outs) if "STRM" in t1.upper() else (s2,s1,outs)
     return (s1,s2,outs) if we_are_away else (s2,s1,outs)
 
 def _parse_outs(text):
@@ -153,29 +154,30 @@ def _update_inning(inning_scores, inning, half, score_storm, score_opp, closed):
     inning_scores[ko] = score_opp  - inning_scores.get(ko,0)
 
 
-def _batting_team_matcher(team_name):
+def _batting_team_for(half: str, is_away: bool) -> str:
     """
-    Inning headers ("Top 1st - {Team Name}") name whichever team is currently
-    batting. Match against the coach's real team_name (same pattern used for
-    box score opponent detection) instead of a hardcoded literal — otherwise
-    every non-Storm team has ALL of its own plate appearances misclassified
-    as the opponent's, and vice versa.
+    Which team is batting in this half-inning (DS-92).
+
+    The visiting team bats the top of every inning and the home team the
+    bottom — universal, so knowing which side we were is enough. `is_away`
+    comes from the venue marker printed on the box score.
+
+    This replaces matching the coach's team name against the inning header.
+    That never worked reliably: GameChanger's team name routinely differs
+    from what the coach entered at onboarding ("PSW Summer 26 Hilighters"
+    vs "PSW Hilighters"), and a miss silently attributed *every* plate
+    appearance to the opponent rather than failing loudly.
     """
-    pattern = team_name_regex(team_name)
-    if not pattern:
-        return lambda text: "opponent"
-    compiled = re.compile(pattern, re.I)
-    return lambda text: "our_team" if compiled.search(text) else "opponent"
+    return "our_team" if (half == "top") == bool(is_away) else "opponent"
 
 
 # ── GameChanger parser ─────────────────────────────────────────────────────────
-def _parse_gc(paras, team_name=""):
-    is_our_team = _batting_team_matcher(team_name)
+def _parse_gc(paras, is_away: bool):
     pas,inning_scores = [],{}
     inning=half=batting_team=pitcher=None
     outs=score_storm=score_opp=0; pa_sequence=0
     closed_innings=set()
-    we_are_away=None   # set once from the game's first "Top" header — visitor always bats first
+    we_are_away = bool(is_away)
 
     blocks=[]
     cur_result=None; cur_block=[]
@@ -195,14 +197,21 @@ def _parse_gc(paras, team_name=""):
             m=re.match(r"^(Top|Bottom)\s+(\d+)\w*\s+-\s+(.+)$",block_paras[0])
             if m:
                 half=m.group(1).lower(); inning=int(m.group(2))
-                batting_team=is_our_team(m.group(3))
-                if we_are_away is None and half=="top":
-                    we_are_away = (batting_team=="our_team")
+                batting_team=_batting_team_for(half, we_are_away)
                 outs=0
                 inning_scores.setdefault((inning,half,"our_team"),score_storm)
                 inning_scores.setdefault((inning,half,"opponent"),score_opp)
             continue
         if result_type=="Inning Ended":
+            # Read this block's own score line BEFORE closing the half-inning.
+            # It carries the half's final scoring play — a run that crosses as
+            # the inning ends, including the run that trips a mercy-rule cap —
+            # and skipping it dropped that run and leaked it into the next
+            # inning (DS-92).
+            for line in block_paras:
+                s,o,_ = _parse_score(line, we_are_away)
+                if s is not None:
+                    score_storm,score_opp = s,o
             _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
             outs=0; continue
 
@@ -227,7 +236,7 @@ def _parse_gc(paras, team_name=""):
         narrative_lines=[]; pitch_parts=[]
         for line in block_paras:
             if "Lineup changed" in line: continue
-            if _parse_score(line)[0] is not None or _parse_outs(line) is not None: continue
+            if _parse_score(line, we_are_away)[0] is not None or _parse_outs(line) is not None: continue
             if re.search(r"\bBall\s+\d|Strike\s+\d|Foul\b|In play\b",line):
                 pitch_parts.append(line)
             else:
@@ -270,12 +279,12 @@ def _parse_gc(paras, team_name=""):
 
 
 # ── Narrative parser ───────────────────────────────────────────────────────────
-def _parse_narrative(paras, team_name=""):
-    is_our_team = _batting_team_matcher(team_name)
+def _parse_narrative(paras, is_away: bool):
     pas,inning_scores=[],{}
     inning=half=batting_team=None
     outs=score_storm=score_opp=0; pa_sequence=0; pitcher=None
     closed_innings=set()
+    we_are_away = bool(is_away)
 
     for para in paras:
         if any(k in para.upper() for k in ("PLAY-BY-PLAY","FINAL:","STRM:")):
@@ -288,7 +297,7 @@ def _parse_narrative(paras, team_name=""):
                    para.strip(),re.I)
         if m:
             half=m.group(1).lower(); inning=int(m.group(2))
-            batting_team=is_our_team(m.group(3))
+            batting_team=_batting_team_for(half, we_are_away)
             outs=0
             inning_scores.setdefault((inning,half,"our_team"),score_storm)
             inning_scores.setdefault((inning,half,"opponent"),score_opp)
@@ -410,10 +419,8 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
     else:
         paras = _get_paras_from_docx(source)
 
-    pa_dicts, inning_scores = (_parse_narrative(paras, team_name) if _is_narrative(paras)
-                               else _parse_gc(paras, team_name))
-
-    # Resolve game_id (legacy filename path)
+    # Resolve game_id (legacy filename path) BEFORE parsing — the parse needs
+    # the game's venue to know which half-inning is ours (DS-92).
     if game_id is None and filename:
         import re as _re
         m = _re.match(r"^(\d{4}-\d{2}-\d{2})-(.+?)_((?:Game)?(\d+))_", filename)
@@ -429,6 +436,24 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
         game_id = game_resp.data[0]["game_id"]
     elif game_id is None:
         raise ValueError("Either game_id or filename must be provided")
+
+    # Venue decides which half-inning belongs to which team. It is recorded
+    # from the box score's venue marker when the game is created or
+    # re-uploaded (DS-91), so it is present whenever a box score PDF has been
+    # processed for this game — which the upload flow already requires before
+    # accepting play-by-play.
+    game_row = (sb.table("games").select("is_away")
+                .eq("game_id", game_id).limit(1).execute())
+    is_away = game_row.data[0].get("is_away") if game_row.data else None
+    if is_away is None:
+        raise ValueError(
+            "This game has no home/away record yet, so play-by-play can't be "
+            "attributed to the right team. Upload the box score PDF for this "
+            "game first, then add the play-by-play."
+        )
+
+    pa_dicts, inning_scores = (_parse_narrative(paras, is_away) if _is_narrative(paras)
+                               else _parse_gc(paras, is_away))
 
     # Clear existing
     sb.table("inning_scores").delete().eq("game_id",game_id).execute()
