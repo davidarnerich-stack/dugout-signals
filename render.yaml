@@ -3,7 +3,13 @@ services:
     name: dugout-signals
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --timeout 120 --workers 2
+    # 300s, not because a request should ever take that long — report
+    # generation now runs its sections concurrently and should finish well
+    # inside 60s — but so that a slow upstream degrades into a slow response
+    # rather than a killed worker. A killed worker returns an HTML error
+    # page, which the client cannot parse as JSON, so the coach sees
+    # "Unexpected token '<'" instead of anything actionable.
+    startCommand: gunicorn app:app --timeout 300 --workers 2
     plan: starter          # $7/mo — no cold starts; use "free" to start for $0
     envVars:
       - key: FLASK_SECRET_KEY

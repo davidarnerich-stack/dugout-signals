@@ -684,59 +684,74 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
     hb = data["header_block"]
     us, opp = hb["us"], hb["opponent"]
 
-    sections = {}
-    try:
-        headline = generate_game_headline(client, system, data, opp, us)
-    except Exception as e:
-        headline = f"[Generation error: {e}]"
+    # Sections are generated concurrently rather than one after another.
+    #
+    # Eleven sequential Claude calls sat inside the upload request, under
+    # gunicorn's 120s timeout. That was already close to the limit, and the
+    # richer prompts from DS-98/DS-102/DS-103 pushed it over — the worker was
+    # killed mid-request and the browser received an HTML error page instead
+    # of JSON. Nothing in the application raised: every section here is
+    # already wrapped, so an ordinary failure returns a report with an error
+    # note rather than killing the request. Only the process dying produces
+    # HTML, which is what pointed at the timeout.
+    #
+    # Every section takes the same `data` and none reads another's output, so
+    # concurrency needs no ordering. Wall time becomes roughly the slowest
+    # single call. signals/narrative.py already does exactly this, for the
+    # same reason and with the same independent-failure contract.
+    import concurrent.futures
 
-    try:
-        sections["snapshot"] = _to_html(generate_game_snapshot(client, system, data, opp, us))
-    except Exception as e:
-        sections["snapshot"] = f"<p>[Generation error: {e}]</p>"
+    def _section(fn, *args):
+        return fn(client, system, data, *args)
 
-    try:
-        sections["how_it_happened"] = generate_how_it_happened(client, system, data, opp, us)
-    except Exception as e:
-        sections["how_it_happened"] = None  # template shows the section-failed fallback
-
-    try:
-        sections["hitting"] = _to_html(_strip_leading_label(generate_hitting(client, system, data, us), "Hitting"))
-    except Exception as e:
-        sections["hitting"] = f"<p>[Generation error: {e}]</p>"
-
+    jobs = {
+        "headline":        (generate_game_headline,  (opp, us)),
+        "snapshot":        (generate_game_snapshot,  (opp, us)),
+        "how_it_happened": (generate_how_it_happened,(opp, us)),
+        "hitting":         (generate_hitting,        (us,)),
+        "pitching":        (generate_pitching,       ()),
+        "fielding":        (generate_fielding,       (us,)),
+        "catching":        (generate_catching,       ()),
+        "signals":         (generate_signals,        ()),
+        "focus_areas":     (generate_focus_areas,    ()),
+    }
+    # Baserunning is only generated when play-by-play exists; without it the
+    # template renders fixed fallback copy and no model call is made.
     if data["has_pbp"]:
-        try:
-            sections["baserunning"] = _to_html(_strip_leading_label(generate_baserunning(client, system, data, us), "Baserunning"))
-        except Exception as e:
-            sections["baserunning"] = f"<p>[Generation error: {e}]</p>"
-    else:
-        sections["baserunning"] = None  # template renders the fixed fallback copy — not an AI call
+        jobs["baserunning"] = (generate_baserunning, (us,))
 
-    try:
-        sections["pitching"] = _to_html(_strip_leading_label(generate_pitching(client, system, data), "Pitching"))
-    except Exception as e:
-        sections["pitching"] = f"<p>[Generation error: {e}]</p>"
+    raw, errors = {}, {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = {pool.submit(_section, fn, *args): key for key, (fn, args) in jobs.items()}
+        for fut in concurrent.futures.as_completed(futures):
+            key = futures[fut]
+            try:
+                raw[key] = fut.result()
+            except Exception as e:
+                errors[key] = e
 
-    try:
-        sections["fielding"] = _to_html(_strip_leading_label(generate_fielding(client, system, data, us), "Fielding"))
-    except Exception as e:
-        sections["fielding"] = f"<p>[Generation error: {e}]</p>"
+    # Post-processing stays here rather than inside the workers so the
+    # threads do nothing but wait on the API.
+    sections = {}
+    headline = raw.get("headline") or f"[Generation error: {errors.get('headline')}]"
 
-    try:
-        sections["catching"] = _to_html(_strip_leading_label(generate_catching(client, system, data), "Catching"))
-    except Exception as e:
-        sections["catching"] = f"<p>[Generation error: {e}]</p>"
+    for key, label in (("hitting", "Hitting"), ("baserunning", "Baserunning"),
+                       ("pitching", "Pitching"), ("fielding", "Fielding"),
+                       ("catching", "Catching")):
+        if key == "baserunning" and not data["has_pbp"]:
+            sections[key] = None      # fixed fallback copy in the template
+        elif key in errors:
+            sections[key] = f"<p>[Generation error: {errors[key]}]</p>"
+        else:
+            sections[key] = _to_html(_strip_leading_label(raw[key], label))
 
-    try:
-        sections["signals"] = generate_signals(client, system, data)
-    except Exception as e:
-        sections["signals"] = [f"[Generation error: {e}]"]
-
-    try:
-        sections["focus_areas"] = generate_focus_areas(client, system, data)
-    except Exception as e:
-        sections["focus_areas"] = []
+    sections["snapshot"] = (f"<p>[Generation error: {errors['snapshot']}]</p>"
+                            if "snapshot" in errors else _to_html(raw["snapshot"]))
+    # None here is meaningful — the template shows the section-failed card.
+    sections["how_it_happened"] = None if "how_it_happened" in errors else raw["how_it_happened"]
+    sections["signals"] = ([f"[Generation error: {errors['signals']}]"]
+                           if "signals" in errors else raw["signals"])
+    sections["focus_areas"] = [] if "focus_areas" in errors else raw["focus_areas"]
 
     return {"data": data, "sections": sections, "headline": headline}
 

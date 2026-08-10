@@ -698,7 +698,25 @@
 
     try {
       const resp = await fetch('/upload', { method: 'POST', body: form });
-      const data = await resp.json();
+      // The server answers with JSON for every outcome it can handle — even a
+      // failed parse comes back as a result row. Anything else means the
+      // request never reached that point (a timeout or a dropped worker), and
+      // the body is an HTML error page. Parsing it blindly produced
+      // "Unexpected token '<'", which told the coach nothing.
+      const body = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch (_) {
+        const looksLikeHtml = body.trim().startsWith('<');
+        throw new Error(
+          looksLikeHtml
+            ? `The server didn't finish this upload (HTTP ${resp.status}). ` +
+              `Your files were not saved — try again, and if it keeps happening ` +
+              `upload the box score and stats first, then the play-by-play separately.`
+            : `Unexpected response from the server (HTTP ${resp.status}): ${body.slice(0, 200)}`
+        );
+      }
       renderResults(data.results, data.report_id);
       // Reset on success
       const anySuccess = data.results.some(r => r.status === 'success');
@@ -713,8 +731,11 @@
         await loadTournaments();  // refresh dropdown with any new tournament
       }
     } catch (err) {
+      // Not necessarily a network problem — a dropped connection and a
+      // server that failed mid-upload land here alike, and the messages
+      // thrown above already say which. Don't mislabel it.
       resultsDiv.innerHTML = `<div class="result-card error">
-        <div class="result-msg">Network error: ${err.message}</div></div>`;
+        <div class="result-msg">Upload failed. ${err.message}</div></div>`;
     }
 
     processBtn.disabled = false;
