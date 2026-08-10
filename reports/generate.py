@@ -441,10 +441,21 @@ Batting lines:
 
 
 def generate_baserunning(client, system, data, us) -> str:
+    # The success rate is supplied, not left to be worked out. This section
+    # was computing it independently and printing 91% while the Game Snapshot
+    # printed the supplied 90.9% — two figures for one stat in one report.
+    pct = data.get("sb_pct")
+    rate = f" That is a {pct}% success rate — use this figure as given." if pct is not None else ""
+    who = data.get("stealers") or []
+    detail = ""
+    if who:
+        detail = "\nBy player: " + "; ".join(
+            f"{s['name']} {s['sb']} SB" + (f", {s['cs']} CS" if s.get("cs") else "")
+            for s in who) + "."
     return _single_game_call(client, system, f"""Write the "Baserunning" subsection — stolen bases,
 smart reads, aggressive advancement, or missed opportunities.
 
-Stolen bases: {data['sb_count']}, caught stealing: {data['cs_count']}.
+Stolen bases: {data['sb_count']}, caught stealing: {data['cs_count']}.{rate}{detail}
 """)
 
 

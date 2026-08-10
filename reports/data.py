@@ -3,6 +3,43 @@ Pull all data needed to generate a tournament analysis report.
 Returns a structured dict that gets passed to the AI and rendered into tables.
 """
 
+import re
+
+_FIELDER_ABBREV = re.compile(r"^(?P<pos>.*?)\s+(?P<initial>[A-Za-zÀ-ÿ])\.?\s+(?P<last>[A-Za-zÀ-ÿ'’\-]+)$")
+
+
+def _resolve_fielder_name(location: str, players) -> str:
+    """
+    Expand GameChanger's abbreviated fielder name against the real roster.
+
+    Play-by-play records positions as "left fielder R Yamada-Harivandi" — an
+    initial and a surname. Handing that to a narrative invites it to guess at
+    the full name, and it did: Reuben came back as "Rohan".
+
+    Resolves the initial and surname to the rostered player when exactly one
+    matches. When the surname is shared, or unknown, the name is dropped and
+    only the position is kept — a fielder identified solely by position is
+    accurate; an invented first name is not.
+    """
+    if not location:
+        return location
+    m = _FIELDER_ABBREV.match(location)
+    if not m:
+        return location
+
+    pos     = m.group("pos").strip()
+    initial = m.group("initial").lower()
+    last    = m.group("last").lower()
+
+    matches = [p for p in players
+               if (p.get("last_name") or "").strip().lower() == last
+               and (p.get("first_name") or "").strip().lower().startswith(initial)]
+    if len(matches) == 1:
+        p = matches[0]
+        return f"{pos} {p['first_name']} {p['last_name']}".strip()
+    return pos or location
+
+
 def _ordered_rows(us: dict, opponent: dict, is_away) -> list:
     """
     Box score row order: visiting team on top, home team below — the
@@ -734,7 +771,8 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         ).data or []
         by_fielder = {}
         for pa in opp_pas:
-            loc = (pa.get("hit_location") or "").strip()
+            loc = _resolve_fielder_name(
+                (pa.get("hit_location") or "").strip(), pid_to_player.values())
             if loc:
                 by_fielder[loc] = by_fielder.get(loc, 0) + 1
         if by_fielder:
