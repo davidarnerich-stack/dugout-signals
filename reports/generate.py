@@ -359,18 +359,51 @@ Stolen bases: {data['sb_count']}, caught stealing: {data['cs_count']}.
 """)
 
 
+def _pitcher_line(p: dict) -> str:
+    """One pitcher's line for the prompt (DS-103).
+
+    Command and contact-quality figures are appended only where GameChanger
+    actually recorded them. Omitting a missing metric outright — rather than
+    printing "n/a" — is deliberate: an absent figure cannot be misread as a
+    measurement, and the prompt forbids claims about anything not listed.
+    """
+    parts = [f"{p['ip']} IP", f"{p['k']} K", f"{p['bb']} BB",
+             f"{p['er']} ER", f"{p['era']} ERA"]
+    optional = [
+        ("strike_pct", "{} % strikes"),
+        ("fps_pct",    "{} % first-pitch strikes"),
+        ("sm_pct",     "{} % swing-and-miss"),
+        ("weak_pct",   "{} % of batted balls weakly hit"),
+        ("hhb_pct",    "{} % of batted balls hit hard"),
+        ("p_per_ip",   "{} pitches per inning"),
+    ]
+    for key, fmt in optional:
+        val = p.get(key)
+        if val is not None:
+            parts.append(fmt.format(val))
+    return f"{p['name']} #{p['number']}: " + ", ".join(parts)
+
+
 def generate_pitching(client, system, data) -> str:
-    pitchers = "; ".join(f"{p['name']} #{p['number']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, "
-                          f"{p['er']} ER, {p['era']} ERA" for p in data["pitching_stats"]) or "No pitching data recorded."
+    pitchers = ("; ".join(_pitcher_line(p) for p in data["pitching_stats"])
+                or "No pitching data recorded.")
     return _single_game_call(client, system, f"""Write the "Pitching" subsection — pitching
-performance for this game, with individual pitcher contributions (IP, K, BB, ERA) woven into the
-prose.
+performance for this game, with individual pitcher contributions woven into the prose.
 If there's enough to cover (multiple pitchers, contrasting outings), split it into 2-3 short
 paragraphs separated by a blank line rather than one dense block — a single short paragraph is fine
 when there isn't much to say.
 
 Pitching lines:
 {pitchers}
+
+Beyond the raw line, each pitcher may carry command and contact-quality figures. Lead with whichever
+one or two actually characterise the outing — a high swing-and-miss rate, a low first-pitch-strike
+rate, a batted-ball profile that is nearly all weak contact — rather than reciting every figure
+listed. Two well-chosen numbers say more than six.
+
+Cite only figures that appear above. If a metric is not listed for a pitcher it was not recorded,
+so make no claim about it — in particular, do not infer swing-and-miss, command or contact quality
+from the strikeout and walk counts.
 """)
 
 

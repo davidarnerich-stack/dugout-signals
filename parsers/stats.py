@@ -50,13 +50,17 @@ PIT_COLS = {
     # pitching-section counterparts of the batting weak_pct/fly_ball_pct/babip
     # DS-43 already captured; missed at the time because the pitching section
     # wasn't in scope for that pass.
-    "weak_pct": 109, "fly_ball_pct": 114, "babip": 116,
+    # DS-103: hhb_pct (110) is weak_pct's counterpart — the share of batted
+    # balls that were line drives or hard ground balls. It sits directly
+    # between weak_pct and fly_ball_pct and was stepped over by the DS-74
+    # pass; without it the contact-quality picture only has its soft half.
+    "weak_pct": 109, "hhb_pct": 110, "fly_ball_pct": 114, "babip": 116,
 }
 PIT_FLOAT = {
     "innings_pitched", "era", "whip", "batting_average_against",
     "p_per_ip", "fip", "strike_pct", "fps_pct", "fpso_pct", "fpsw_pct",
     "fpsh_pct", "bb_per_inn", "sm_pct", "k_per_bf", "k_per_bb",
-    "weak_pct", "fly_ball_pct", "babip",
+    "weak_pct", "hhb_pct", "fly_ball_pct", "babip",
 }
 
 # Rate/percentage stats GameChanger writes as 0.00 when there's no data — store

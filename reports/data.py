@@ -537,6 +537,17 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             "player_id": row["player_id"], "number": number, "name": name,
             "ip": ip, "h": h, "r": row.get("runs_allowed") or 0, "er": er,
             "bb": bb, "k": row.get("strikeouts") or 0, "era": era, "whip": whip,
+            # DS-103: command and contact quality. These were captured on
+            # upload but never reached the report, which is why a narrative
+            # once asserted a pitcher "was generating whiffs" with nothing
+            # to base it on. Left as None where GameChanger recorded nothing,
+            # so the prompt can omit rather than invent.
+            "strike_pct": row.get("strike_pct"),   # share of pitches for strikes
+            "fps_pct":    row.get("fps_pct"),      # first-pitch strikes
+            "sm_pct":     row.get("sm_pct"),       # swing-and-miss / whiff%
+            "weak_pct":   row.get("weak_pct"),     # batted balls weakly hit
+            "hhb_pct":    row.get("hhb_pct"),      # batted balls hit hard
+            "p_per_ip":   row.get("p_per_ip"),     # pitch efficiency
         })
     pitching_stats.sort(key=lambda x: -(parse_innings_to_outs(x["ip"]) or 0))
 
