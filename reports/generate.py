@@ -216,6 +216,17 @@ Tone: factual and specific, not generic praise. Write in present tense for trend
 specific game events. Write in flowing paragraphs — like a beat reporter recap, not a bullet list —
 unless a section explicitly asks for a different format. Do not use markdown syntax (no #, **, etc.)
 — output will be inserted as plain text.
+Refer to the team as "{team_name}" throughout, or as "the team". Do not shorten it, expand it, or
+alternate between forms within a report — a reader seeing two different names assumes they are two
+different teams.
+Never state or imply a player's age. The team plays at {age_level}, which describes an age bracket,
+not any individual on the roster — a player's actual age is not something you are given.
+Every figure you cite must appear verbatim in the data supplied with the request. Do not compute,
+sum, average or estimate anything, and do not describe a category of evidence you were not given —
+if swing-and-miss, command or contact quality is not listed, you do not know it.
+When you cite a rate stat, name the window it covers in the same sentence ("over the last 3 games",
+not "recently" or "in the recent stretch"). When you describe something changing, give both the
+starting and ending values, so the reader can judge the size of the change for themselves.
 Never begin a section by restating its own title (e.g. don't start the "Hitting" subsection with
 the word "Hitting") — the title is already displayed as a heading directly above your text. Start
 straight into the analysis.
@@ -251,12 +262,52 @@ def _season_context_note(game_number: int) -> str:
             ).format(n=game_number)
 
 
+def _ordinal(label: str) -> str:
+    """'3' -> '3rd'. Innings read as ordinals in sportswriting, and the
+    grounding block should model the convention the prose is asked to use
+    rather than contradict it. Non-numeric labels pass through untouched."""
+    s = str(label).strip()
+    if not s.isdigit():
+        return s
+    n = int(s)
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _line_score_note(data, opp, us) -> str:
+    """
+    Inning-by-inning runs, plus the running score after every inning (DS-98).
+
+    The cumulative figures are the point. Handing over a bare list of cells
+    left the model to add them up, and it got it wrong: on the 2026-08-05
+    report it announced the game "knotted up at 7-7" after the 3rd when the
+    line score said 7-8, then invented "TBD's additional run somewhere in the
+    sequence" to reconcile its own total against the real final. Arithmetic
+    is not the model's job when we can hand it the answer.
+    """
     hb = data["header_block"]
     if not hb["has_line_score"]:
         return ""
-    return (f"Inning-by-inning ({', '.join(hb['line_header'])}): "
-            f"{us['short']} {us['cells']}, {opp['short']} {opp['cells']}.")
+
+    innings = hb["line_header"]
+    us_run = opp_run = 0
+    running = []
+    for i, label in enumerate(innings):
+        u = us["cells"][i]   if i < len(us["cells"])   else ""
+        o = opp["cells"][i]  if i < len(opp["cells"])  else ""
+        us_run  += u if isinstance(u, int) else 0
+        opp_run += o if isinstance(o, int) else 0
+        running.append(f"after the {_ordinal(label)}: "
+                       f"{us['short']} {us_run}, {opp['short']} {opp_run}")
+
+    return (f"Inning-by-inning ({', '.join(innings)}): "
+            f"{us['short']} {us['cells']}, {opp['short']} {opp['cells']}.\n"
+            f"Running score — {'; '.join(running)}.\n"
+            "These running totals are already computed. Use them exactly as given for any "
+            "statement about the score at a point in the game; do not add up innings yourself.")
 
 
 def _game_facts_note(data, opp, us) -> str:
@@ -270,11 +321,47 @@ def _game_facts_note(data, opp, us) -> str:
     line_score = _line_score_note(data, opp, us)
     if line_score:
         lines.append(line_score)
-    team_bb = sum(b["bb"] for b in data["batting_stats"])
-    opp_bb  = sum(p["bb"] for p in data["pitching_stats"])
-    lines.append(f"{us['short']}: {us['h']} H, {us['e']} E, {team_bb} BB drawn by our hitters. "
-                 f"{opp['short']}: {opp['h']} H, {opp['e']} E, {opp_bb} BB issued by our pitching.")
+    t = _team_totals_note(data, us, opp)
+    if t:
+        lines.append(t)
     return "\n".join(lines)
+
+
+def _team_totals_note(data, us, opp) -> str:
+    """
+    Team totals, summed here rather than by the model (DS-98).
+
+    Per-batter lines were already in the prompts, and the model still
+    reported "8 strikeouts across 11 batters" when the correct figure was 9 —
+    twice, in two separate reviews. Any total the narrative might cite is
+    computed here so there is nothing left to get wrong.
+    """
+    bats = data.get("batting_stats") or []
+    pits = data.get("pitching_stats") or []
+    if not bats and not pits:
+        return ""
+    team_bb = sum(b["bb"] for b in bats)
+    team_k  = sum(b["k"]  for b in bats)
+    opp_bb  = sum(p["bb"] for p in pits)
+    opp_k   = sum(p["k"]  for p in pits)
+    out = [
+        f"{us['short']} totals: {us['h']} H, {us['e']} E, {team_bb} BB drawn, "
+        f"{team_k} strikeouts by our hitters across {len(bats)} batters.",
+        f"{opp['short']} totals: {opp['h']} H, {opp['e']} E, {opp_bb} BB issued "
+        f"and {opp_k} strikeouts recorded by our pitching.",
+    ]
+    sb_ct, cs_ct = data.get("sb_count"), data.get("cs_count")
+    if sb_ct is not None:
+        line = f"Baserunning: {sb_ct} stolen bases, {cs_ct} caught stealing."
+        # Name the runner when an event has exactly one owner — a bare "1
+        # caught stealing" left the coach asking who it was.
+        singles = [s["name"] for s in (data.get("stealers") or []) if s.get("cs") == 1]
+        if cs_ct == 1 and len(singles) == 1:
+            line += f" The caught stealing was {singles[0]}."
+        out.append(line)
+    out.append("These totals are already summed. Cite them as given — do not add up "
+               "the per-player lines yourself.")
+    return "\n".join(out)
 
 
 _NO_INVENTION_NOTE = ("Ground every specific claim — which inning, which team, what happened — "
@@ -507,12 +594,40 @@ Catching lines: {catchers}
 
 
 def generate_signals(client, system, data) -> list:
+    # Both windows, explicitly labelled and paired (DS-98). Previously the two
+    # figures went in unlabelled and came out as "climbing nearly 80 points
+    # above the season mark" and "the jump to .618 OBP in recent games" —
+    # numbers with no stated baseline, which a reader cannot judge. Each line
+    # below carries its own comparison so a signal can quote one and be
+    # complete.
+    std, l3 = data["season_to_date"], data["last3"]
+    has_l3 = data["game_number_in_season"] >= 3
+    if has_l3:
+        windows = "\n".join([
+            f"AVG — last 3 games {l3['avg']}, season to date {std['avg']} ({std['games']} games).",
+            f"OBP — last 3 games {l3['obp']}, season to date {std['obp']}.",
+            f"OPS — last 3 games {l3['ops']}, season to date {std['ops']}.",
+        ])
+        window_rule = (
+            "Each line above pairs a recent window with the season baseline. When you cite one, "
+            "give both figures and name the window — 'over the last 3 games (.317) against .253 "
+            "for the season', never '80 points above the season mark' or 'in the recent stretch'. "
+            "Say whether the gap is large enough to mean anything; a reader cannot judge a number "
+            "with nothing to measure it against. Do not spend two separate signals half-describing "
+            "the same comparison."
+        )
+    else:
+        windows = (f"Season to date: {std['avg']} AVG / {std['obp']} OBP / {std['ops']} OPS "
+                   f"across {std['games']} games.")
+        window_rule = ("There are fewer than 3 games, so there is no recent window to compare "
+                       "against. State figures plainly and make no claim about a trend.")
+
     text = _single_game_call(client, system, f"""Write 3-5 "Team Signals" — pattern observations
 phrased as developmental observations, not verdicts. Age/sport calibrated per the system prompt.
 
-Season-to-date team line: {data['season_to_date']['avg']} AVG / {data['season_to_date']['obp']} OBP
-/ {data['season_to_date']['ops']} OPS across {data['season_to_date']['games']} games.
-{"Last 3 games: " + data['last3']['avg'] + " AVG / " + data['last3']['obp'] + " OBP / " + data['last3']['ops'] + " OPS." if data['game_number_in_season'] >= 3 else ""}
+{windows}
+
+{window_rule}
 
 Return each signal as its own line, no numbering, no bullets — just one sentence-or-two observation
 per line, 3 to 5 lines total.
