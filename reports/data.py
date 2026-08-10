@@ -298,16 +298,18 @@ def get_tournament_data(sb, tournament_id: str, team_id: str, team_name: str) ->
     team_fpct = round((team_tc - team_e) / team_tc, 3) if team_tc else 1.0
 
     # ── Base running ──────────────────────────────────────────────────────
-    bre_rows = (
-        sb.table("base_running_events")
-        .select("event_type,player_id,how")
-        .in_("game_id", game_ids)
-        .execute()
-    ).data
-
-    sb_count  = sum(1 for e in bre_rows if e["event_type"] == "stolen_base")
-    cs_count  = sum(1 for e in bre_rows if e["event_type"] == "caught_stealing")
-    sb_pct_br = round(sb_count / (sb_count + cs_count) * 100) if (sb_count + cs_count) else 0
+    # From the stats CSV, matching what GameChanger scored (DS-101). These
+    # were previously counted from base_running_events, which is parsed from
+    # play-by-play prose and over-counts: the prose describes advances the
+    # scorer does not credit as steals ("advances on defensive indifference").
+    #
+    # This report already carried both numbers. report.html and the summary
+    # narrative used the CSV totals while the baserunning narrative used the
+    # play-by-play ones, so the prose could contradict the table printed
+    # directly above it. One source now.
+    sb_count  = team_sb
+    cs_count  = team_cs
+    sb_pct_br = sb_pct
 
     # ── Spring baseline ───────────────────────────────────────────────────
     spring_resp = (
@@ -665,9 +667,21 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     ).count or 0
     has_pbp = pa_count > 0
 
-    bre_rows = sb.table("base_running_events").select("event_type").eq("game_id", game_id).execute().data
-    sb_count = sum(1 for e in bre_rows if e["event_type"] == "stolen_base")
-    cs_count = sum(1 for e in bre_rows if e["event_type"] == "caught_stealing")
+    # Stolen bases and caught stealing come from the stats CSV, which is what
+    # GameChanger actually scored (DS-101). They were previously counted by
+    # scanning base_running_events, which is parsed from play-by-play prose —
+    # that over-counted, because the prose describes advances the scorer does
+    # not credit as steals ("advances to 2nd on defensive indifference").
+    # Play-by-play says what happened; the CSV says what was scored, and the
+    # CSV is what the coach sees in GameChanger.
+    sb_count = sum(b["sb"] for b in batting_stats)
+    cs_count = sum(b["cs"] for b in batting_stats)
+    # Retained for play-level colour only — who stole which base and how —
+    # which the CSV cannot give. Never used as a count.
+    stealers = [
+        {"name": b["name"], "sb": b["sb"], "cs": b["cs"]}
+        for b in batting_stats if b["sb"] or b["cs"]
+    ]
 
     # ── Season context ───────────────────────────────────────────────────
     prior_games_resp = (
@@ -696,6 +710,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "age_level": age_level,
         "has_pbp": has_pbp,
         "sb_count": sb_count, "cs_count": cs_count,
+        "stealers": stealers,
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,
