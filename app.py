@@ -495,33 +495,19 @@ def dashboard():
     # ── DS-67: Team Signals ─────────────────────────────────────────────────
     signal_cards, summary_line, show_age_footnote = [], None, False
     if all_games:
-        team_resp = (sb.table("teams").select("*").eq("id", session["team_id"]).limit(1).execute())
-        team = team_resp.data[0] if team_resp.data else {}
-        age_level = team.get("age_level") or "12U"
-
-        team_totals_list = [g["team_totals"] for g in all_games if g.get("team_totals")]
-        pitching_resp = (
-            sb.table("pitching_stats").select("*")
-            .eq("team_id", session["team_id"]).execute()
-        )
-        pitcher_rows_raw = pitching_resp.data or []
-        pit_totals_by_player = {}
-        for row in pitcher_rows_raw:
-            pid = row["player_id"]
-            agg = pit_totals_by_player.setdefault(pid, {
-                "batters_faced": 0, "walks_allowed": 0, "strikeouts": 0,
-            })
-            agg["batters_faced"] += row.get("batters_faced") or 0
-            agg["walks_allowed"] += row.get("walks_allowed") or 0
-            agg["strikeouts"] += row.get("strikeouts") or 0
-        pitcher_rows = list(pit_totals_by_player.values())
+        # DS-102: one shared loader, so the dashboard, the per-commit snapshot
+        # and the single-game report all feed the signal layer identically.
+        # all_games is already in hand, so pass it rather than re-querying.
+        from signals.load import compute_signals_for_team
+        sig = compute_signals_for_team(sb, session["team_id"], games=all_games)
+        team             = sig["team"]
+        age_level        = sig["age_level"]
+        team_totals_list = sig["team_totals_list"]
+        pitcher_rows     = sig["pitcher_rows"]
+        signal_cards     = sig["cards"]
 
         if team_totals_list:
-            from signals.team_signals import compute_team_signals, compute_familiar_anchors, CARD_ORDER
-            signal_cards = compute_team_signals(
-                team_totals_list, pitcher_rows,
-                age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
-            )
+            from signals.team_signals import CARD_ORDER
             # Narrative is NOT generated here — it's computed once per game
             # commit in the upload flow (_generate_and_record_team_signals_safe)
             # and cached in signal_history. Generating it here too used to
@@ -1115,34 +1101,16 @@ def _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name):
     plus a dashboard-read cache, not a critical path, same contract as
     signal_history.record_signal_history's own try/except."""
     try:
-        team_resp = sb.table("teams").select("*").eq("id", team_id).limit(1).execute()
-        team = team_resp.data[0] if team_resp.data else {}
-        age_level = team.get("age_level") or "12U"
-        sport = team.get("sport") or "Baseball"
+        # DS-102: shared loader — see signals/load.py.
+        from signals.load import compute_signals_for_team
+        sig = compute_signals_for_team(sb, team_id)
+        team             = sig["team"]
+        age_level        = sig["age_level"]
+        team_totals_list = sig["team_totals_list"]
+        signal_cards     = sig["cards"]
+        sport            = team.get("sport") or "Baseball"
 
-        games_resp = (
-            sb.table("games").select("team_totals").eq("team_id", team_id).execute()
-        )
-        team_totals_list = [g["team_totals"] for g in (games_resp.data or []) if g.get("team_totals")]
-        if not team_totals_list:
-            return
-
-        pitching_resp = sb.table("pitching_stats").select("*").eq("team_id", team_id).execute()
-        pit_totals_by_player = {}
-        for row in (pitching_resp.data or []):
-            agg = pit_totals_by_player.setdefault(row["player_id"], {
-                "batters_faced": 0, "walks_allowed": 0, "strikeouts": 0,
-            })
-            agg["batters_faced"] += row.get("batters_faced") or 0
-            agg["walks_allowed"] += row.get("walks_allowed") or 0
-            agg["strikeouts"] += row.get("strikeouts") or 0
-        pitcher_rows = list(pit_totals_by_player.values())
-
-        from signals.team_signals import compute_team_signals, CARD_ORDER, card_metric_rows
-        signal_cards = compute_team_signals(
-            team_totals_list, pitcher_rows,
-            age_level=age_level, regulation_innings=team.get("regulation_innings") or 6,
-        )
+        from signals.team_signals import CARD_ORDER, card_metric_rows
         if not signal_cards:
             return
 

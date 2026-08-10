@@ -359,6 +359,42 @@ Stolen bases: {data['sb_count']}, caught stealing: {data['cs_count']}.
 """)
 
 
+def _season_context_block(data: dict, card_key: str, labels: dict) -> str:
+    """
+    Season context for one report section, drawn from the signal card that
+    matches it (DS-102).
+
+    Returns "" — meaning the section says nothing about the season — in three
+    cases, each for a different reason:
+
+      * fewer than three games, so there is no baseline worth comparing to;
+      * no card for this section;
+      * the card's state says the metric could not be computed.
+
+    Silence is the right output for all three. A section with no baseline
+    previously filled the gap with generic age-level commentary ("at 9U, X is
+    hard"), which reads as insight while asserting nothing.
+    """
+    if data.get("game_number_in_season", 0) < 3:
+        return ""
+    card = (data.get("signal_cards") or {}).get(card_key)
+    if not card or card.get("state") not in ("complete", "genuine_zero"):
+        return ""
+
+    facts = card.get("facts") or {}
+    parts = [labels[k].format(v) for k, v in facts.items()
+             if k in labels and v is not None]
+    if not parts:
+        return ""
+
+    games = data["game_number_in_season"]
+    return (f"\nSeason to date across {games} games: " + ", ".join(parts) + ".\n"
+            "Use this only to say whether this game was typical for this team. "
+            "State both the game figure and the season figure when you compare "
+            "them, and name the window. If the two are close, say so plainly "
+            "rather than manufacturing a trend.")
+
+
 def _pitcher_line(p: dict) -> str:
     """One pitcher's line for the prompt (DS-103).
 
@@ -404,6 +440,11 @@ listed. Two well-chosen numbers say more than six.
 Cite only figures that appear above. If a metric is not listed for a pitcher it was not recorded,
 so make no claim about it — in particular, do not infer swing-and-miss, command or contact quality
 from the strikeout and walk counts.
+{_season_context_block(data, "pitching", {
+    "k_minus_bb_pct": "K-BB% {}",
+    "s_pct":          "{} % strikes",
+    "bb_pct":         "BB% {}",
+})}
 """)
 
 
@@ -416,6 +457,13 @@ If there's enough to cover, split it into 2-3 short paragraphs separated by a bl
 than one dense block — a single short paragraph is fine when there isn't much to say.
 
 Team errors: {us['e']}. Errors by player: {errs}.
+{_season_context_block(data, "fielding_conversion", {
+    "def_eff":               "defensive efficiency {}",
+    "errors":                "{} errors",
+    "runs_allowed_per_game": "{} runs allowed per game",
+})}
+An error is the scorekeeper's judgement that the play should have been made — that is what
+distinguishes it from a hit. Do not speculate about whether a charged error was a hard chance.
 """)
 
 

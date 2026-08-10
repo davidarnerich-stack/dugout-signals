@@ -708,6 +708,28 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     season_to_date = _team_batting_line(sb, season_game_ids)
     last3 = _team_batting_line(sb, last3_game_ids)
 
+    # ── Signal cards as season context (DS-102) ─────────────────────────
+    # The same cards the dashboard shows, keyed so a section can pick up the
+    # one that matches it — `fielding_conversion` for Fielding, `pitching`
+    # for Pitching, and so on. Previously every section reasoned from this
+    # game alone and filled the gap with generic age-level commentary, while
+    # a season's worth of analysis sat computed and unused one module away.
+    #
+    # A card's `state` says whether its metric could be computed at all; it
+    # is NOT a sample-size signal, and DS-67 deliberately has none — team
+    # samples behave normally from game one. Whether there is enough season
+    # to compare against is game_number_in_season's job, below.
+    signal_cards_by_key = {}
+    try:
+        from signals.load import compute_signals_for_team
+        signal_cards_by_key = {
+            c["key"]: c for c in compute_signals_for_team(sb, team_id)["cards"]
+        }
+    except Exception:
+        # Season context is an enhancement, never a reason a report fails to
+        # generate — same best-effort contract the signal snapshot uses.
+        signal_cards_by_key = {}
+
     return {
         "game": game,
         "team_name": team_name,
@@ -725,6 +747,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,
+        "signal_cards": signal_cards_by_key,
     }
 
 
