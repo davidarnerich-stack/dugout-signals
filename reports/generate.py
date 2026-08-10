@@ -352,7 +352,9 @@ def _team_totals_note(data, us, opp) -> str:
     ]
     sb_ct, cs_ct = data.get("sb_count"), data.get("cs_count")
     if sb_ct is not None:
-        line = f"Baserunning: {sb_ct} stolen bases, {cs_ct} caught stealing."
+        pct = data.get("sb_pct")
+        rate = f", a {pct}% success rate" if pct is not None else ""
+        line = f"Baserunning: {sb_ct} stolen bases, {cs_ct} caught stealing{rate}."
         # Name the runner when an event has exactly one owner — a bare "1
         # caught stealing" left the coach asking who it was.
         singles = [s["name"] for s in (data.get("stealers") or []) if s.get("cs") == 1]
@@ -535,15 +537,64 @@ from the strikeout and walk counts.
 """)
 
 
+def _fielding_facts(data, us) -> str:
+    """
+    Everything the Fielding section can legitimately draw on.
+
+    It used to receive the team error count and the players who made errors,
+    and nothing else — so it wrote that "the scorebook does not detail other
+    defensive sequences", which is false. The official fielding line was
+    already stored, and play-by-play records who each ball was hit to.
+
+    Play-by-play is optional by design: plenty of coaches never paste it.
+    When it is absent this returns the CSV half alone and says nothing about
+    plays, rather than asserting the detail does not exist.
+    """
+    lines = []
+
+    tf = data.get("team_fielding") or {}
+    tc, po, a = tf.get("total_chances"), tf.get("putouts"), tf.get("assists")
+    fpct = tf.get("fielding_percentage")
+    def _plural(n, word):
+        return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+    if tc is not None:
+        # Fielding percentage reads as .875 in a box score, not 0.875.
+        fpct_str = str(fpct).lstrip("0") if fpct is not None else "—"
+        lines.append(
+            f"Team fielding: {_plural(tc, 'total chance')}, {po} putouts, "
+            f"{a} assists, {_plural(us['e'], 'error')}, "
+            f"fielding percentage {fpct_str}."
+        )
+    else:
+        lines.append(f"Team {_plural(us['e'], 'error')}.")
+
+    # Everyone who handled a chance, not only those charged with an error —
+    # a clean game is still a game someone fielded.
+    handled = [f for f in data["fielding_stats"] if (f.get("tc") or 0) > 0]
+    if handled:
+        lines.append("By player: " + "; ".join(
+            f"{f['name']} ({f['position']}) {f['tc']} TC, {f['e']} E" for f in handled))
+
+    plays = data.get("fielding_plays")
+    if plays:
+        where = ", ".join(f"{loc} ({n})" for loc, n in plays["by_fielder"])
+        lines.append(f"Balls put in play against this defence: {plays['balls_in_play']}. "
+                     f"Where they went: {where}.")
+    else:
+        lines.append("No play-by-play was provided for this game, so there is no "
+                     "ball-by-ball detail. Do not remark on its absence — write "
+                     "what the fielding numbers above support and stop there.")
+    return "\n".join(lines)
+
+
 def generate_fielding(client, system, data, us) -> str:
-    errs = "; ".join(f"{f['name']} #{f['number']} ({f['position']}): {f['e']} E / {f['tc']} TC"
-                      for f in data["fielding_stats"] if f["e"] > 0) or "no charged errors"
     return _single_game_call(client, system, f"""Write the "Fielding" subsection — errors, key plays
 made or missed, defensive impact on the game.
 If there's enough to cover, split it into 2-3 short paragraphs separated by a blank line rather
 than one dense block — a single short paragraph is fine when there isn't much to say.
 
-Team errors: {us['e']}. Errors by player: {errs}.
+{_fielding_facts(data, us)}
 {_season_context_block(data, "fielding_conversion", {
     "def_eff":               "defensive efficiency {}",
     "errors":                "{} errors",

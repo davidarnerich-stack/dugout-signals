@@ -708,6 +708,41 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     season_to_date = _team_batting_line(sb, season_game_ids)
     last3 = _team_batting_line(sb, last3_game_ids)
 
+    # ── Fielding context ────────────────────────────────────────────────
+    # The Fielding section previously received only the team error count and
+    # the players who made errors, and consequently wrote that "the scorebook
+    # does not detail other defensive sequences" — untrue, and it reads as a
+    # product limitation rather than the plumbing gap it was.
+    #
+    # Two sources, deliberately separate:
+    #   team_fielding — the official line from the stats CSV. Always present.
+    #   fielding_plays — who the ball was actually hit to, from play-by-play.
+    #                    None when the coach didn't paste any, which is common
+    #                    and must degrade to silence rather than to a claim
+    #                    that the data does not exist.
+    team_fielding = (game.get("team_totals") or {}).get("fielding") or {}
+
+    fielding_plays = None
+    if has_pbp:
+        # Only the opponent's plate appearances put a ball in play against our
+        # defence; our own at-bats say nothing about our fielding.
+        opp_pas = (
+            sb.table("plate_appearances")
+            .select("hit_location,result")
+            .eq("game_id", game_id).eq("batting_team", "opponent")
+            .execute()
+        ).data or []
+        by_fielder = {}
+        for pa in opp_pas:
+            loc = (pa.get("hit_location") or "").strip()
+            if loc:
+                by_fielder[loc] = by_fielder.get(loc, 0) + 1
+        if by_fielder:
+            fielding_plays = {
+                "balls_in_play": sum(by_fielder.values()),
+                "by_fielder": sorted(by_fielder.items(), key=lambda kv: -kv[1]),
+            }
+
     # ── Signal cards as season context (DS-102) ─────────────────────────
     # The same cards the dashboard shows, keyed so a section can pick up the
     # one that matches it — `fielding_conversion` for Fielding, `pitching`
@@ -743,7 +778,13 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "age_level": age_level,
         "has_pbp": has_pbp,
         "sb_count": sb_count, "cs_count": cs_count,
+        # Computed here so the narrative never derives it. GameChanger reports
+        # 90.91 for 10-of-11; same formula, same answer.
+        "sb_pct": (round(sb_count / (sb_count + cs_count) * 100, 1)
+                   if (sb_count + cs_count) else None),
         "stealers": stealers,
+        "team_fielding": team_fielding,
+        "fielding_plays": fielding_plays,
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,
