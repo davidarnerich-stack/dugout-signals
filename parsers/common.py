@@ -98,6 +98,73 @@ def team_name_regex(team_name: str) -> str:
 
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
+def parse_title_names(page) -> dict | None:
+    """
+    Read both team names out of the box score title using word coordinates
+    (DS-93). Returns {"left": str, "right": str} or None.
+
+    The flattened text stream cannot be used for this. When both names wrap
+    to two lines the extractor emits them row by row, interleaving them:
+
+        PSW Summer 26   TBD- 08/05/26, 7:00
+        7 - 8
+        Hilighters      PM
+
+    Reading "the text after the score" then yields "Hilighters PM" — the
+    second line of both names concatenated, half ours and half theirs.
+
+    Spatially it is unambiguous: the score sits between two clean columns of
+    words. Cluster the title words either side of it and read each column in
+    reading order, and the full names come back intact.
+
+    Left is the visiting team, right the home team — the same convention the
+    line-score rows follow. Which one is ours comes from the venue marker,
+    not from matching any name.
+    """
+    try:
+        words = page.extract_words(x_tolerance=2, y_tolerance=2)
+    except Exception:
+        return None
+    if not words:
+        return None
+
+    # The venue marker ends the title area.
+    venue_top = next((w["top"] for w in words
+                      if w["text"].strip(" .,") in ("Away", "Home")), None)
+    if venue_top is None:
+        return None
+    title = [w for w in words if w["top"] < venue_top - 1]
+    if not title:
+        return None
+
+    # The score block: a hyphen flanked by the two run totals. Anchor on the
+    # digits immediately either side of the hyphen rather than the whole row
+    # — a team name can share the score's row (it does on Storm's box
+    # scores), and taking the row's full extent would swallow that name and
+    # leave one side empty.
+    hyphen = next((w for w in title if w["text"].strip() in ("-", "–", "—")), None)
+    if hyphen is None:
+        return None
+    same_row = [w for w in title if abs(w["top"] - hyphen["top"]) < 5]
+    before = [w for w in same_row if w["x1"] <= hyphen["x0"] and w["text"].strip().isdigit()]
+    after  = [w for w in same_row if w["x0"] >= hyphen["x1"] and w["text"].strip().isdigit()]
+    if not before or not after:
+        return None
+    score_left  = max(before, key=lambda w: w["x1"])["x0"]   # nearest digits left
+    score_right = min(after,  key=lambda w: w["x0"])["x1"]   # nearest digits right
+
+    def render(cluster):
+        # Reading order: row by row, left to right within a row.
+        ordered = sorted(cluster, key=lambda w: (round(w["top"] / 3), w["x0"]))
+        return " ".join(w["text"] for w in ordered).strip()
+
+    left  = render([w for w in title if w["x1"] <= score_left])
+    right = render([w for w in title if w["x0"] >= score_right])
+    if not left or not right:
+        return None
+    return {"left": left, "right": right}
+
+
 def parse_line_score(raw: str) -> dict | None:
     """
     Parse the full line-score grid from box score PDF text — the official,
@@ -172,16 +239,22 @@ def parse_line_score(raw: str) -> dict | None:
     return {"innings": innings, "rows": rows, "consistent": consistent}
 
 
-def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
+def parse_score_and_opponent(raw: str, title_names: dict | None = None) -> dict:
     """
-    Parse the line-score grid and opponent name from already-extracted box
-    score PDF text. Shared by extract_game_info_from_pdf (below) and
-    parsers/box_scores.py, which used to each hardcode a specific team's
-    name here from this app's single-tenant era — that broke for every team
-    except the one literal name baked in, silently returning no score/
-    opponent match instead of an error. Multi-tenant-safe: takes the coach's
-    real team_name as a parameter instead.
-    Returns: {opponent_name, our_runs, opponent_runs, is_away}
+    Parse the line score and opponent name from box score PDF text.
+
+    Team identity here is entirely positional — the venue marker says
+    whether we were the visiting team, and the visiting team is always the
+    first line-score row and the left-hand title name. The coach's own team
+    name is deliberately not used: GameChanger's name for a team routinely
+    differs from what the coach entered at onboarding, and matching on it
+    failed silently rather than loudly (DS-92, DS-93).
+
+    `title_names` comes from parse_title_names() and is strongly preferred
+    for the opponent, since it is the only source that survives a team name
+    wrapping to two lines.
+
+    Returns: {opponent_name, our_runs, opponent_runs, is_away, line_score}
     """
     is_away = bool(re.search(r"\bAway\b", raw[:400]))
 
@@ -205,36 +278,28 @@ def parse_score_and_opponent(raw: str, team_name: str = "") -> dict:
     header = " ".join(raw[:500].split())
     opponent_name = None
 
-    # 1. Split around our own team's name, tolerant of a trailing-s
-    #    mismatch between what a coach typed at onboarding ("...All
-    #    Stars") and GameChanger's own formatting of it ("...All Star").
-    #    This is the only strategy that can recombine a name that arrived
-    #    in two fragments, since it knows exactly where "us" sits.
-    if team_name:
-        team_pattern = team_name_regex(team_name)
-        m = re.search(
-            rf"^(.*?)\s*{team_pattern}\s+\d+\s*-\s*\d+\s+(.*?)\s*(?:Away|Home)\b"
-            rf"|^(.*?)\s+\d+\s*-\s*\d+\s*{team_pattern}\s*(.*?)\s*(?:Away|Home)\b",
-            header, re.I
-        )
-        if m:
-            groups = m.groups()
-            # Whichever alternative matched, the two "our name" fragments
-            # are groups (1,2) or (3,4) — the unused pair is all None.
-            frag_a, frag_b = (groups[0], groups[1]) if groups[0] is not None else (groups[2], groups[3])
-            opponent_name = " ".join(p.strip() for p in (frag_a, frag_b) if p and p.strip())
+    # 1. Preferred: names read from the title by word coordinates, which is
+    #    the only approach that survives a name wrapping to two lines
+    #    (DS-93). Left is the visiting team; the venue marker says which
+    #    side is ours. No name matching involved.
+    if title_names:
+        # Taken verbatim. GameChanger's "TBD- 08/05/26, 7:00 PM" placeholder
+        # must be stored exactly as printed so it can be recognised later
+        # (DS-95) and shown back as evidence.
+        opponent_name = (title_names["right"] if is_away else title_names["left"]).strip()
 
-    # 2. Fall back to pure position: the visiting team is always named
-    #    first (same convention as the line-score row order above). Won't
-    #    recombine a split fragment, but works with no team_name at all.
+    # 2. Fall back to pure position in the flattened text: the visiting team
+    #    is named first (same convention as the line-score row order above).
+    #    Cannot recombine a wrapped name, so it is a last resort only.
     if not opponent_name:
         header_m = re.match(r"^(.+?)\s+\d+\s*-\s*\d+\s+(.+?)\s*(?:Away|Home)\b", header)
         if header_m:
             team_a, team_b = header_m.group(1).strip(), header_m.group(2).strip()
             opponent_name = team_b if is_away else team_a
-
-    if opponent_name:
-        opponent_name = re.sub(r"-\s+", "-", opponent_name).strip()
+            # Only the flattened-text path needs this: extraction there can
+            # leave a stray space inside a hyphenated name. Never applied to
+            # coordinate-read names, which come back already intact.
+            opponent_name = re.sub(r"-\s+", "-", opponent_name).strip()
 
     return {
         "opponent_name": opponent_name,
@@ -255,6 +320,9 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name:
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         raw = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        # Title names need word coordinates, so they must be read while the
+        # document is still open (DS-93).
+        title_names = parse_title_names(pdf.pages[0]) if pdf.pages else None
 
     # Game date: "Sunday May 31, 2026" or "Saturday May 16, 2026"
     game_date = None
@@ -273,7 +341,7 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name:
         except Exception:
             pass
 
-    score_info = parse_score_and_opponent(raw, team_name)
+    score_info = parse_score_and_opponent(raw, title_names)
 
     # Fallback: parse date from GC filename if content extraction failed
     if not game_date and filename:

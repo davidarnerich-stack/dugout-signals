@@ -30,9 +30,9 @@ def _get_columns(page):
     return _words_to_text(left), _words_to_text(right)
 
 
-def _parse_game_info(raw_text, team_name=""):
+def _parse_game_info(raw_text, title_names=None):
     from parsers.common import parse_score_and_opponent
-    info = parse_score_and_opponent(raw_text, team_name)
+    info = parse_score_and_opponent(raw_text, title_names)
     return info["opponent_name"], info["our_runs"], info["opponent_runs"], info["is_away"]
 
 
@@ -65,11 +65,13 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     If game_id is provided, updates that game record.
     If filename is provided (legacy), looks up game by filename convention.
     """
+    from parsers.common import parse_title_names
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         raw = "\n".join(page.extract_text() or "" for page in pdf.pages)
         left0, right0 = _get_columns(pdf.pages[0])
+        title_names = parse_title_names(pdf.pages[0]) if pdf.pages else None
 
-    opponent_name, storm_runs, opp_runs, is_away = _parse_game_info(raw, team_name)
+    opponent_name, storm_runs, opp_runs, is_away = _parse_game_info(raw, title_names)
     storm_col = left0 if is_away else right0
     opp_col   = right0 if is_away else left0
 
