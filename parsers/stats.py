@@ -267,7 +267,9 @@ def preview(file_bytes):
         number = r[0].strip().strip('"')
         last   = r[1].strip().strip('"')
         first  = r[2].strip().strip('"')
-        if number in ("", "Totals", "Glossary") or not last:
+        # A blank jersey number still counts as a player in the preview —
+        # the count must reflect what will actually be imported (DS-94a).
+        if number in ("Totals", "Glossary") or not last:
             continue
         batters_count += 1
         ip = parse_num(r[PIT_COLS["innings_pitched"]], as_float=True)
@@ -282,6 +284,57 @@ def preview(file_bytes):
                 "fps_pct": parse_num(r[PIT_COLS["fps_pct"]],    as_float=True),
             })
     return {"pitchers": pitchers, "batters_count": batters_count}
+
+
+def _player_key(first_name, last_name):
+    return ((first_name or "").strip().lower(), (last_name or "").strip().lower())
+
+
+def _find_or_create_player(sb, team_id, team_name, number, first, last,
+                           by_number, by_name):
+    """
+    Resolve the player for one stats row, creating them if new (DS-94a).
+
+    Order matters:
+      1. jersey number, when the row has one
+      2. first + last name within the team — used both when there is no
+         number AND when a numbered lookup misses
+      3. create, with number NULL when none was given
+
+    Case 2's second half is what stops a duplicate appearing later. A player
+    who imports numberless across several games and is then entered in
+    GameChanger with a number would otherwise be created a second time,
+    stranding the earlier games on the old record — the only situation that
+    would ever need a merge. Instead the number is written onto the record
+    that already exists.
+
+    `by_number` / `by_name` are the in-memory roster indexes and are updated
+    in place, so a name repeated later in the same file resolves to the
+    record just created rather than inserting again.
+    """
+    match = by_number.get(number) if number is not None else None
+
+    if match is None:
+        match = by_name.get(_player_key(first, last))
+        if match is not None and number is not None and match.get("number") is None:
+            sb.table("players").update({"number": number}) \
+              .eq("player_id", match["player_id"]).execute()
+            match["number"] = number
+            by_number[number] = match
+
+    if match is not None:
+        return match["player_id"]
+
+    created = sb.table("players").insert({
+        "number": number, "first_name": first, "last_name": last,
+        "team_id": team_id, "team_name": team_name,
+    }).execute().data[0]
+    record = {"player_id": created["player_id"], "number": number,
+              "first_name": first, "last_name": last}
+    by_name[_player_key(first, last)] = record
+    if number is not None:
+        by_number[number] = record
+    return record["player_id"]
 
 
 def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
@@ -316,7 +369,11 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         if fc == "Totals":
             totals_row = r
             continue
-        if fc in ("", "Glossary") or not lc:
+        # A blank jersey number is a real player, not a blank row (DS-94a).
+        # Skipping those here is what silently discarded guest and call-up
+        # players — five of six PSW Hilighters games contained one. The last
+        # name is what makes a row a player; the number is optional.
+        if fc == "Glossary" or not lc:
             continue
         data_rows.append(r)
 
@@ -354,7 +411,19 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         }
         sb.table("games").update({"team_totals": team_totals}).eq("game_id", game_id).execute()
 
+    # (see _find_or_create_player above for the lookup order)
+    # Roster loaded once and matched in memory — a youth roster is small, and
+    # it keeps name matching out of SQL where a name containing % or _ would
+    # behave as a wildcard.
+    roster = (sb.table("players")
+              .select("player_id, number, first_name, last_name")
+              .eq("team_id", team_id).execute()).data or []
+
+    by_number = {p["number"]: p for p in roster if p["number"] is not None}
+    by_name   = {_player_key(p["first_name"], p["last_name"]): p for p in roster}
+
     players_processed = []
+    numberless_players = []
     for row in data_rows:
         number = parse_num(row[0], as_float=False)
         last   = row[1].strip().strip('"')
@@ -362,16 +431,23 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         if not last:
             continue
 
-        existing_p = (sb.table("players").select("player_id")
-                      .eq("number", number).eq("team_id", team_id).execute())
-        if existing_p.data:
-            player_id = existing_p.data[0]["player_id"]
-        else:
-            p = sb.table("players").insert({
-                "number": number, "first_name": first,
-                "last_name": last, "team_id": team_id, "team_name": team_name,
-            }).execute()
-            player_id = p.data[0]["player_id"]
+        # Lookup order matters (DS-94a):
+        #   1. jersey number, when the row has one
+        #   2. first + last name within the team — used both when there is no
+        #      number and when a numbered lookup misses
+        #   3. create, with number NULL when none was given
+        #
+        # Case 2's second half is what prevents a duplicate appearing later.
+        # A player who imports numberless across several games and is then
+        # entered in GameChanger with a number would otherwise be created a
+        # second time, stranding those earlier games on the old record. The
+        # number is written onto the existing record instead.
+        player_id = _find_or_create_player(
+            sb, team_id, team_name, number, first, last, by_number, by_name
+        )
+
+        if number is None:
+            numberless_players.append(f"{first} {last}".strip())
 
         base = {"game_id": game_id, "player_id": player_id, "team_id": team_id}
 
@@ -393,9 +469,23 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
              **_fielding_dict(row, offset=fld_offset)},
             on_conflict="game_id,player_id",
         ).execute()
-        players_processed.append(f"#{number} {first} {last}")
+        players_processed.append(
+            f"#{number} {first} {last}" if number is not None
+            else f"(no number) {first} {last}"
+        )
+
+    # Name them rather than letting them pass unremarked. Their stats are
+    # imported either way — this only tells the coach the roster gained
+    # someone whose jersey number GameChanger didn't have (DS-94a). The
+    # richer in-flow treatment is DS-99.
+    message = f"Stats {game_action} — {len(players_processed)} players processed."
+    if numberless_players:
+        who = ", ".join(numberless_players)
+        message += (f" {len(numberless_players)} without a jersey number "
+                    f"({who}) — imported and added to your roster.")
 
     return {
-        "message": f"Stats {game_action} — {len(players_processed)} players processed.",
+        "message": message,
         "details": players_processed,
+        "numberless_players": numberless_players,
     }
