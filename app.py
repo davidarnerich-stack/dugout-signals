@@ -971,7 +971,19 @@ def api_detect():
     # upload pays for none of it.
     # `sb` is already open from the duplicate check above, which runs for
     # every game_info.
-    if game_info and is_placeholder_opponent(game_info.get("opponent_name")):
+    #
+    # The PDF keeps its placeholder for ever — naming an opponent in this app
+    # cannot change what GameChanger exported. So the file alone would ask the
+    # same question on every re-upload of a game the coach already named. Only
+    # the stored game knows the answer, exactly as with a numberless player.
+    already_named, stored_name = False, None
+    if game_info and result.get("game_id"):
+        stored = (sb.table("games").select("opponent_name, opponent_is_placeholder")
+                  .eq("game_id", result["game_id"]).execute().data or [])
+        if stored and not stored[0]["opponent_is_placeholder"]:
+            already_named, stored_name = True, stored[0]["opponent_name"]
+
+    if game_info and not already_named and is_placeholder_opponent(game_info.get("opponent_name")):
         game_info["opponent_is_placeholder"] = True
         result["prior_opponents"]  = _prior_opponents(sb, session["team_id"])
         result["placeholder_games"] = _placeholder_games(
@@ -979,6 +991,9 @@ def api_detect():
         )
     elif game_info:
         game_info["opponent_is_placeholder"] = False
+        # Show the name the coach gave, not the placeholder still in the file.
+        if stored_name:
+            game_info["opponent_name"] = stored_name
 
     return jsonify(result)
 

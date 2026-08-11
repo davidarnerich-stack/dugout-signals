@@ -172,6 +172,7 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
               .eq("team_id", team_id).execute().data or [])
     unmatched_lineup = []
 
+    lineup_rows, seen_players = [], set()
     for batter in storm_batters:
         player_id = _match_lineup_player(batter, roster)
         if player_id is None:
@@ -183,17 +184,29 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
                 + f" (bat #{batter['batting_position']})"
             )
             continue
-        existing = (sb.table("batting_order").select("id")
-                    .eq("game_id", game_id).eq("player_id", player_id).execute())
-        row = {"game_id": game_id, "player_id": player_id, "team_id": team_id,
-               "batting_position": batter["batting_position"],
-               "defensive_position": batter["position"]}
-        if existing.data:
-            sb.table("batting_order").update(row).eq("id", existing.data[0]["id"]).execute()
-        else:
-            sb.table("batting_order").insert(row).execute()
+        if player_id in seen_players:
+            continue                       # unique_game_player
+        seen_players.add(player_id)
+        lineup_rows.append({
+            "game_id": game_id, "player_id": player_id, "team_id": team_id,
+            "batting_position": batter["batting_position"],
+            "defensive_position": batter["position"],
+        })
         label = f"#{batter['number']}" if batter["number"] is not None else batter["name"]
         details.append(f"{label} bat#{batter['batting_position']} ({batter['position']})")
+
+    # Replace the lineup wholesale rather than row by row.
+    #
+    # batting_order has UNIQUE (game_id, batting_position), and a re-upload
+    # that corrects a lineup necessarily *shifts* people — so updating one row
+    # at a time hits a moment where two players both want slot 5 and the write
+    # fails half-finished. Deleting first sidesteps the ordering problem
+    # entirely. Safe because the parse is already complete at this point: if
+    # the PDF could not be read we raised long before here, and an empty
+    # lineup leaves the stored one untouched.
+    if lineup_rows:
+        sb.table("batting_order").delete().eq("game_id", game_id).execute()
+        sb.table("batting_order").insert(lineup_rows).execute()
 
     for batter in opp_batters:
         num_str = str(batter["number"]) if batter["number"] is not None else ""
