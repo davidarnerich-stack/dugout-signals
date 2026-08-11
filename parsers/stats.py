@@ -279,26 +279,40 @@ def _review_copy(p, kind="numberless"):
                    being unfamiliar.
     """
     ab, h  = p["ab"], p["h"]
+    pa     = p.get("pa", 0)
     xbh    = ("a home run" if p["hr"] else
               "a triple"   if p["triples"] else
               "a double"   if p["doubles"] else None)
 
+    def n(count, word, plural=None):
+        return f"{count} {word if count == 1 else (plural or word + 's')}"
+
     bits = []
-    if ab: bits.append(f"{ab} at-bat{'s' if ab != 1 else ''}")
-    if h:  bits.append(f"{h} hit{'s' if h != 1 else ''}")
-    if p["ip"]: bits.append(f"{p['ip']} innings pitched")
+    if ab:
+        bits.append(n(ab, "at-bat"))
+        if h: bits.append(n(h, "hit"))
+    elif pa:
+        # A walk, hit by pitch or sacrifice is a plate appearance that is not
+        # an at-bat. Reporting only at-bats called a 3-walk game "no batting
+        # line", which reads like we failed to parse the row — when in fact
+        # the player reached base every time up.
+        bits.append(n(pa, "plate appearance"))
+        if p.get("bb"):  bits.append(n(p["bb"], "walk"))
+        if p.get("hbp"): bits.append(n(p["hbp"], "hit by pitch", "hit by pitches"))
+        if p.get("sh"):  bits.append(n(p["sh"], "sacrifice"))
+        if p.get("sf"):  bits.append(n(p["sf"], "sacrifice fly", "sacrifice flies"))
+    if p["ip"]:
+        bits.append(f"{p['ip']} innings pitched")
 
     if bits:
         line = ", ".join(bits)
-        if xbh:
+        if ab and xbh:
             line += f" — including {xbh}"
         stats = f"{line}. "
-    elif ab:
-        stats = ""
     else:
-        # No plate appearance and no innings: they were on the roster for
-        # this game and nothing else. Say so plainly rather than "0 at-bats".
-        stats = "They don't have a batting or pitching line in this game. "
+        # Genuinely never came to the plate and never pitched. Say what is
+        # true rather than implying the data is missing.
+        stats = "They didn't bat or pitch in this game. "
 
     p["kind"] = kind
     if kind == "new":
@@ -315,13 +329,22 @@ def _review_copy(p, kind="numberless"):
                       "across games.")
 
     cells = []
-    if ab: cells.append(f"{ab} AB")
-    if h:  cells.append(f"{h} H")
-    if p["doubles"]: cells.append(f"{p['doubles']} 2B")
-    if p["triples"]: cells.append(f"{p['triples']} 3B")
-    if p["hr"]:      cells.append(f"{p['hr']} HR")
-    if p["ip"]:      cells.append(f"{p['ip']} IP")
-    p["stat_line"] = " · ".join(cells) or "no batting line"
+    if ab:
+        cells.append(f"{ab} AB")
+        if h:            cells.append(f"{h} H")
+        if p["doubles"]: cells.append(f"{p['doubles']} 2B")
+        if p["triples"]: cells.append(f"{p['triples']} 3B")
+        if p["hr"]:      cells.append(f"{p['hr']} HR")
+    elif pa:
+        cells.append(f"{pa} PA")
+        if p.get("bb"):  cells.append(f"{p['bb']} BB")
+        if p.get("hbp"): cells.append(f"{p['hbp']} HBP")
+        if p.get("sh"):  cells.append(f"{p['sh']} SAC")
+        if p.get("sf"):  cells.append(f"{p['sf']} SF")
+    if p["ip"]:          cells.append(f"{p['ip']} IP")
+    # "no batting line" was wrong for anyone who walked — reserve the phrase
+    # for a player who genuinely never appeared.
+    p["stat_line"] = " · ".join(cells) or "did not bat or pitch"
     return p
 
 
@@ -359,6 +382,11 @@ def preview(file_bytes):
             "first":   first,
             "last":    last,
             "number":  number,
+            "pa":      parse_num(r[BAT_COLS["plate_appearances"]]) or 0,
+            "bb":      parse_num(r[BAT_COLS["walks"]])            or 0,
+            "hbp":     parse_num(r[BAT_COLS["hit_by_pitch"]])     or 0,
+            "sh":      parse_num(r[BAT_COLS["sacrifice_hits"]])   or 0,
+            "sf":      parse_num(r[BAT_COLS["sacrifice_flies"]])  or 0,
             "ab":      parse_num(r[BAT_COLS["at_bats"]])    or 0,
             "h":       parse_num(r[BAT_COLS["hits"]])       or 0,
             "doubles": parse_num(r[BAT_COLS["doubles"]])    or 0,

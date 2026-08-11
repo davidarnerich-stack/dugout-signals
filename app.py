@@ -1009,7 +1009,7 @@ def _split_known_players(sb, team_id, players):
     """
     if not players:
         return [], []
-    from parsers.stats import _player_key
+    from parsers.stats import _player_key, _review_copy
     roster = (sb.table("players")
               .select("player_id, first_name, last_name, number, is_guest")
               .eq("team_id", team_id).execute().data or [])
@@ -1021,12 +1021,16 @@ def _split_known_players(sb, team_id, players):
     for p in players:
         match = by_name.get(_player_key(p.get("first"), p.get("last")))
 
+        # The title and body are recomposed here rather than reused from the
+        # preview: only now is the reason for asking known, and the copy has
+        # to match it. A numberless player who is also new to the roster is
+        # asked about as a new face, not as a missing number.
         if match is None and roster_established:
-            unresolved.append({**p, "kind": "new"})          # a new face
+            unresolved.append(_review_copy(dict(p), "new"))
         elif match is None:
             known.append({**p, "is_guest": False})           # season's first upload
         elif match.get("number") is None and not match.get("is_guest"):
-            unresolved.append({**p, "kind": "numberless"})   # still a real gap
+            unresolved.append(_review_copy(dict(p), "numberless"))
         else:
             known.append({**p, "number": match.get("number"),
                           "is_guest": bool(match.get("is_guest"))})
