@@ -912,8 +912,16 @@ def api_detect():
     # Duplicate detection — does the matched game already have stats?
     if game_info:
         sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-        game_id = find_game(sb, game_info.get("game_date"),
-                            game_info.get("opponent_name"), session["team_id"])
+        # Same identity resolution the write uses (DS-100) — pass every
+        # stable fact from the PDF, not just the parsed opponent name.
+        game_id = find_game(
+            sb, game_info.get("game_date"), session["team_id"],
+            is_away        = game_info.get("is_away"),
+            team_runs      = game_info.get("storm_runs"),
+            opponent_runs  = game_info.get("opponent_runs"),
+            line_score     = game_info.get("line_score"),
+            opponent_name  = game_info.get("opponent_name"),
+        )
         if game_id:
             result["game_id"] = game_id
             pit = (sb.table("pitching_stats").select("stat_id", count="exact")

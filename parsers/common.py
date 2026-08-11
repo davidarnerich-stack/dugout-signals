@@ -359,6 +359,83 @@ def extract_game_info_from_pdf(file_bytes: bytes, filename: str = "", team_name:
 
 # ── Game record helpers ───────────────────────────────────────────────────────
 
+def resolve_game(sb, team_id: str, game_date: str, *, is_away=None,
+                 team_runs=None, opponent_runs=None, line_score=None,
+                 opponent_name=None):
+    """
+    Find the stored game this upload refers to, or None if it is a new one
+    (DS-100). The single identity decision — both the write path and the
+    overwrite check call this, so the preview cannot disagree with the write.
+
+    Identity used to be (game_date, opponent_name, team_id). `opponent_name`
+    is *parsed*, so improving the parser silently changed it: DS-93 corrected
+    "TBD-07/15/26, 7:00 PSW Summer 26" to "TBD- 07/15/26, 7:00 PM", both
+    lookups missed together, a duplicate game was inserted, and the overwrite
+    warning never fired. Anything a parser produces or a coach can edit is
+    unsafe as a key.
+
+    So candidates are narrowed by the two facts that cannot drift — the team
+    and the date — and then chosen between using observed facts, strongest
+    first:
+
+      1. an identical line score. Inning-by-inning runs for both teams
+         matching exactly is conclusive.
+      2. the same final score and venue.
+      3. the same opponent name. Kept last so existing games still match on a
+         re-upload that predates the newer evidence.
+
+    When nothing matches, this returns None and the caller creates a second
+    game. That is deliberate. The tempting shortcut — "one game already
+    exists on this date, so it must be that one" — silently merges the two
+    halves of a doubleheader into a single record, destroying one of them.
+    A surplus game is visible in the reports list and can be deleted; a
+    merge cannot be undone or even noticed.
+    """
+    resp = (
+        sb.table("games")
+        .select("game_id, opponent_name, is_away, team_runs, opponent_runs, line_score")
+        .eq("team_id", team_id).eq("game_date", game_date)
+        .execute()
+    )
+    candidates = resp.data or []
+    if not candidates:
+        return None
+
+    def _cells(ls):
+        """Comparable shape for a line score, ignoring how it was stored."""
+        if isinstance(ls, str):
+            import json as _json
+            try:
+                ls = _json.loads(ls)
+            except ValueError:
+                return None
+        if not isinstance(ls, dict):
+            return None
+        return [(r.get("cells"), r.get("r")) for r in ls.get("rows") or []] or None
+
+    mine = _cells(line_score)
+    if mine:
+        for c in candidates:
+            if _cells(c.get("line_score")) == mine:
+                return c
+
+    if team_runs is not None and opponent_runs is not None:
+        for c in candidates:
+            if (c.get("team_runs") == team_runs
+                    and c.get("opponent_runs") == opponent_runs
+                    and (is_away is None or c.get("is_away") is None
+                         or c.get("is_away") == is_away)):
+                return c
+
+    if opponent_name:
+        for c in candidates:
+            if (c.get("opponent_name") or "").strip() == opponent_name.strip():
+                return c
+
+    return None
+
+
+
 def find_or_create_game(sb, game_date: str, opponent_name: str,
                          storm_runs, opponent_runs, tournament_id,
                          game_number: int, team_id: str, team_name: str,
@@ -370,18 +447,22 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     are the authoritative record of venue and runs per inning. Both are
     written on create and refreshed on re-upload, so re-processing a game
     corrects a previously bad line score rather than leaving it stale.
+
+    Identity is resolved by resolve_game (DS-100), the same call the
+    overwrite check uses — the preview and the write cannot disagree.
     """
-    existing = (
-        sb.table("games")
-        .select("game_id")
-        .eq("game_date",     game_date)
-        .eq("opponent_name", opponent_name)
-        .eq("team_id",       team_id)
-        .execute()
+    match = resolve_game(
+        sb, team_id, game_date,
+        is_away=is_away, team_runs=storm_runs, opponent_runs=opponent_runs,
+        line_score=line_score, opponent_name=opponent_name,
     )
-    if existing.data:
-        game_id = existing.data[0]["game_id"]
+    if match:
+        game_id = match["game_id"]
         update = {}
+        # A re-upload is also how a corrected opponent name reaches an
+        # existing game, now that the name is no longer part of identity.
+        if opponent_name:
+            update["opponent_name"] = opponent_name
         if storm_runs is not None:
             update["team_runs"]     = storm_runs
             update["opponent_runs"] = opponent_runs
@@ -426,23 +507,28 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     return resp.data[0]["game_id"]
 
 
-def find_game(sb, game_date: str, opponent_name: str, team_id: str):
+def find_game(sb, game_date: str, team_id: str, *, is_away=None,
+              team_runs=None, opponent_runs=None, line_score=None,
+              opponent_name=None):
     """
-    Look up an existing game *without* creating one — mirrors the match logic in
-    find_or_create_game so the preview reflects exactly what the write will hit.
+    Look up an existing game *without* creating one — the overwrite check.
+
+    Delegates to resolve_game so it cannot drift from what the write will do
+    (DS-100). Previously the two mirrored each other by having the same code
+    written twice, which held right up until the shared assumption changed:
+    a corrected opponent name made both miss, so the coach got a duplicate
+    game and no warning that anything was being replaced.
+
     Returns game_id or None.
     """
-    if not (game_date and opponent_name):
+    if not game_date:
         return None
-    resp = (
-        sb.table("games")
-        .select("game_id")
-        .eq("game_date",     game_date)
-        .eq("opponent_name", opponent_name)
-        .eq("team_id",       team_id)
-        .execute()
+    match = resolve_game(
+        sb, team_id, game_date,
+        is_away=is_away, team_runs=team_runs, opponent_runs=opponent_runs,
+        line_score=line_score, opponent_name=opponent_name,
     )
-    return resp.data[0]["game_id"] if resp.data else None
+    return match["game_id"] if match else None
 
 
 def find_or_create_tournament(sb, name: str, team_id: str) -> str:
