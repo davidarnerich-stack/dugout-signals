@@ -96,8 +96,16 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     if storm_runs is not None:
         update["team_runs"] = storm_runs
         update["opponent_runs"] = opp_runs
+    # Never let the parsed name overwrite one a coach supplied. This step runs
+    # after the upload has already applied the coach's answer, so writing
+    # unconditionally put GameChanger's "TBD- <date>" placeholder straight back
+    # over the name they had just typed.
     if opponent_name:
-        update["opponent_name"] = opponent_name
+        from parsers.common import should_write_opponent_name
+        stored = (sb.table("games").select("opponent_name")
+                  .eq("game_id", game_id).execute().data or [{}])
+        if should_write_opponent_name(opponent_name, stored[0].get("opponent_name")):
+            update["opponent_name"] = opponent_name
     if update:
         sb.table("games").update(update).eq("game_id", game_id).execute()
 

@@ -404,6 +404,29 @@ def _find_or_create_player(sb, team_id, team_name, number, first, last,
             by_number[number] = match
 
     if match is not None:
+        # The coach's answer has to reach a player who already exists, not
+        # only one created on this upload. A numberless player is created by
+        # the first game they appear in, so from the second game onward the
+        # create branch never runs — answering the review item did nothing at
+        # all, which is exactly what happened to Connor McClung across games
+        # 2 and 3. Only ever fills a gap: an existing jersey number is left
+        # alone, because that record is not the one in question.
+        choice = (choices or {}).get(_player_key(first, last)) or {}
+        fill = {}
+        if match.get("number") is None and choice.get("choice") == "new" and choice.get("number"):
+            fill["number"] = parse_num(choice["number"])
+        if choice.get("choice") == "guest" and match.get("number") is None:
+            fill["is_guest"] = True
+        if fill:
+            sb.table("players").update(fill).eq("player_id", match["player_id"]).execute()
+            match.update(fill)
+            if fill.get("number") is not None:
+                by_number[fill["number"]] = match
+            if created is not None:
+                created.append({"name": f"{first} {last}".strip(),
+                                "number": fill.get("number"),
+                                "is_guest": fill.get("is_guest", False),
+                                "updated": True})
         return match["player_id"]
 
     choice = (choices or {}).get(_player_key(first, last)) or {}

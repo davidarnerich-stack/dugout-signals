@@ -1238,14 +1238,23 @@
     form.append('manual_date',     inpDate.value.trim());
     form.append('manual_opponent', inpOpponent.value.trim());
 
-    // Review-block answers. Only *saved* items are sent — an open or skipped
-    // item deliberately sends nothing, so the upload proceeds untouched.
-    if (review.opponent && review.opponent.state === 'saved') {
-      form.append('opponent_override', review.opponent.name);
-      form.append('opponent_apply_to', JSON.stringify([...review.opponent.picked]));
+    // Review-block answers.
+    //
+    // Anything the coach actually filled in counts, whether or not they
+    // pressed the item's own button first. Requiring the button meant typing
+    // a name and going straight to Upload — the obvious thing to do, with the
+    // button right there — threw the answer away silently. Only an explicit
+    // "Not now" sends nothing.
+    const opp = review.opponent;
+    if (opp && opp.state !== 'skipped' && opp.name.trim()) {
+      form.append('opponent_override', opp.name.trim());
+      form.append('opponent_apply_to', JSON.stringify([...opp.picked]));
     }
+    const answered = p =>
+      p.state === 'saved' ||
+      (p.state === 'open' && (p.number || p.choice !== 'new'));
     const resolved = review.players
-      .filter(p => p.state === 'saved')
+      .filter(p => p.state !== 'skipped' && answered(p))
       .map(p => ({ first: p.first, last: p.last, choice: p.choice,
                    number: p.choice === 'new' ? (p.number || null) : null }));
     if (resolved.length) form.append('player_choices', JSON.stringify(resolved));

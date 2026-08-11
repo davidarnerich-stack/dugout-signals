@@ -107,6 +107,27 @@ TBD_DEFAULT = re.compile(
 )
 
 
+def should_write_opponent_name(new_name, stored_name) -> bool:
+    """
+    Whether a freshly parsed opponent name may replace what is already stored.
+
+    A parsed placeholder must never overwrite a real name. Every writer here
+    re-derives the opponent from the box score on each upload, so without this
+    a coach who names an opponent — in the review block, or in Edit Game
+    Details — silently loses that name the next time the game is re-uploaded.
+    The name is the one field on a game a human is expected to supply, so
+    parsed data yields to it rather than the other way round.
+
+    Nothing beats nothing: a blank parse never clears a stored value either.
+    """
+    if not new_name:
+        return False
+    if is_placeholder_opponent(new_name):
+        # Only useful when there is nothing better already there.
+        return is_placeholder_opponent(stored_name)
+    return True
+
+
 def is_placeholder_opponent(name) -> bool:
     """
     True when the opponent was never really named.
@@ -487,9 +508,12 @@ def find_or_create_game(sb, game_date: str, opponent_name: str,
     if match:
         game_id = match["game_id"]
         update = {}
-        # A re-upload is also how a corrected opponent name reaches an
-        # existing game, now that the name is no longer part of identity.
-        if opponent_name:
+        # A re-upload is how a corrected opponent name reaches an existing
+        # game, now that the name is no longer part of identity — but only
+        # when the parsed name is actually better than what is stored. A
+        # placeholder must not overwrite a name a coach supplied, or naming
+        # an opponent would survive only until the next re-upload.
+        if should_write_opponent_name(opponent_name, match.get("opponent_name")):
             update["opponent_name"] = opponent_name
         if storm_runs is not None:
             update["team_runs"]     = storm_runs
