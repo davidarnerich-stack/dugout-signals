@@ -216,7 +216,7 @@
           {% for g in d.games %}
           <tr>
             <td>G{{ g.game_number }}</td>
-            <td>{{ g.opponent_name }}</td>
+            <td>{{ g.opponent_name | opponent_label }}</td>
             <td class="{% if g.result == 'W' %}trend-above{% elif g.result == 'L' %}trend-below{% else %}trend-flat{% endif %}">
               {{ g.result }}
             </td>

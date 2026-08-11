@@ -1,4 +1,5 @@
 """Dugout Signals — file upload web app."""
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -15,6 +16,20 @@ app.secret_key   = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
 # browser closes). DS-54 AC #3 requires staying logged in across browser
 # restarts, so sessions marked permanent get a real expiry instead.
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+
+
+@app.template_filter("opponent_label")
+def opponent_label(name):
+    """
+    How an opponent is written wherever a game is listed (DS-95).
+
+    A GameChanger placeholder is never shown as a team name. It reads like a
+    bug, and because the default embeds a date, showing it makes every game
+    look like a different opponent — the exact thing that breaks tournament
+    grouping and opponent scouting. One filter so every list agrees.
+    """
+    from parsers.common import is_placeholder_opponent
+    return "Opponent not named" if is_placeholder_opponent(name) else name
 SUPABASE_URL     = os.environ.get("SUPABASE_URL",     "https://bqjbswbxtyapupufoarv.supabase.co")
 SUPABASE_KEY     = os.environ.get("SUPABASE_KEY",     "")
 # Publishable/anon key — safe to expose, used only for self-service Auth
@@ -730,7 +745,8 @@ def roster():
     resp = (
         sb.table("players")
         .select("player_id, number, first_name, last_name, league_age, bats, "
-                "throws, arm, glove, speed, position_eligibility, signals, status")
+                "throws, arm, glove, speed, position_eligibility, signals, status, "
+                "is_guest")
         .eq("team_id", session["team_id"])
         .eq("status", "active")
         .order("number")
@@ -872,7 +888,7 @@ def api_detect():
     game already has stats (duplicate detection).  No DB writes.
     """
     from parsers.common import (detect_file_type, extract_game_info_from_pdf,
-                                find_game)
+                                find_game, is_placeholder_opponent)
 
     files   = request.files.getlist("files")
     result  = {"files": [], "game_info": None,
@@ -906,6 +922,7 @@ def api_detect():
             pv = stats_preview(stats_bytes)
             result["pitchers"]      = pv["pitchers"]
             result["batters_count"] = pv["batters_count"]
+            result["numberless"]    = pv["numberless"]
         except Exception as e:
             result["stats_error"] = str(e)
 
@@ -939,7 +956,78 @@ def api_detect():
                     f"Uploading will overwrite existing data."
                 )
 
+    # ── Opponent review item (DS-95) ──────────────────────────────────────
+    # Only assembled when the opponent came through unnamed, so a normal
+    # upload pays for none of it.
+    # `sb` is already open from the duplicate check above, which runs for
+    # every game_info.
+    if game_info and is_placeholder_opponent(game_info.get("opponent_name")):
+        game_info["opponent_is_placeholder"] = True
+        result["prior_opponents"]  = _prior_opponents(sb, session["team_id"])
+        result["placeholder_games"] = _placeholder_games(
+            sb, session["team_id"], exclude_game_id=result.get("game_id")
+        )
+    elif game_info:
+        game_info["opponent_is_placeholder"] = False
+
     return jsonify(result)
+
+
+def _prior_opponents(sb, team_id, limit=3):
+    """
+    Opponents this team has already named, most recently played first — the
+    consolidation chips in the opponent item (DS-95 AC-5).
+
+    Placeholders are excluded via the generated column, so a coach is never
+    offered one dated placeholder as the name for another.
+    """
+    resp = (sb.table("games")
+            .select("opponent_name, game_date")
+            .eq("team_id", team_id)
+            .eq("opponent_is_placeholder", False)
+            .order("game_date", desc=True)
+            .execute())
+    seen, out = set(), []
+    for g in resp.data or []:
+        name = (g.get("opponent_name") or "").strip()
+        key  = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            out.append(name)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _placeholder_games(sb, team_id, exclude_game_id=None):
+    """
+    Other games for this team still waiting on an opponent name — the opt-in
+    checklist (DS-95 AC-8) and the Edit Game Details list (AC-14).
+
+    Nothing here is pre-selected anywhere it is rendered. These games are not
+    all against the same opponent; five of the six PSW Hilighters games came
+    through with a placeholder and they are different teams. A pre-ticked box
+    would let one click relabel a season wrongly, and it would look right.
+    """
+    resp = (sb.table("games")
+            .select("game_id, game_date, is_away, result, team_runs, opponent_runs")
+            .eq("team_id", team_id)
+            .eq("opponent_is_placeholder", True)
+            .order("game_date", desc=True)
+            .execute())
+    out = []
+    for g in resp.data or []:
+        if exclude_game_id and g["game_id"] == exclude_game_id:
+            continue
+        tr, orr = g.get("team_runs"), g.get("opponent_runs")
+        out.append({
+            "game_id": g["game_id"],
+            "date":    g.get("game_date"),
+            "venue":   "" if g.get("is_away") is None else ("Away" if g["is_away"] else "Home"),
+            "result":  (f"{g['result']} {tr}–{orr}"
+                        if g.get("result") and tr is not None else ""),
+        })
+    return out
 
 
 # ── API: upload — process all files and write to DB ───────────────────────────
@@ -969,6 +1057,17 @@ def upload():
     # Manual overrides — used when auto-detection fails
     manual_date        = request.form.get("manual_date", "").strip()
     manual_opponent    = request.form.get("manual_opponent", "").strip()
+    # Review-block answers (DS-95 / DS-99). All optional by design: an item the
+    # coach left open or skipped sends nothing, and the upload is unaffected.
+    opponent_override  = request.form.get("opponent_override", "").strip()
+    try:
+        opponent_apply_to = json.loads(request.form.get("opponent_apply_to") or "[]")
+    except ValueError:
+        opponent_apply_to = []
+    try:
+        player_choices = json.loads(request.form.get("player_choices") or "[]")
+    except ValueError:
+        player_choices = []
 
     if not files and not pbp_text:
         return jsonify([{"filename": "", "status": "error",
@@ -976,6 +1075,10 @@ def upload():
 
     sb      = create_client(SUPABASE_URL, SUPABASE_KEY)
     results = []
+    # What actually changed about the team, for the post-upload panel. This is
+    # what closes the loop the silent drop left open — the coach sees the
+    # consequence of their answer instead of guessing.
+    changes = []
 
     # ── 1. Sort files by type ──────────────────────────────────────────────
     file_data = {}   # type → (filename, bytes)
@@ -1022,6 +1125,32 @@ def upload():
             results.append({"filename": bs_name, "status": "error",
                              "message": f"Box score error: {e}"})
 
+    # ── 2b. Name the opponent, if the coach answered (DS-95) ───────────────
+    # Runs after the game exists so the name lands on a real row, and only for
+    # games the coach explicitly ticked — never the whole placeholder set.
+    if opponent_override and game_id:
+        targets = [game_id]
+        if opponent_apply_to:
+            # Re-check ownership server-side: the ids came from the browser.
+            owned = (sb.table("games").select("game_id")
+                     .eq("team_id", team_id)
+                     .in_("game_id", [str(g) for g in opponent_apply_to])
+                     .execute())
+            targets += [g["game_id"] for g in (owned.data or [])
+                        if g["game_id"] != game_id]
+        try:
+            for gid in targets:
+                (sb.table("games").update({"opponent_name": opponent_override})
+                 .eq("game_id", gid).eq("team_id", team_id).execute())
+            changes.append({
+                "kind":  "opponent",
+                "name":  opponent_override,
+                "count": len(targets) - 1,
+            })
+        except Exception as e:
+            results.append({"filename": "", "status": "error",
+                             "message": f"Could not set the opponent name: {e}"})
+
     # ── 3. Process each file type ─────────────────────────────────────────
     # Box score
     if "box_score" in file_data and game_id:
@@ -1044,7 +1173,10 @@ def upload():
         else:
             try:
                 from parsers.stats import process as st_process
-                r = st_process(sb, st_bytes, team_id, team_name, game_id=game_id)
+                r = st_process(sb, st_bytes, team_id, team_name, game_id=game_id,
+                               choices=player_choices)
+                for p in r.get("created_players", []):
+                    changes.append({"kind": "player", **p})
                 results.append({"filename": st_name, "status": "success",
                                  "message": r["message"], "details": r.get("details", [])})
             except Exception as e:
@@ -1100,7 +1232,8 @@ def upload():
         # 30-60s-expected operation; dashboard views must be instant.
         _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name)
 
-    return jsonify({"results": results, "report_id": report_id})
+    return jsonify({"results": results, "report_id": report_id,
+                    "changes": changes})
 
 
 def _generate_and_record_team_signals_safe(sb, game_id, team_id, team_name):
@@ -1241,7 +1374,8 @@ def api_games():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     resp = (
         sb.table("games")
-        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, result, game_type")
+        .select("game_id, game_date, opponent_name, team_runs, opponent_runs, "
+                "result, game_type, opponent_is_placeholder")
         .eq("team_id", session["team_id"])
         .order("game_date", desc=True)
         .order("game_number", desc=True)

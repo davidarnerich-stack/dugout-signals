@@ -96,6 +96,34 @@ def team_name_regex(team_name: str) -> str:
     return r"\s+".join(re.escape(w) if i < len(words) - 1 else w for i, w in enumerate(words))
 
 
+# ── Opponent placeholder detection (DS-95) ────────────────────────────────────
+
+# GameChanger's default when the scorekeeper never enters an opponent. The date
+# and time are baked into the string, so no two games ever share one — which is
+# exactly why every such game looks like a different opponent and tournament
+# grouping falls apart.
+TBD_DEFAULT = re.compile(
+    r'^\s*TBD\s*[-–]\s*\d{1,2}/\d{1,2}/\d{2,4}\s*,?\s*\d{1,2}:\d{2}', re.I
+)
+
+
+def is_placeholder_opponent(name) -> bool:
+    """
+    True when the opponent was never really named.
+
+    A missing name, a blank name and the TBD default are the same thing to a
+    coach, so they collapse to one state here and in reports.
+
+    This mirrors the games.opponent_is_placeholder generated column. The column
+    is what queries filter on; this is for values not yet written — a freshly
+    parsed box score at detect time. Keep the two patterns in step.
+    """
+    if name is None:
+        return True
+    name = str(name).strip()
+    return not name or bool(TBD_DEFAULT.match(name))
+
+
 # ── Game info extraction from box score PDF ───────────────────────────────────
 
 def parse_title_names(page) -> dict | None:

@@ -668,8 +668,16 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     if line_score and not line_score.get("consistent", True):
         line_score = None
 
-    opponent_name = game.get("opponent_name") or "Opponent"
+    # A placeholder must never reach the report as a team name (DS-95). The
+    # raw "TBD- 07/15/26, 7:00 PM" reads like a bug, and because it carries a
+    # date it makes every game look like a different opponent — which is what
+    # breaks tournament grouping and opponent scouting.
+    from parsers.common import is_placeholder_opponent
+    opponent_unnamed = is_placeholder_opponent(game.get("opponent_name"))
+    opponent_name = "Opponent not named" if opponent_unnamed else game["opponent_name"]
     opp_short, team_short = _distinct_short_names(opponent_name, team_name, "Opp", "Team")
+    if opponent_unnamed:
+        opp_short = "Opp"
 
     # Venue decides row order; it does not decide which team is "ours".
     # is_away is recorded from the box score's own venue marker.
@@ -696,6 +704,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     opponent = {
         "label": opponent_name, "short": opp_short, "cells": opp_cells,
         "r": game.get("opponent_runs") or 0, "h": opp_h, "e": opp_e,
+        "unnamed": opponent_unnamed,
     }
 
     rows = _ordered_rows(us, opponent, is_away)

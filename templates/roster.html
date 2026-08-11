@@ -96,6 +96,24 @@
       display: flex; align-items: center; justify-content: center;
       font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px; color: #04222e;
     }
+    /* Violet is already the roster's "requested" colour — a hand-raise. A
+       guest is the same class of signal: someone the coach chose to bring in. */
+    .jersey-chip.is-guest {
+      background: rgba(163,113,247,.12); border: 1px solid rgba(163,113,247,.4);
+      color: #a371f7;
+    }
+    /* Missing data, not a status — dashed, and deliberately quiet. */
+    .jersey-chip.is-blank {
+      background: #0d1117; border: 1px dashed #30363d; color: #6e7681;
+    }
+    .guest-tag {
+      font-family: 'Orbitron', sans-serif; font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; color: #a371f7; background: rgba(163,113,247,.12);
+      border: 1px solid rgba(163,113,247,.4); border-radius: 5px;
+      padding: 2px 6px; margin-left: 8px; vertical-align: middle;
+    }
+    .state-line { font-size: 12px; color: #6e7681; margin-top: 6px; line-height: 1.5; }
+
     .card-name { flex: 1; min-width: 0; font-weight: 600; font-size: 15px; color: #e6edf3; }
     .edit-btn {
       background: none; border: none; color: #8b949e; cursor: pointer; padding: 6px;
@@ -498,13 +516,31 @@ function cardHTML(p) {
   }
   const addPrompt = strip.length === 0
     ? `<button type="button" class="add-prompt" onclick="openEditPanel('${p.player_id}')">＋ Add positions &amp; scouting</button>` : '';
+  // Three jersey states, and the two unnumbered ones are NOT the same thing
+  // (DS-99). A guest is a real roster status — someone the coach chose to
+  // bring in. A blank number is missing data about a player they already
+  // know. Collapsing them would tell the coach the wrong story about their
+  // own team, so they get different chips and different sub-lines.
+  const chip = p.is_guest
+    ? '<div class="jersey-chip is-guest">G</div>'
+    : (p.number == null || p.number === '')
+      ? '<div class="jersey-chip is-blank">—</div>'
+      : `<div class="jersey-chip">${p.number}</div>`;
+  const guestTag  = p.is_guest ? '<span class="guest-tag">GUEST</span>' : '';
+  const stateLine = p.is_guest
+    ? '<div class="state-line">Counts in team totals. Sorts after rostered players.</div>'
+    : (p.number == null || p.number === '')
+      ? '<div class="state-line">A team player whose number never made it into GameChanger — not a guest.</div>'
+      : '';
+
   return `<div class="player-card" id="player-row-${p.player_id}">
     <div class="card-top">
-      <div class="jersey-chip">${p.number ?? '—'}</div>
-      <div class="card-name">${p.first_name} ${p.last_name}</div>
+      ${chip}
+      <div class="card-name">${p.first_name} ${p.last_name}${guestTag}</div>
       <button type="button" class="edit-btn" onclick="openEditPanel('${p.player_id}')" aria-label="Edit player">✎</button>
     </div>
     <div class="attr-line">${attrLine(p)}</div>
+    ${stateLine}
     ${stripHTML}
     ${signalsHTML}
     ${addPrompt}
@@ -513,8 +549,18 @@ function cardHTML(p) {
 
 function renderCards() {
   const sorted = PLAYERS.slice();
-  if (sortBy === 'name') sorted.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
-  else sorted.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  // Guests sort after rostered players under either ordering — they're on the
+  // roster and count in the totals, but they aren't the team.
+  const guestLast = (a, b) => (a.is_guest ? 1 : 0) - (b.is_guest ? 1 : 0);
+  if (sortBy === 'name') {
+    sorted.sort((a, b) => guestLast(a, b) ||
+      (a.first_name || '').localeCompare(b.first_name || ''));
+  } else {
+    // A blank number sorts last among rostered players rather than reading
+    // as #0, which is a real jersey number.
+    const num = p => (p.number == null || p.number === '') ? Infinity : Number(p.number);
+    sorted.sort((a, b) => guestLast(a, b) || (num(a) - num(b)));
+  }
   const grid = document.getElementById('roster-grid');
   if (grid) grid.innerHTML = sorted.map(cardHTML).join('');
 }

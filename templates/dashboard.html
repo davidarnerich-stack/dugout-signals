@@ -533,7 +533,7 @@
         </div>
       </div>
       <div class="lgs-opponent">
-        <div class="lgs-opponent-name">vs {{ last_game.opponent_name or 'Opponent' }}</div>
+        <div class="lgs-opponent-name">vs {{ last_game.opponent_name | opponent_label or 'Opponent' }}</div>
         <div class="lgs-opponent-date">{{ last_game.game_date }}</div>
       </div>
 

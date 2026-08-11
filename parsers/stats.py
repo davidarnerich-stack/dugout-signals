@@ -257,15 +257,70 @@ def _parse_pitch_type_detail(header_row, row, fielding_start_col):
     return detail
 
 
+def _numberless_copy(p):
+    """
+    Build the two lines the review block shows for a numberless player
+    (SPEC §4 body, §5 "Found in file" row).
+
+    Composed here rather than in the template so the wording is testable and
+    stays put. Design's example — 2 AB, 2 H, including a double — is the best
+    case; in the real PSW files most numberless players never came to the
+    plate, so both lines have to survive having nothing to report. A player
+    with no line is exactly the one most easily lost, so the copy still says
+    why they matter instead of going blank.
+    """
+    ab, h  = p["ab"], p["h"]
+    xbh    = ("a home run" if p["hr"] else
+              "a triple"   if p["triples"] else
+              "a double"   if p["doubles"] else None)
+
+    bits = []
+    if ab: bits.append(f"{ab} at-bat{'s' if ab != 1 else ''}")
+    if h:  bits.append(f"{h} hit{'s' if h != 1 else ''}")
+    if p["ip"]: bits.append(f"{p['ip']} innings pitched")
+
+    if bits:
+        line = ", ".join(bits)
+        if xbh:
+            line += f" — including {xbh}"
+        stats = f"{line}. "
+    elif ab:
+        stats = ""
+    else:
+        # No plate appearance and no innings: they were on the roster for
+        # this game and nothing else. Say so plainly rather than "0 at-bats".
+        stats = "They don't have a batting or pitching line in this game. "
+
+    p["body"] = (stats + "Their stats will be imported either way. "
+                 "Telling us who they are keeps their numbers together "
+                 "across games.")
+
+    cells = []
+    if ab: cells.append(f"{ab} AB")
+    if h:  cells.append(f"{h} H")
+    if p["doubles"]: cells.append(f"{p['doubles']} 2B")
+    if p["triples"]: cells.append(f"{p['triples']} 3B")
+    if p["hr"]:      cells.append(f"{p['hr']} HR")
+    if p["ip"]:      cells.append(f"{p['ip']} IP")
+    p["stat_line"] = " · ".join(cells) or "no batting line"
+    return p
+
+
 def preview(file_bytes):
     """
     Parse a stats CSV for the upload preview — no DB access, no writes.
-    Returns {pitchers: [...], batters_count: N} for the confirmation screen.
+    Returns {pitchers, batters_count, numberless} for the confirmation screen.
+
+    `numberless` carries the players the review block asks about (DS-99). It
+    reports what is actually in the file so the item can say what would be lost
+    track of, and so the "Found in file" box can show the player a row. The
+    stats travel with the name because the review item is rendered before any
+    write — there is nothing in the database to look them up from yet.
     """
     text = file_bytes.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
 
-    pitchers, batters_count = [], 0
+    pitchers, batters_count, numberless = [], 0, []
     for r in rows[2:]:
         r += [""] * (200 - len(r))
         number = r[0].strip().strip('"')
@@ -277,6 +332,20 @@ def preview(file_bytes):
             continue
         batters_count += 1
         ip = parse_num(r[PIT_COLS["innings_pitched"]], as_float=True)
+
+        if not number:
+            numberless.append(_numberless_copy({
+                "name":    f"{first} {last}".strip(),
+                "first":   first,
+                "last":    last,
+                "ab":      parse_num(r[BAT_COLS["at_bats"]])    or 0,
+                "h":       parse_num(r[BAT_COLS["hits"]])       or 0,
+                "doubles": parse_num(r[BAT_COLS["doubles"]])    or 0,
+                "triples": parse_num(r[BAT_COLS["triples"]])    or 0,
+                "hr":      parse_num(r[BAT_COLS["home_runs"]])  or 0,
+                "ip":      r[PIT_COLS["innings_pitched"]].strip() if ip else "",
+            }))
+
         if ip and ip > 0:
             pitchers.append({
                 "number":  number,
@@ -287,7 +356,8 @@ def preview(file_bytes):
                 "s_pct":   parse_num(r[PIT_COLS["strike_pct"]], as_float=True),
                 "fps_pct": parse_num(r[PIT_COLS["fps_pct"]],    as_float=True),
             })
-    return {"pitchers": pitchers, "batters_count": batters_count}
+    return {"pitchers": pitchers, "batters_count": batters_count,
+            "numberless": numberless}
 
 
 def _player_key(first_name, last_name):
@@ -295,7 +365,7 @@ def _player_key(first_name, last_name):
 
 
 def _find_or_create_player(sb, team_id, team_name, number, first, last,
-                           by_number, by_name):
+                           by_number, by_name, choices=None, created=None):
     """
     Resolve the player for one stats row, creating them if new (DS-94a).
 
@@ -315,6 +385,13 @@ def _find_or_create_player(sb, team_id, team_name, number, first, last,
     `by_number` / `by_name` are the in-memory roster indexes and are updated
     in place, so a name repeated later in the same file resolves to the
     record just created rather than inserting again.
+
+    `choices` carries what the coach answered in the review block, keyed by
+    name (DS-99). It only ever affects how a *new* player is labelled — guest
+    or not, numbered or not. It cannot stop a player being created and cannot
+    stop stats being written; that separation is the whole point of DS-94a,
+    where the silent drop was the bug. An unanswered player still lands on the
+    roster, just without a number.
     """
     match = by_number.get(number) if number is not None else None
 
@@ -329,11 +406,19 @@ def _find_or_create_player(sb, team_id, team_name, number, first, last,
     if match is not None:
         return match["player_id"]
 
-    created = sb.table("players").insert({
+    choice = (choices or {}).get(_player_key(first, last)) or {}
+    is_guest = choice.get("choice") == "guest"
+    if number is None and choice.get("choice") == "new" and choice.get("number"):
+        number = parse_num(choice["number"])
+
+    row = sb.table("players").insert({
         "number": number, "first_name": first, "last_name": last,
-        "team_id": team_id, "team_name": team_name,
+        "team_id": team_id, "team_name": team_name, "is_guest": is_guest,
     }).execute().data[0]
-    record = {"player_id": created["player_id"], "number": number,
+    if created is not None:
+        created.append({"name": f"{first} {last}".strip(),
+                        "number": number, "is_guest": is_guest})
+    record = {"player_id": row["player_id"], "number": number,
               "first_name": first, "last_name": last}
     by_name[_player_key(first, last)] = record
     if number is not None:
@@ -341,10 +426,18 @@ def _find_or_create_player(sb, team_id, team_name, number, first, last,
     return record["player_id"]
 
 
-def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
+def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None,
+            choices=None):
     """
     Process a stats CSV.  game_id takes priority; filename is legacy fallback.
+
+    `choices` is the review block's answers (DS-99), a list of
+    {first, last, choice, number}. It labels newly created players and does
+    nothing else — no row is skipped and no stat is withheld on account of it.
     """
+    choice_map = {_player_key(c.get("first"), c.get("last")): c
+                  for c in (choices or [])}
+    created_players = []
     if game_id is None and filename:
         # Legacy: derive game identity from filename
         from .common import parse_num as _pn
@@ -447,7 +540,8 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         # second time, stranding those earlier games on the old record. The
         # number is written onto the existing record instead.
         player_id = _find_or_create_player(
-            sb, team_id, team_name, number, first, last, by_number, by_name
+            sb, team_id, team_name, number, first, last, by_number, by_name,
+            choices=choice_map, created=created_players
         )
 
         if number is None:
@@ -492,4 +586,5 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
         "message": message,
         "details": players_processed,
         "numberless_players": numberless_players,
+        "created_players": created_players,
     }

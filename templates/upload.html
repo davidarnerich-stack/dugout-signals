@@ -159,6 +159,209 @@
     }
     .overwrite-warn strong { color: #fde68a; }
 
+    /* ── Review block (DS-95 + DS-99) ──
+       Raised surface, not a filled box. Amber is confined to the label and
+       the item glyphs so #overwrite-warn above stays the louder thing. */
+    #review-block {
+      background: #1c2330; border: 1px solid #30363d; border-radius: 10px;
+      overflow: hidden; margin-bottom: 1rem;
+    }
+    #review-block .rb-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 13px 16px; border-bottom: 1px solid #30363d;
+    }
+    #review-block .rb-title {
+      font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 500;
+      letter-spacing: .12em; text-transform: uppercase; color: #d29922;
+    }
+    #review-block .rb-short { display: none; }
+    #review-block .rb-count { font-size: 12px; color: #6e7681; flex-shrink: 0; }
+    #review-block .rb-item { padding: 16px; border: 0; margin: 0; }
+    #review-block .rb-item + .rb-item,
+    #review-block .rb-resolved + .rb-item,
+    #review-block .rb-item + .rb-resolved,
+    #review-block .rb-resolved + .rb-resolved { border-top: 1px solid #30363d; }
+    #review-block .rb-glyph { color: #d29922; font-size: 14px; line-height: 1.4; flex-shrink: 0; }
+    #review-block .rb-head-row { display: flex; gap: 10px; align-items: flex-start; }
+    #review-block .rb-item-title {
+      font-size: .9rem; font-weight: 600; color: #e6edf3; line-height: 1.35;
+    }
+    #review-block .rb-body {
+      font-size: .82rem; color: #8b949e; line-height: 1.5; margin-top: 4px;
+    }
+    /* The one place the raw placeholder is ever shown — evidence, not a label */
+    #review-block .rb-raw {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      color: #c9d1d9; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 4px; padding: 2px 6px;
+    }
+    #review-block .rb-field { margin-top: 14px; }
+    #review-block .rb-label {
+      display: block; font-family: 'Orbitron', sans-serif; font-size: 10px;
+      font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+      color: #8b949e; margin-bottom: 6px;
+    }
+    #review-block .rb-input {
+      width: 100%; max-width: 340px; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 8px; padding: .6rem .7rem; color: #e6edf3; font-size: .9rem;
+      min-height: 44px;
+    }
+    #review-block .rb-input:focus { outline: none; border-color: #38bdf8; }
+    #review-block .rb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    #review-block .rb-chips-label { font-size: .78rem; color: #6e7681; margin-top: 12px; }
+    #review-block .rb-chip {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 999px;
+      padding: .45rem .85rem; color: #e6edf3; font-size: .82rem; cursor: pointer;
+      min-height: 36px;
+    }
+    #review-block .rb-chip:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    /* Opt-in checklist — never pre-ticked. Different games, different teams. */
+    #review-block .rb-checklist {
+      margin-top: 14px; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 8px; padding: 12px;
+    }
+    #review-block .rb-checklist-title {
+      font-size: .85rem; font-weight: 600; color: #e6edf3; margin-bottom: 4px;
+    }
+    #review-block .rb-checklist-help {
+      font-size: .78rem; color: #6e7681; line-height: 1.45; margin-bottom: 10px;
+    }
+    /* The page styles bare <label> as an uppercase field label. These rows are
+       real labels wrapping a control, not field captions — opt them back out
+       or the copy shouts. */
+    #review-block label,
+    #review-block .rb-check-row,
+    #review-block .rb-choice { text-transform: none; letter-spacing: normal; }
+    #review-block .rb-label { text-transform: uppercase; letter-spacing: .07em; }
+
+    #review-block .rb-check-row {
+      display: flex; align-items: center; gap: 10px; padding: .5rem .6rem;
+      border: 1px solid #30363d; border-radius: 6px; margin-bottom: 6px;
+      cursor: pointer; min-height: 44px;
+    }
+    #review-block .rb-check-row:last-of-type { margin-bottom: 0; }
+    #review-block .rb-check-row input { width: 16px; height: 16px; accent-color: #38bdf8; flex-shrink: 0; }
+    #review-block .rb-check-row.is-checked { border-color: rgba(56,189,248,.4); }
+    #review-block .rb-check-date {
+      font-family: 'Orbitron', sans-serif; font-size: 12px; color: #8b949e; min-width: 52px;
+    }
+    #review-block .rb-check-meta { font-size: 12px; color: #6e7681; }
+    #review-block .rb-selectall {
+      background: none; border: 0; color: #38bdf8; font-size: 12px;
+      cursor: pointer; padding: 6px 0; text-decoration: underline;
+    }
+
+    /* Radio choices (DS-99) — real inputs, not divs */
+    #review-block .rb-choice {
+      display: flex; gap: 10px; align-items: flex-start; background: #0d1117;
+      border: 1px solid #30363d; border-radius: 8px; padding: .7rem .8rem;
+      margin-bottom: 8px; cursor: pointer; min-height: 44px;
+    }
+    #review-block .rb-choice.is-on { border-color: #38bdf8; }
+    #review-block .rb-choice input { margin-top: 3px; accent-color: #38bdf8;
+      width: 16px; height: 16px; flex-shrink: 0; }
+    #review-block .rb-choice-name { font-size: .87rem; font-weight: 600; color: #e6edf3; }
+    #review-block .rb-choice-help { font-size: .78rem; color: #6e7681; margin-top: 2px; line-height: 1.4; }
+    #review-block .rb-num {
+      width: 88px; text-align: center; font-family: 'Orbitron', sans-serif;
+      font-weight: 700; font-size: 15px; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 8px; padding: .5rem; color: #e6edf3; min-height: 44px;
+    }
+    #review-block .rb-help { font-size: .76rem; color: #6e7681; margin-top: 6px; line-height: 1.45; }
+
+    #review-block .rb-actions {
+      display: flex; align-items: center; gap: 14px; margin-top: 14px; flex-wrap: wrap;
+    }
+    #review-block .rb-save {
+      background: #38bdf8; color: #04222e; border: 0; border-radius: 8px;
+      padding: .6rem 1.1rem; font-weight: 700; font-size: .85rem; cursor: pointer;
+      min-height: 44px;
+    }
+    #review-block .rb-save[aria-disabled="true"] { background: #21262d; color: #6e7681; cursor: default; }
+    #review-block .rb-skip {
+      background: none; border: 0; color: #8b949e; font-size: .82rem;
+      text-decoration: underline; cursor: pointer; padding: .5rem 0; min-height: 44px;
+    }
+    #review-block .rb-reassure { font-size: .78rem; color: #6e7681; margin-top: 8px; }
+
+    /* Resolved row */
+    #review-block .rb-resolved {
+      display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+      font-size: .85rem; color: #8b949e;
+    }
+    #review-block .rb-resolved .rb-tick { color: #3fb950; flex-shrink: 0; }
+    #review-block .rb-resolved .rb-skipped { color: #6e7681; flex-shrink: 0; }
+    #review-block .rb-change {
+      background: none; border: 0; color: #38bdf8; font-size: 12px;
+      text-decoration: underline; cursor: pointer; margin-left: auto; padding: 6px 0;
+    }
+
+    /* Games still needing an opponent name (SPEC §9) */
+    #unnamed-opponents { margin-bottom: 1rem; }
+    #unnamed-opponents .unnamed-count { font-size: 12px; color: #d29922; margin-bottom: 6px; }
+    #unnamed-opponents .unnamed-help {
+      font-size: 11px; color: #6e7681; text-transform: uppercase;
+      letter-spacing: .07em; margin: 8px 0 6px;
+    }
+    #unnamed-opponents .unnamed-row {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+      padding: .5rem .6rem; margin-bottom: 6px; color: #8b949e;
+      font-size: 12px; cursor: pointer; text-align: left; min-height: 44px;
+    }
+    #unnamed-opponents .unnamed-row:hover { border-color: #38bdf8; color: #e6edf3; }
+    #unnamed-opponents .unnamed-date {
+      font-family: 'Orbitron', sans-serif; min-width: 52px; color: #8b949e;
+    }
+
+    /* "Changes to your team" (SPEC §7) */
+    #changes-panel {
+      margin-top: 1rem; background: #1c2330; border: 1px solid #30363d;
+      border-radius: 10px; padding: 14px 16px;
+    }
+    #changes-panel .changes-label {
+      font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 500;
+      letter-spacing: .12em; text-transform: uppercase; color: #8b949e;
+      margin-bottom: 10px;
+    }
+    #changes-panel .change-line {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      font-size: .85rem; color: #e6edf3; padding: .35rem 0;
+    }
+    #changes-panel .change-line a { color: #38bdf8; font-size: 12px; margin-left: auto; }
+
+    /* Footer under the upload button (SPEC §6) */
+    #process-note { font-size: 12px; color: #6e7681; text-align: center; margin-top: .6rem; }
+
+    /* "no number" tag in the Found-in-file box (SPEC §5) */
+    .tag-nonum {
+      font-size: 11px; color: #d29922; border: 1px solid rgba(210,153,34,.4);
+      border-radius: 5px; padding: 1px 6px; margin-left: .4rem;
+    }
+    .tag-guest {
+      font-family: 'Orbitron', sans-serif; font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; color: #a371f7; background: rgba(163,113,247,.12);
+      border: 1px solid rgba(163,113,247,.4); border-radius: 5px;
+      padding: 2px 6px; margin-left: .4rem;
+    }
+    .pnum-none { color: #d29922; }
+    .pnum-guest { color: #a371f7; }
+
+    @media (max-width: 639px) {
+      #review-block .rb-long { display: none; }
+      #review-block .rb-short { display: inline; }
+      /* 16px stops iOS zooming the page on focus */
+      #review-block .rb-input { max-width: none; font-size: 16px; }
+      #review-block .rb-chip, #review-block .rb-selectall { min-height: 44px; }
+      #review-block .rb-check-venue { display: none; }
+      #review-block .rb-save { flex: 1; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      #review-block .rb-resolved { animation: rb-fade .2s ease; }
+    }
+    @keyframes rb-fade { from { opacity: 0 } to { opacity: 1 } }
+
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
     @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
     .field { display: flex; flex-direction: column; gap: .35rem; }
@@ -304,6 +507,21 @@
 
     <div id="overwrite-warn" class="overwrite-warn"></div>
 
+    <!-- Review block (DS-95 + DS-99). Nothing in here blocks the upload:
+         it decides how well the data is labelled, never whether it is kept.
+         Sits below #overwrite-warn deliberately — that warning is the one
+         genuinely destructive thing on this page and must stay louder. -->
+    <section id="review-block" aria-labelledby="rb-title" style="display:none">
+      <div class="rb-head">
+        <span class="rb-title" id="rb-title">
+          <span class="rb-long">Worth a look before you upload</span>
+          <span class="rb-short">Worth a look</span>
+        </span>
+        <span class="rb-count" id="rb-count"></span>
+      </div>
+      <div id="rb-items"></div>
+    </section>
+
     <div id="preview-box">
       <div class="preview-label">Found in file</div>
       <div id="preview-pitchers"></div>
@@ -372,6 +590,9 @@
   </div>
 
   <button id="process-btn">Upload &amp; Process</button>
+  <!-- States plainly that an unanswered review item costs the coach nothing,
+       so "Not now" is an informed choice rather than a gamble (SPEC §6). -->
+  <div id="process-note"></div>
   <div id="results"></div>
 
   <!-- ── Edit existing game ── -->
@@ -588,7 +809,26 @@
     const batters  = (data && data.batters_count) || 0;
     if (!pitchers.length && !batters) { previewBox.style.display = 'none'; return; }
 
-    previewPitchers.innerHTML = pitchers.map(p => {
+    // A numberless player gets a row here so the review item above has a
+    // visible referent — otherwise the panel asks about someone the coach
+    // cannot see. The jersey cell tracks the pending choice live (SPEC §5).
+    const extra = (review.players || []).map(p => {
+      let cell = '<span class="pnum pnum-none">—</span>', tag = '';
+      if (p.state === 'saved' && p.choice === 'guest') {
+        cell = '<span class="pnum pnum-guest">G</span>';
+        tag  = '<span class="tag-guest">GUEST</span>';
+      } else if (p.state === 'saved' && p.choice === 'new' && p.number) {
+        cell = `<span class="pnum">#${esc(p.number)}</span>`;
+      } else if (p.state === 'open') {
+        tag  = '<span class="tag-nonum">no number</span>';
+      }
+      return `<div class="pitcher-row">${cell}
+                <span class="pname">${esc(p.name)}${tag}</span>
+                <span class="pstat">${esc(p.stat_line)}</span>
+              </div>`;
+    }).join('');
+
+    previewPitchers.innerHTML = extra + pitchers.map(p => {
       const stat = [
         p.ip != null ? `${p.ip} IP` : null,
         p.bf != null ? `${p.bf} BF` : null,
@@ -606,6 +846,288 @@
       ? `${batters} batter${batters !== 1 ? 's' : ''} will also be imported.`
       : '';
     previewBox.style.display = 'block';
+  }
+
+  // ── Review block (DS-95 opponent + DS-99 player) ──────────────────────────
+  // One block, one count, opponent always first — it is a property of the game
+  // being confirmed; a player is a detail inside it. Nothing here blocks the
+  // upload; it only decides how well the data gets labelled.
+  const reviewBlock = document.getElementById('review-block');
+  const rbItems     = document.getElementById('rb-items');
+  const rbCount     = document.getElementById('rb-count');
+  let   review      = { opponent: null, players: [] };
+  let   lastDetect  = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function buildReview(data) {
+    const gi = data.game_info;
+    review = { opponent: null, players: [] };
+
+    if (gi && gi.opponent_is_placeholder) {
+      review.opponent = {
+        raw:     gi.opponent_name || '',
+        priors:  data.prior_opponents || [],
+        others:  data.placeholder_games || [],
+        picked:  new Set(),
+        name:    '',
+        state:   'open',        // open | saved | skipped
+      };
+    }
+    (data.numberless || []).forEach(p => {
+      review.players.push({ ...p, choice: 'new', number: '', state: 'open' });
+    });
+    renderReview();
+  }
+
+  function reviewItemCount() {
+    return (review.opponent ? 1 : 0) + review.players.length;
+  }
+
+  function renderReview() {
+    const n = reviewItemCount();
+    if (!n) { reviewBlock.style.display = 'none'; updateProcessNote(); return; }
+
+    // A count that can read zero sets in Inter, never Orbitron — Orbitron's
+    // slashed zero reads as "no data".
+    rbCount.innerHTML = `<span class="rb-long">${n} item${n !== 1 ? 's' : ''} · nothing is blocked</span>`
+                      + `<span class="rb-short">${n} item${n !== 1 ? 's' : ''}</span>`;
+
+    let html = review.opponent ? renderOpponentItem(review.opponent) : '';
+    review.players.forEach((p, i) => { html += renderPlayerItem(p, i); });
+    rbItems.innerHTML = html;
+    reviewBlock.style.display = 'block';
+    updateProcessNote();
+    renderPreview(lastDetect);   // jersey cells track the pending choice
+  }
+
+  function renderOpponentItem(o) {
+    if (o.state === 'saved') {
+      const extra = o.picked.size
+        ? ` — and applied to ${o.picked.size} other game${o.picked.size !== 1 ? 's' : ''}`
+        : ' for this game';
+      return resolvedRow('opp', `Opponent set to ${esc(o.name)}${extra}`, true);
+    }
+    if (o.state === 'skipped') {
+      return resolvedRow('opp',
+        'Opponent left unnamed — you can name it any time from Reports', false);
+    }
+
+    // The raw placeholder appears here and nowhere else in the product: it is
+    // evidence for why we are asking, not a label for the team.
+    const evidence = o.raw
+      ? `It came through as <span class="rb-raw">${esc(o.raw)}</span> — a placeholder with the
+         date baked in, so games against this team won't group together.`
+      : `No opponent name came through, so games against this team won't group together.`;
+
+    const chips = o.priors.length ? `
+      <div class="rb-chips-label">Teams you've named before:</div>
+      <div class="rb-chips">
+        ${o.priors.map(p => `<button type="button" class="rb-chip" data-chip="${esc(p)}">${esc(p)}</button>`).join('')}
+      </div>` : '';
+
+    // Nothing is ticked. These games are not all the same opponent — one
+    // careless "select all" would relabel a season, and it would look right.
+    const allOn = o.others.length > 0 && o.picked.size === o.others.length;
+    const list = o.others.length ? `
+      <div class="rb-checklist">
+        <div class="rb-checklist-title">Did you play this team in any of these?</div>
+        <div class="rb-checklist-help">
+          ${o.others.length} other game${o.others.length !== 1 ? 's' : ''} came through with a
+          placeholder name. They may well be different teams — tick only the ones against
+          this opponent.
+        </div>
+        ${o.others.map(g => `
+          <label class="rb-check-row${o.picked.has(g.game_id) ? ' is-checked' : ''}">
+            <input type="checkbox" data-game="${esc(g.game_id)}" ${o.picked.has(g.game_id) ? 'checked' : ''}>
+            <span class="rb-check-date">${esc(fmtShortDate(g.date))}</span>
+            <span class="rb-check-meta">
+              <span class="rb-check-venue">${esc(g.venue)}${g.venue && g.result ? ' · ' : ''}</span>${esc(g.result)}
+            </span>
+          </label>`).join('')}
+        <button type="button" class="rb-selectall" data-selectall="${allOn ? 'clear' : 'all'}">
+          ${allOn ? 'Clear all' : 'Select all'}
+        </button>
+      </div>` : '';
+
+    return `
+      <fieldset class="rb-item" data-item="opp">
+        <div class="rb-head-row">
+          <span class="rb-glyph">◆</span>
+          <div style="flex:1">
+            <div class="rb-item-title">The opponent's name wasn't entered in GameChanger</div>
+            <div class="rb-body">${evidence}</div>
+            <div class="rb-field">
+              <label class="rb-label" for="rb-opp-input">Who did you play?</label>
+              <input class="rb-input" id="rb-opp-input" type="text"
+                     placeholder="Opponent team name" value="${esc(o.name)}">
+            </div>
+            ${chips}
+            ${list}
+            <div class="rb-actions">
+              <button type="button" class="rb-save" data-save="opp"
+                      aria-disabled="${o.name.trim() ? 'false' : 'true'}">Use this name</button>
+              <button type="button" class="rb-skip" data-skip="opp">Not now</button>
+            </div>
+            <div class="rb-reassure">You can name it any time from Reports.</div>
+          </div>
+        </div>
+      </fieldset>`;
+  }
+
+  function renderPlayerItem(p, i) {
+    if (p.state === 'saved') {
+      const msg = p.choice === 'guest'  ? `${p.name} added to your roster as a guest`
+                : p.choice === 'roster' ? `${p.name} matched to a player already on your roster`
+                : p.number              ? `${p.name} added to your roster as #${p.number}`
+                                        : `${p.name} added to your roster — number still blank`;
+      return resolvedRow('p' + i, esc(msg), true);
+    }
+    if (p.state === 'skipped') {
+      return resolvedRow('p' + i,
+        esc(`${p.name} imported without a number — sort it out from the roster later`), false);
+    }
+
+    const opt = (val, name, help) => `
+      <label class="rb-choice${p.choice === val ? ' is-on' : ''}">
+        <input type="radio" name="rb-choice-${i}" value="${val}" data-choice="${i}"
+               ${p.choice === val ? 'checked' : ''}>
+        <span>
+          <span class="rb-choice-name">${name}</span>
+          <span class="rb-choice-help" style="display:block">${help}</span>
+        </span>
+      </label>`;
+
+    // Shown only for "New to my roster". Leaving it blank is legitimate —
+    // that is the dashed-chip roster state, not a guest.
+    const numField = p.choice === 'new' ? `
+      <div class="rb-field">
+        <label class="rb-label" for="rb-num-${i}">Jersey number</label>
+        <input class="rb-num" id="rb-num-${i}" type="text" inputmode="numeric"
+               maxlength="2" placeholder="—" value="${esc(p.number)}" data-num="${i}">
+        <div class="rb-help">Optional. Adding it in GameChanger too means future games match automatically.</div>
+      </div>` : '';
+
+    const cta = p.choice === 'guest' ? 'Add as guest'
+              : p.choice === 'roster' ? 'Match player' : 'Add to roster';
+
+    return `
+      <fieldset class="rb-item" data-item="p${i}">
+        <div class="rb-head-row">
+          <span class="rb-glyph">◆</span>
+          <div style="flex:1">
+            <legend class="rb-item-title">${esc(p.name)} came through without a jersey number</legend>
+            <div class="rb-body">${esc(p.body)}</div>
+            <div class="rb-field">
+              <span class="rb-label">Who is this player?</span>
+              ${opt('roster', 'Already on my roster', 'Match them to a player — their number gets filled in for you')}
+              ${opt('new',    'New to my roster',     'A team player whose number never made it into GameChanger')}
+              ${opt('guest',  'Guest or call-up',     'Played this game only — labelled as a guest on your roster')}
+            </div>
+            ${numField}
+            <div class="rb-actions">
+              <button type="button" class="rb-save" data-save="p${i}" aria-disabled="false">${cta}</button>
+              <button type="button" class="rb-skip" data-skip="p${i}">Not now</button>
+            </div>
+            <div class="rb-reassure">Skipping still imports their stats — they'll sit on the roster as unmatched.</div>
+          </div>
+        </div>
+      </fieldset>`;
+  }
+
+  function resolvedRow(key, text, ok) {
+    return `<div class="rb-resolved" data-item="${key}" aria-live="polite">
+              <span class="${ok ? 'rb-tick' : 'rb-skipped'}">${ok ? '✓' : '○'}</span>
+              <span>${text}</span>
+              <button type="button" class="rb-change" data-change="${key}">Change</button>
+            </div>`;
+  }
+
+  function fmtShortDate(iso) {
+    if (!iso) return '';
+    const [y, m, d] = String(iso).split('-').map(Number);
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return (m && d) ? `${MON[m - 1]} ${d}` : iso;
+  }
+
+  function updateProcessNote() {
+    const note = document.getElementById('process-note');
+    if (!note) return;
+    const n = reviewItemCount();
+    if (!n) { note.textContent = ''; return; }
+    const open = (review.opponent && review.opponent.state === 'open' ? 1 : 0)
+               + review.players.filter(p => p.state === 'open').length;
+    note.textContent = open
+      ? "Unresolved items won't stop the upload — nothing is discarded."
+      : 'All set. Every line in the file will be imported.';
+  }
+
+  // Event delegation — the block re-renders wholesale on every change.
+  rbItems.addEventListener('input', e => {
+    const t = e.target;
+    if (t.id === 'rb-opp-input') {
+      review.opponent.name = t.value;
+      const btn = rbItems.querySelector('[data-save="opp"]');
+      if (btn) btn.setAttribute('aria-disabled', t.value.trim() ? 'false' : 'true');
+      return;                            // don't re-render: it would drop focus
+    }
+    if (t.dataset.num != null) {
+      t.value = t.value.replace(/\D/g, '').slice(0, 2);
+      review.players[+t.dataset.num].number = t.value;
+    }
+  });
+
+  rbItems.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.choice != null) {
+      review.players[+t.dataset.choice].choice = t.value;
+      renderReview();
+    } else if (t.dataset.game) {
+      const s = review.opponent.picked;
+      t.checked ? s.add(t.dataset.game) : s.delete(t.dataset.game);
+      t.closest('.rb-check-row').classList.toggle('is-checked', t.checked);
+      const all = review.opponent.picked.size === review.opponent.others.length;
+      const btn = rbItems.querySelector('[data-selectall]');
+      if (btn) { btn.dataset.selectall = all ? 'clear' : 'all';
+                 btn.textContent = all ? 'Clear all' : 'Select all'; }
+    }
+  });
+
+  rbItems.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+
+    if (b.dataset.chip)      { review.opponent.name = b.dataset.chip; renderReview();
+                               const i = document.getElementById('rb-opp-input');
+                               if (i) { i.value = b.dataset.chip; i.focus(); } return; }
+    if (b.dataset.selectall) { const o = review.opponent;
+                               o.picked = b.dataset.selectall === 'all'
+                                 ? new Set(o.others.map(g => g.game_id)) : new Set();
+                               renderReview(); return; }
+    if (b.dataset.save)      { saveItem(b.dataset.save); return; }
+    if (b.dataset.skip)      { setState(b.dataset.skip, 'skipped'); return; }
+    if (b.dataset.change)    { setState(b.dataset.change, 'open');  return; }
+  });
+
+  function saveItem(key) {
+    if (key === 'opp') {
+      if (!review.opponent.name.trim()) {
+        const i = document.getElementById('rb-opp-input');
+        if (i) i.focus();
+        return;                          // stays focusable; announces the need
+      }
+      review.opponent.name = review.opponent.name.trim();
+    }
+    setState(key, 'saved');
+  }
+
+  function setState(key, state) {
+    if (key === 'opp') review.opponent.state = state;
+    else               review.players[+key.slice(1)].state = state;
+    renderReview();
   }
 
   // ── Step 1: detect game info + preview from uploaded files (no DB writes) ──
@@ -632,7 +1154,9 @@
       return;
     }
 
-    // Pitcher / batter preview (works with or without a box score)
+    // Review items first — renderPreview reads them for the jersey cells.
+    lastDetect = data;
+    buildReview(data);
     renderPreview(data);
 
     if (!hasPDF) {
@@ -649,13 +1173,23 @@
     if (gi && gi.game_date) {
       detectedGameInfo = gi;
       const venue = gi.is_away ? 'Away' : 'Home';
+      // Never surface the raw placeholder as a label — it reads like a bug and
+      // it is what makes every game look like a different opponent. The review
+      // item below shows the string once, as evidence.
+      const oppLabel = gi.opponent_is_placeholder
+        ? '<em style="color:#6e7681">Opponent not named</em>'
+        : esc(gi.opponent_name || '?');
+      const scoreOpp = gi.opponent_is_placeholder
+        ? 'Opponent' : esc(gi.opponent_name || 'Opponent');
       const score = (gi.storm_runs != null)
-        ? ` · ${TEAM_NAME} ${gi.storm_runs} – ${gi.opponent_name || 'Opponent'} ${gi.opponent_runs}`
+        ? ` · ${esc(TEAM_NAME)} ${gi.storm_runs} – ${scoreOpp} ${gi.opponent_runs}`
         : '';
-      gameBanner.innerHTML = `<strong>Game detected:</strong> 📅 ${gi.game_date} · ${venue} vs ${gi.opponent_name || '?'}${score}`;
+      gameBanner.innerHTML = `<strong>Game detected:</strong> 📅 ${esc(gi.game_date)} · ${venue} vs ${oppLabel}${score}`;
       gameBanner.style.display = 'block';
       inpDate.value     = gi.game_date || '';
-      inpOpponent.value = gi.opponent_name || '';
+      // The manual field stays blank for a placeholder so the coach is typing
+      // a name, not editing GameChanger's default string.
+      inpOpponent.value = gi.opponent_is_placeholder ? '' : (gi.opponent_name || '');
     } else {
       // Auto-fill date from filename even when server extraction fails
       const autoDate = (gi && gi.game_date) || dateFromFilename || '';
@@ -696,6 +1230,18 @@
     form.append('manual_date',     inpDate.value.trim());
     form.append('manual_opponent', inpOpponent.value.trim());
 
+    // Review-block answers. Only *saved* items are sent — an open or skipped
+    // item deliberately sends nothing, so the upload proceeds untouched.
+    if (review.opponent && review.opponent.state === 'saved') {
+      form.append('opponent_override', review.opponent.name);
+      form.append('opponent_apply_to', JSON.stringify([...review.opponent.picked]));
+    }
+    const resolved = review.players
+      .filter(p => p.state === 'saved')
+      .map(p => ({ first: p.first, last: p.last, choice: p.choice,
+                   number: p.choice === 'new' ? (p.number || null) : null }));
+    if (resolved.length) form.append('player_choices', JSON.stringify(resolved));
+
     try {
       const resp = await fetch('/upload', { method: 'POST', body: form });
       // The server answers with JSON for every outcome it can handle — even a
@@ -718,6 +1264,7 @@
         );
       }
       renderResults(data.results, data.report_id);
+      renderChanges(data.changes);
       // Reset on success
       const anySuccess = data.results.some(r => r.status === 'success');
       if (anySuccess) {
@@ -727,6 +1274,9 @@
         confirmPanel.style.display = 'none';
         processBtn.style.display   = 'none';
         previewBox.style.display   = 'none';
+        reviewBlock.style.display  = 'none';
+        review = { opponent: null, players: [] };
+        updateProcessNote();
         resetProcessButton();
         await loadTournaments();  // refresh dropdown with any new tournament
       }
@@ -742,6 +1292,35 @@
     // Restore the correct label (overwrite stays armed if the game still has data)
     processBtn.innerHTML = alreadyExists ? 'Confirm &amp; Overwrite' : 'Upload &amp; Process';
   });
+
+  // ── "Changes to your team" (SPEC §7) ──────────────────────────────────────
+  // Rendered only when something actually changed. This is what closes the
+  // loop the silent drop left open: the coach sees the roster gained someone,
+  // rather than finding out later or not at all.
+  function renderChanges(changes) {
+    if (!changes || !changes.length) return;
+    const lines = changes.map(c => {
+      if (c.kind === 'player') {
+        const chip = c.is_guest
+          ? '<span class="tag-guest" style="margin:0">GUEST</span>'
+          : `<span class="tag-nonum" style="margin:0">${c.number ? '#' + esc(c.number) : 'no number'}</span>`;
+        return `<div class="change-line">${chip}
+                  <span>${esc(c.name)} added to the roster</span>
+                  <a href="/roster">View on roster</a></div>`;
+      }
+      const also = c.count
+        ? `This game and ${c.count} other${c.count !== 1 ? 's' : ''} now show ${esc(c.name)} as the opponent`
+        : `This game now shows ${esc(c.name)} as the opponent`;
+      return `<div class="change-line"><span style="color:#3fb950">✓</span>
+                <span>${also}</span>
+                <a href="/reports">Review</a></div>`;
+    }).join('');
+    resultsDiv.insertAdjacentHTML('beforeend', `
+      <div id="changes-panel">
+        <div class="changes-label">Changes to your team</div>
+        ${lines}
+      </div>`);
+  }
 
   // ── Edit game panel ───────────────────────────────────────────────────────
   const editToggle     = document.getElementById('edit-toggle');
@@ -769,14 +1348,50 @@
         const result = g.result ? ` (${g.result})` : '';
         const opt = document.createElement('option');
         opt.value = g.game_id;
-        opt.dataset.opponent  = g.opponent_name || '';
+        // A placeholder is never offered back as a name to edit — the field
+        // starts blank so the coach types a real one (DS-95).
+        opt.dataset.opponent  = g.opponent_is_placeholder ? '' : (g.opponent_name || '');
         opt.dataset.stormRuns = g.team_runs ?? '';
         opt.dataset.oppRuns   = g.opponent_runs ?? '';
-        opt.textContent = `${g.game_date} · ${g.opponent_name || 'Unknown opponent'}${score}${result}`;
+        const label = g.opponent_is_placeholder
+          ? 'Opponent not named' : (g.opponent_name || 'Unknown opponent');
+        opt.textContent = `${g.game_date} · ${label}${score}${result}`;
         editGameSelect.appendChild(opt);
       });
+      renderUnnamedNotice(games.filter(g => g.opponent_is_placeholder));
     } catch(e) { console.error('Could not load games', e); }
   }
+
+  // "Not now" has to lead somewhere (README §7). The count makes the size of
+  // the job visible, and picking a game from the list drops straight into the
+  // same field the upload prompt uses.
+  function renderUnnamedNotice(unnamed) {
+    let box = document.getElementById('unnamed-opponents');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'unnamed-opponents';
+      editGameSelect.closest('.field').insertAdjacentElement('beforebegin', box);
+    }
+    if (!unnamed.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div class="unnamed-count">${unnamed.length} game${unnamed.length !== 1 ? 's' : ''} still need an opponent name</div>
+      <div class="unnamed-help">Games without a named opponent</div>
+      ${unnamed.slice(0, 6).map(g => `
+        <button type="button" class="unnamed-row" data-pick="${esc(g.game_id)}">
+          <span class="unnamed-date">${esc(fmtShortDate(g.game_date))}</span>
+          <span>${g.result ? esc(g.result) : ''} ${g.team_runs != null ? esc(g.team_runs + '–' + g.opponent_runs) : ''}</span>
+        </button>`).join('')}
+      ${unnamed.length > 6 ? `<div class="unnamed-help">…and ${unnamed.length - 6} more.</div>` : ''}`;
+  }
+
+  document.addEventListener('click', e => {
+    const row = e.target.closest('#unnamed-opponents [data-pick]');
+    if (!row) return;
+    editGameSelect.value = row.dataset.pick;
+    editGameSelect.dispatchEvent(new Event('change'));
+    editOpponent.focus();
+  });
 
   editGameSelect.addEventListener('change', () => {
     const opt = editGameSelect.options[editGameSelect.selectedIndex];

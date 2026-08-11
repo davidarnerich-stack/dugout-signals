@@ -202,7 +202,15 @@
 
 <div class="col">
   <span class="report-tag">{{ "Scrimmage Report" if game_type == "scrimmage" else "Game Report" }}</span>
-  <h1 class="game-title">vs {{ header_block.opponent.label }}</h1>
+  {# An unnamed opponent is stated plainly and quietly, with a way to fix it —
+     never the raw GameChanger placeholder, which reads like a bug (DS-95). #}
+  <h1 class="game-title">vs
+    {% if header_block.opponent.unnamed %}
+      <em style="color:#6e7681;font-style:italic">Opponent not named</em>
+      <a href="/upload#name-opponents" style="color:#38bdf8;font-size:12px;
+         font-weight:400;text-decoration:underline;margin-left:.4rem">Name it</a>
+    {% else %}{{ header_block.opponent.label }}{% endif %}
+  </h1>
   <p class="game-meta">{{ d.game.game_date }} · Game {{ d.game_number_in_season }} of season</p>
 
   <!-- HEADER BLOCK: structured box score, not AI.
