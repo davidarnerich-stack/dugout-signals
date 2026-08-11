@@ -922,7 +922,17 @@ def api_detect():
             pv = stats_preview(stats_bytes)
             result["pitchers"]      = pv["pitchers"]
             result["batters_count"] = pv["batters_count"]
-            result["numberless"]    = pv["numberless"]
+            # Only ask about players we genuinely cannot place. The CSV keeps
+            # reporting no jersey number for as long as GameChanger has none,
+            # so without this the coach is asked about the same player on
+            # every remaining game of the season — after they have already
+            # answered and the roster already shows the number.
+            unresolved, known = _split_known_players(
+                create_client(SUPABASE_URL, SUPABASE_KEY),
+                session["team_id"], pv["numberless"]
+            )
+            result["numberless"]       = unresolved
+            result["known_numberless"] = known
         except Exception as e:
             result["stats_error"] = str(e)
 
@@ -971,6 +981,42 @@ def api_detect():
         game_info["opponent_is_placeholder"] = False
 
     return jsonify(result)
+
+
+def _split_known_players(sb, team_id, numberless):
+    """
+    Split the CSV's numberless players into those still needing an answer and
+    those the roster already accounts for.
+
+    The review item exists to ask "who is this?". Once the player is on the
+    roster with a jersey number, or flagged as a guest, that question has an
+    answer and asking again is just noise — worse, it implies the data is
+    unresolved when it is not. GameChanger will keep sending a blank number
+    for as long as nobody enters one there, so the CSV alone can never tell
+    us this has been settled; only the roster can.
+
+    A player sitting on the roster with no number and no guest flag is still
+    genuinely open, so they keep being asked about. The roster card's
+    `Add number` action is the other way to close it.
+    """
+    if not numberless:
+        return [], []
+    from parsers.stats import _player_key
+    roster = (sb.table("players")
+              .select("player_id, first_name, last_name, number, is_guest")
+              .eq("team_id", team_id).execute().data or [])
+    by_name = {_player_key(p.get("first_name"), p.get("last_name")): p
+               for p in roster}
+
+    unresolved, known = [], []
+    for p in numberless:
+        match = by_name.get(_player_key(p.get("first"), p.get("last")))
+        if match and (match.get("number") is not None or match.get("is_guest")):
+            known.append({**p, "number": match.get("number"),
+                          "is_guest": bool(match.get("is_guest"))})
+        else:
+            unresolved.append(p)
+    return unresolved, known
 
 
 def _prior_opponents(sb, team_id, limit=3):

@@ -834,6 +834,19 @@
                 <span class="pname">${esc(p.name)}${tag}</span>
                 <span class="pstat">${esc(p.stat_line)}</span>
               </div>`;
+    }).join('')
+    // Players the CSV has no number for but the roster already accounts for.
+    // Shown with the number we know rather than asked about again, so the
+    // coach can see they were recognised instead of just missing.
+    + ((data && data.known_numberless) || []).map(p => {
+      const cell = p.is_guest
+        ? '<span class="pnum pnum-guest">G</span>'
+        : `<span class="pnum">#${esc(p.number)}</span>`;
+      const tag = p.is_guest ? '<span class="tag-guest">GUEST</span>' : '';
+      return `<div class="pitcher-row">${cell}
+                <span class="pname">${esc(p.name)}${tag}</span>
+                <span class="pstat">${esc(p.stat_line)}</span>
+              </div>`;
     }).join('');
 
     previewPitchers.innerHTML = extra + pitchers.map(p => {
