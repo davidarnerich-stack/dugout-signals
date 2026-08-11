@@ -3,8 +3,14 @@ import io
 import re
 import pdfplumber
 
+# The jersey number is OPTIONAL. GameChanger prints a batter with no number
+# as "C McClung (CF) 1 0 0 0 1 1", and requiring "#N" dropped that line before
+# anything else ran. Worse than losing the row: batting position is counted by
+# matched lines, so every batter below a numberless one was recorded a slot too
+# high. Four of the seven PSW games were affected, one of them from the 5-hole
+# down. The lineup was not merely incomplete, it was wrong.
 BATTER_RE = re.compile(
-    r"(.+?)\s+#(\d+)\s*(?:\((\w+)\))?\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)"
+    r"(.+?)\s+(?:#(\d+)\s*)?(?:\((\w+)\))?\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$"
 )
 POS_COLS = {"P":189,"C":190,"1B":191,"2B":192,"3B":193,"SS":194,"LF":195,"CF":196,"RF":197,"SF":198}
 
@@ -49,14 +55,60 @@ def _parse_batting_column(col_text):
             break
         if re.search(r"\bTB:|SB:|CS:|LOB:|HBP:|PITCHING\b", line):
             break
+        # Stop at the pitching table too. Now that the jersey number is
+        # optional, a line like "Eloise W 2.0 1 1 1 2 3 0" would otherwise
+        # match as a batter named "Eloise W 2.0". The Totals row happens to
+        # stop us first on every file seen so far, which is luck, not a rule.
+        if re.search(r"IP\s+H\s+R\s+ER\s+BB\s+SO", line):
+            break
         m = BATTER_RE.match(line.strip())
         if m:
             pos += 1
             players.append({
-                "name": m.group(1).strip(), "number": int(m.group(2)),
+                "name": m.group(1).strip(),
+                "number": int(m.group(2)) if m.group(2) else None,
                 "position": m.group(3), "batting_position": pos,
             })
     return players
+
+
+def _match_lineup_player(batter, roster):
+    """
+    Resolve one box score lineup entry to a player.
+
+    By jersey number when the line has one — that is unambiguous. Otherwise by
+    name, which the box score abbreviates and sometimes truncates: "C McClung",
+    "W Salisi…". So match on the last name as a prefix, and on the first
+    initial when one is given.
+
+    Returns the player_id, or None when nothing matches or more than one thing
+    does. A None is reported by the caller rather than skipped in silence —
+    that silence is what hid this for four games.
+    """
+    if batter["number"] is not None:
+        for p in roster:
+            if p.get("number") == batter["number"]:
+                return p["player_id"]
+        return None
+
+    raw = batter["name"].replace("…", "").replace("...", "").strip().lower()
+    if not raw:
+        return None
+    parts = raw.split()
+    surname = parts[-1]
+    initial = parts[0][0] if len(parts) > 1 else None
+
+    hits = []
+    for p in roster:
+        last  = (p.get("last_name")  or "").strip().lower()
+        first = (p.get("first_name") or "").strip().lower()
+        # Either side may be the truncated one.
+        if not last or not (last.startswith(surname) or surname.startswith(last)):
+            continue
+        if initial and first and not first.startswith(initial):
+            continue
+        hits.append(p["player_id"])
+    return hits[0] if len(hits) == 1 else None
 
 
 def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
@@ -113,12 +165,24 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
     opp_batters   = _parse_batting_column(opp_col)
     details = []
 
+    # One roster read, then match in memory — the old code issued a query per
+    # batter and had no way to fall back to a name.
+    roster = (sb.table("players")
+              .select("player_id, number, first_name, last_name")
+              .eq("team_id", team_id).execute().data or [])
+    unmatched_lineup = []
+
     for batter in storm_batters:
-        player_resp = (sb.table("players").select("player_id")
-                       .eq("number", batter["number"]).eq("team_id", team_id).execute())
-        if not player_resp.data:
+        player_id = _match_lineup_player(batter, roster)
+        if player_id is None:
+            # Say so. A silently dropped lineup entry also shifts every
+            # batting position below it, so this must never pass unremarked.
+            unmatched_lineup.append(
+                f"{batter['name']}"
+                + (f" #{batter['number']}" if batter["number"] is not None else "")
+                + f" (bat #{batter['batting_position']})"
+            )
             continue
-        player_id = player_resp.data[0]["player_id"]
         existing = (sb.table("batting_order").select("id")
                     .eq("game_id", game_id).eq("player_id", player_id).execute())
         row = {"game_id": game_id, "player_id": player_id, "team_id": team_id,
@@ -128,10 +192,11 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
             sb.table("batting_order").update(row).eq("id", existing.data[0]["id"]).execute()
         else:
             sb.table("batting_order").insert(row).execute()
-        details.append(f"#{batter['number']} bat#{batter['batting_position']} ({batter['position']})")
+        label = f"#{batter['number']}" if batter["number"] is not None else batter["name"]
+        details.append(f"{label} bat#{batter['batting_position']} ({batter['position']})")
 
     for batter in opp_batters:
-        num_str = str(batter["number"])
+        num_str = str(batter["number"]) if batter["number"] is not None else ""
         if not sb.table("unmatched_box_score_players").select("id") \
                   .eq("game_id", game_id).eq("number", num_str) \
                   .eq("team_name", opponent_name or "Unknown").execute().data:
@@ -145,7 +210,15 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None):
 
     venue = "Away" if is_away else "Home"
     score = f"{team_name} {storm_runs} – {opponent_name or 'Opponent'} {opp_runs}"
+    message = (f"{venue} | {score} | {len(details)} batting order "
+               f"+ {len(opp_batters)} opponent players stored.")
+    if unmatched_lineup:
+        message += (f" {len(unmatched_lineup)} lineup "
+                    f"{'entry' if len(unmatched_lineup) == 1 else 'entries'} "
+                    f"could not be matched to a player ({', '.join(unmatched_lineup)}) "
+                    f"— batting positions for this game may be incomplete.")
     return {
-        "message": f"{venue} | {score} | {len(storm_batters)} batting order + {len(opp_batters)} opponent players stored.",
+        "message": message,
         "details": details,
+        "unmatched_lineup": unmatched_lineup,
     }

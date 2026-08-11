@@ -1216,6 +1216,31 @@ def upload():
                              "message": f"Could not set the opponent name: {e}"})
 
     # ── 3. Process each file type ─────────────────────────────────────────
+    # Stats CSV first: it is what creates players. The box score then matches
+    # its lineup against a roster that already contains everyone in this game.
+    # Running the box score first meant a player making their first appearance
+    # was never found, so they got no batting-order row — and because batting
+    # position is counted off matched lines, everyone below them was recorded
+    # a slot too high (DS-108).
+    st_result = None
+    if "stats" in file_data:
+        st_name, st_bytes = file_data["stats"]
+        if game_id is None:
+            st_result = {"filename": st_name, "status": "error",
+                         "message": "Stats CSV needs a box score PDF to identify the game. "
+                                    "Upload them together."}
+        else:
+            try:
+                from parsers.stats import process as st_process
+                r = st_process(sb, st_bytes, team_id, team_name, game_id=game_id,
+                               choices=player_choices)
+                for p in r.get("created_players", []):
+                    changes.append({"kind": "player", **p})
+                st_result = {"filename": st_name, "status": "success",
+                             "message": r["message"], "details": r.get("details", [])}
+            except Exception as e:
+                st_result = {"filename": st_name, "status": "error", "message": str(e)}
+
     # Box score
     if "box_score" in file_data and game_id:
         bs_name, bs_bytes = file_data["box_score"]
@@ -1227,24 +1252,10 @@ def upload():
         except Exception as e:
             results.append({"filename": bs_name, "status": "error", "message": str(e)})
 
-    # Stats CSV
-    if "stats" in file_data:
-        st_name, st_bytes = file_data["stats"]
-        if game_id is None:
-            results.append({"filename": st_name, "status": "error",
-                             "message": "Stats CSV needs a box score PDF to identify the game. "
-                                        "Upload them together."})
-        else:
-            try:
-                from parsers.stats import process as st_process
-                r = st_process(sb, st_bytes, team_id, team_name, game_id=game_id,
-                               choices=player_choices)
-                for p in r.get("created_players", []):
-                    changes.append({"kind": "player", **p})
-                results.append({"filename": st_name, "status": "success",
-                                 "message": r["message"], "details": r.get("details", [])})
-            except Exception as e:
-                results.append({"filename": st_name, "status": "error", "message": str(e)})
+    # Appended after the box score so the result cards keep their usual order
+    # even though the stats CSV is now processed first.
+    if st_result:
+        results.append(st_result)
 
     # Play-by-play DOCX (legacy)
     if "play_by_play" in file_data:
