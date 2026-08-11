@@ -929,10 +929,10 @@ def api_detect():
             # answered and the roster already shows the number.
             unresolved, known = _split_known_players(
                 create_client(SUPABASE_URL, SUPABASE_KEY),
-                session["team_id"], pv["numberless"]
+                session["team_id"], pv["players"]
             )
-            result["numberless"]       = unresolved
-            result["known_numberless"] = known
+            result["review_players"] = unresolved
+            result["known_players"]  = known
         except Exception as e:
             result["stats_error"] = str(e)
 
@@ -983,23 +983,31 @@ def api_detect():
     return jsonify(result)
 
 
-def _split_known_players(sb, team_id, numberless):
+def _split_known_players(sb, team_id, players):
     """
-    Split the CSV's numberless players into those still needing an answer and
-    those the roster already accounts for.
+    Decide which players in the file the coach is actually asked about.
 
-    The review item exists to ask "who is this?". Once the player is on the
-    roster with a jersey number, or flagged as a guest, that question has an
-    answer and asking again is just noise — worse, it implies the data is
-    unresolved when it is not. GameChanger will keep sending a blank number
-    for as long as nobody enters one there, so the CSV alone can never tell
-    us this has been settled; only the roster can.
+    The review item exists to ask "who is this?", so it belongs wherever the
+    answer is genuinely unknown — which is not the same as "has no jersey
+    number". Tying it to the missing number meant a guest who *had* one was
+    invisible: Tristan #17 turned up in game 5, was never asked about, and
+    would have been filed as a regular rostered player.
 
-    A player sitting on the roster with no number and no guest flag is still
-    genuinely open, so they keep being asked about. The roster card's
-    `Add number` action is the other way to close it.
+    Asked about:
+      * anyone not on the roster, whether or not they have a number — this is
+        how a guest or call-up arrives mid-season
+      * anyone on the roster with no number and no guest flag, which is still
+        a real gap
+
+    Not asked about:
+      * anyone on the roster carrying a number, or already flagged a guest.
+        GameChanger keeps sending a blank number for as long as nobody enters
+        one there, so the CSV can never tell us the question is settled; only
+        the roster can.
+      * anybody at all when the roster is empty. The first upload for a team
+        is everyone's first appearance, and asking twelve times says nothing.
     """
-    if not numberless:
+    if not players:
         return [], []
     from parsers.stats import _player_key
     roster = (sb.table("players")
@@ -1007,15 +1015,21 @@ def _split_known_players(sb, team_id, numberless):
               .eq("team_id", team_id).execute().data or [])
     by_name = {_player_key(p.get("first_name"), p.get("last_name")): p
                for p in roster}
+    roster_established = bool(roster)
 
     unresolved, known = [], []
-    for p in numberless:
+    for p in players:
         match = by_name.get(_player_key(p.get("first"), p.get("last")))
-        if match and (match.get("number") is not None or match.get("is_guest")):
+
+        if match is None and roster_established:
+            unresolved.append({**p, "kind": "new"})          # a new face
+        elif match is None:
+            known.append({**p, "is_guest": False})           # season's first upload
+        elif match.get("number") is None and not match.get("is_guest"):
+            unresolved.append({**p, "kind": "numberless"})   # still a real gap
+        else:
             known.append({**p, "number": match.get("number"),
                           "is_guest": bool(match.get("is_guest"))})
-        else:
-            unresolved.append(p)
     return unresolved, known
 
 

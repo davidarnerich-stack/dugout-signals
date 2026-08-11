@@ -529,9 +529,13 @@ function cardHTML(p) {
   // bring in. A blank number is missing data about a player they already
   // know. Collapsing them would tell the coach the wrong story about their
   // own team, so they get different chips and different sub-lines.
+  // A guest keeps their jersey number when the file gave us one — the violet
+  // and the GUEST tag already carry the status, so there's no reason to throw
+  // the number away. "G" is only the fallback when there isn't one.
+  const noNum = p.number == null || p.number === '';
   const chip = p.is_guest
-    ? '<div class="jersey-chip is-guest">G</div>'
-    : (p.number == null || p.number === '')
+    ? `<div class="jersey-chip is-guest">${noNum ? 'G' : p.number}</div>`
+    : noNum
       ? '<div class="jersey-chip is-blank">—</div>'
       : `<div class="jersey-chip">${p.number}</div>`;
   const guestTag  = p.is_guest ? '<span class="guest-tag">GUEST</span>' : '';

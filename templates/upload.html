@@ -821,14 +821,18 @@
     // visible referent — otherwise the panel asks about someone the coach
     // cannot see. The jersey cell tracks the pending choice live (SPEC §5).
     const extra = (review.players || []).map(p => {
-      let cell = '<span class="pnum pnum-none">—</span>', tag = '';
+      let cell = p.number ? `<span class="pnum">#${esc(p.number)}</span>`
+                          : '<span class="pnum pnum-none">—</span>';
+      let tag  = '';
       if (p.state === 'saved' && p.choice === 'guest') {
         cell = '<span class="pnum pnum-guest">G</span>';
         tag  = '<span class="tag-guest">GUEST</span>';
-      } else if (p.state === 'saved' && p.choice === 'new' && p.number) {
-        cell = `<span class="pnum">#${esc(p.number)}</span>`;
       } else if (p.state === 'open') {
-        tag  = '<span class="tag-nonum">no number</span>';
+        // Say which question is open. A player with a number is not missing
+        // one — we just don't know them yet.
+        tag = p.kind === 'new'
+          ? '<span class="tag-nonum">new</span>'
+          : '<span class="tag-nonum">no number</span>';
       }
       return `<div class="pitcher-row">${cell}
                 <span class="pname">${esc(p.name)}${tag}</span>
@@ -838,7 +842,7 @@
     // Players the CSV has no number for but the roster already accounts for.
     // Shown with the number we know rather than asked about again, so the
     // coach can see they were recognised instead of just missing.
-    + ((data && data.known_numberless) || []).map(p => {
+    + ((data && data.known_players) || []).map(p => {
       const cell = p.is_guest
         ? '<span class="pnum pnum-guest">G</span>'
         : `<span class="pnum">#${esc(p.number)}</span>`;
@@ -898,8 +902,11 @@
         state:   'open',        // open | saved | skipped
       };
     }
-    (data.numberless || []).forEach(p => {
-      review.players.push({ ...p, choice: 'new', number: '', state: 'open' });
+    (data.review_players || []).forEach(p => {
+      // A player the file already numbers keeps that number in the field, so
+      // the coach confirms rather than retypes. A numberless one starts blank.
+      review.players.push({ ...p, choice: 'new',
+                            number: p.number || '', state: 'open' });
     });
     renderReview();
   }
@@ -1040,7 +1047,7 @@
         <div class="rb-head-row">
           <span class="rb-glyph">◆</span>
           <div style="flex:1">
-            <legend class="rb-item-title">${esc(p.name)} came through without a jersey number</legend>
+            <legend class="rb-item-title">${esc(p.title || (p.name + ' came through without a jersey number'))}</legend>
             <div class="rb-body">${esc(p.body)}</div>
             <div class="rb-field">
               <span class="rb-label">Who is this player?</span>

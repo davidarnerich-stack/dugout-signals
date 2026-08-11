@@ -257,17 +257,26 @@ def _parse_pitch_type_detail(header_row, row, fielding_start_col):
     return detail
 
 
-def _numberless_copy(p):
+def _review_copy(p, kind="numberless"):
     """
-    Build the two lines the review block shows for a numberless player
-    (SPEC §4 body, §5 "Found in file" row).
+    Build the lines the review block shows for a player (SPEC §4 body, §5
+    "Found in file" row).
 
     Composed here rather than in the template so the wording is testable and
     stays put. Design's example — 2 AB, 2 H, including a double — is the best
-    case; in the real PSW files most numberless players never came to the
-    plate, so both lines have to survive having nothing to report. A player
-    with no line is exactly the one most easily lost, so the copy still says
-    why they matter instead of going blank.
+    case; in the real PSW files most flagged players never came to the plate,
+    so both lines have to survive having nothing to report. A player with no
+    line is exactly the one most easily lost, so the copy still says why they
+    matter instead of going blank.
+
+    Two reasons to ask, and they read differently:
+
+      numberless — GameChanger had no jersey number for them.
+      new        — they have a number, but no one by that name is on the
+                   roster yet. This is how a guest or call-up arrives, and
+                   the original block could not see it at all: it keyed the
+                   question off the missing number rather than off the player
+                   being unfamiliar.
     """
     ab, h  = p["ab"], p["h"]
     xbh    = ("a home run" if p["hr"] else
@@ -291,9 +300,19 @@ def _numberless_copy(p):
         # this game and nothing else. Say so plainly rather than "0 at-bats".
         stats = "They don't have a batting or pitching line in this game. "
 
-    p["body"] = (stats + "Their stats will be imported either way. "
-                 "Telling us who they are keeps their numbers together "
-                 "across games.")
+    p["kind"] = kind
+    if kind == "new":
+        num = f" as #{p['number']}" if p.get("number") else ""
+        p["title"] = f"{p['name']} isn't on your roster yet"
+        p["body"]  = (f"They appear in this game's file{num}, but no one by "
+                      f"that name is on your roster. {stats}Their stats will "
+                      f"be imported either way — this just records whether "
+                      f"they've joined the team or were a guest.")
+    else:
+        p["title"] = f"{p['name']} came through without a jersey number"
+        p["body"]  = (stats + "Their stats will be imported either way. "
+                      "Telling us who they are keeps their numbers together "
+                      "across games.")
 
     cells = []
     if ab: cells.append(f"{ab} AB")
@@ -309,42 +328,44 @@ def _numberless_copy(p):
 def preview(file_bytes):
     """
     Parse a stats CSV for the upload preview — no DB access, no writes.
-    Returns {pitchers, batters_count, numberless} for the confirmation screen.
+    Returns {pitchers, batters_count, players} for the confirmation screen.
 
-    `numberless` carries the players the review block asks about (DS-99). It
-    reports what is actually in the file so the item can say what would be lost
-    track of, and so the "Found in file" box can show the player a row. The
-    stats travel with the name because the review item is rendered before any
-    write — there is nothing in the database to look them up from yet.
+    `players` is every player in the file, carrying the stats and copy the
+    review block needs. Which of them the coach is actually asked about is
+    decided against the roster in app.py, because that is a database question
+    and this stays database-free. The stats travel with the name because the
+    review item renders before any write — there is nothing to look up yet.
     """
     text = file_bytes.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
 
-    pitchers, batters_count, numberless = [], 0, []
+    pitchers, batters_count, players = [], 0, []
     for r in rows[2:]:
         r += [""] * (200 - len(r))
         number = r[0].strip().strip('"')
         last   = r[1].strip().strip('"')
         first  = r[2].strip().strip('"')
-        # A blank jersey number still counts as a player in the preview —
-        # the count must reflect what will actually be imported (DS-94a).
-        if number in ("Totals", "Glossary") or not last:
+        # The preview must count exactly what the import will write, so this
+        # filter has to match process()'s: any of number / first / last makes
+        # the row a player. A blank last name is how GameChanger records a
+        # call-up nobody entered a surname for.
+        if number in ("Totals", "Glossary") or not (number or last or first):
             continue
         batters_count += 1
         ip = parse_num(r[PIT_COLS["innings_pitched"]], as_float=True)
 
-        if not number:
-            numberless.append(_numberless_copy({
-                "name":    f"{first} {last}".strip(),
-                "first":   first,
-                "last":    last,
-                "ab":      parse_num(r[BAT_COLS["at_bats"]])    or 0,
-                "h":       parse_num(r[BAT_COLS["hits"]])       or 0,
-                "doubles": parse_num(r[BAT_COLS["doubles"]])    or 0,
-                "triples": parse_num(r[BAT_COLS["triples"]])    or 0,
-                "hr":      parse_num(r[BAT_COLS["home_runs"]])  or 0,
-                "ip":      r[PIT_COLS["innings_pitched"]].strip() if ip else "",
-            }))
+        players.append(_review_copy({
+            "name":    f"{first} {last}".strip(),
+            "first":   first,
+            "last":    last,
+            "number":  number,
+            "ab":      parse_num(r[BAT_COLS["at_bats"]])    or 0,
+            "h":       parse_num(r[BAT_COLS["hits"]])       or 0,
+            "doubles": parse_num(r[BAT_COLS["doubles"]])    or 0,
+            "triples": parse_num(r[BAT_COLS["triples"]])    or 0,
+            "hr":      parse_num(r[BAT_COLS["home_runs"]])  or 0,
+            "ip":      r[PIT_COLS["innings_pitched"]].strip() if ip else "",
+        }, kind="numberless" if not number else "new"))
 
         if ip and ip > 0:
             pitchers.append({
@@ -357,7 +378,7 @@ def preview(file_bytes):
                 "fps_pct": parse_num(r[PIT_COLS["fps_pct"]],    as_float=True),
             })
     return {"pitchers": pitchers, "batters_count": batters_count,
-            "numberless": numberless}
+            "players": players}
 
 
 def _player_key(first_name, last_name):
@@ -489,11 +510,14 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None,
         if fc == "Totals":
             totals_row = r
             continue
-        # A blank jersey number is a real player, not a blank row (DS-94a).
-        # Skipping those here is what silently discarded guest and call-up
-        # players — five of six PSW Hilighters games contained one. The last
-        # name is what makes a row a player; the number is optional.
-        if fc == "Glossary" or not lc:
+        # A row is a player if it carries ANY identity — number, first name or
+        # last name. Requiring a jersey number dropped guests (DS-94a);
+        # requiring a last name dropped them right back, because GameChanger
+        # records a call-up whose surname nobody entered as `17,,Tristan`.
+        # Whichever single field we insist on, the row we lose is a real kid
+        # whose stats then go missing from the team's totals. Only a genuinely
+        # empty row is not a player.
+        if fc == "Glossary" or not (fc or lc or r[2].strip().strip('"')):
             continue
         data_rows.append(r)
 
@@ -548,7 +572,8 @@ def process(sb, file_bytes, team_id, team_name, game_id=None, filename=None,
         number = parse_num(row[0], as_float=False)
         last   = row[1].strip().strip('"')
         first  = row[2].strip().strip('"')
-        if not last:
+        # Any identity is enough — see the row filter above.
+        if not (last or first or number is not None):
             continue
 
         # Lookup order matters (DS-94a):
