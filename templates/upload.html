@@ -438,7 +438,15 @@
       vertical-align: middle; margin-right: .4rem;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  
+    /* ── DS-48: don't let iOS zoom the page on focus ──
+       Safari zooms the viewport whenever a focused field's text is under
+       16px, which throws the coach out of position mid-form. Scoped to the
+       mobile breakpoint so the desktop type scale is untouched. */
+    @media (max-width: 640px) {
+      input, select, textarea { font-size: 16px; }
+    }
+</style>
 </head>
 <body>
 

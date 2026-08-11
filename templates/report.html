@@ -94,8 +94,36 @@
     .section li { line-height: 1.7; font-size: .92rem; margin-bottom: .3rem; }
 
     /* ── Tables ── */
-    .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
-    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    /* DS-46: these tables are read one-handed in a dugout. The batting table
+       alone has 15 columns and shows about 6 at 390px, so it must scroll —
+       but scrolling used to carry the player's name off with it, leaving rows
+       of numbers belonging to nobody.
+
+       Two parts: the identifying first column is pinned, and the right edge
+       fades while there is more to see. The fade is pure CSS — the two `local`
+       layers scroll with the content and cover the fixed `scroll` layer once
+       you reach the end, so it disappears exactly when there is nothing left
+       to reveal, with no scroll listener. */
+    .table-wrap {
+      overflow-x: auto; margin-bottom: 1rem;
+      -webkit-overflow-scrolling: touch;
+      background:
+        linear-gradient(to left, #0d1117 40%, rgba(13,17,23,0)) 100% 0 / 34px 100% no-repeat local,
+        linear-gradient(to left, rgba(139,148,158,.55), rgba(139,148,158,0)) 100% 0 / 26px 100% no-repeat scroll;
+    }
+    /* `separate` because a collapsed border does not paint on a sticky cell —
+       the pinned column would lose its row lines. Spacing stays 0 so nothing
+       moves. */
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    thead th:first-child, tbody td:first-child {
+      position: sticky; left: 0; z-index: 1;
+      background: #0d1117; border-right: 1px solid #21262d;
+    }
+    thead th:first-child { background: #161b22; z-index: 2; }
+    /* The pinned cell needs its own hover and totals backgrounds; it is opaque,
+       so it does not inherit the row's. */
+    tbody tr:hover td:first-child { background: #161b22; }
+    tbody tr.totals-row td:first-child { background: #0d1117; }
     thead th {
       background: #161b22; color: #8b949e; font-weight: 600; text-transform: uppercase;
       font-size: .72rem; letter-spacing: .05em; padding: .5rem .7rem; text-align: right;
