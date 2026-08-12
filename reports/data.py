@@ -598,6 +598,13 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         slg = round(tb / ab, 3) if ab else 0.0
         batting_stats.append({
             "player_id": row["player_id"], "number": number, "name": name,
+            # Plate appearances and HBP travel with at-bats. Supplying AB
+            # alone makes a walk-heavy line look self-contradictory — a
+            # narrative given "0-for-1, 2 BB" wrote "2 walks in his lone
+            # plate appearance", trying to reconcile figures that only
+            # disagree because the reconciling number was withheld.
+            "pa": row.get("plate_appearances") or 0,
+            "hbp": hbp,
             "ab": ab, "h": h, "doubles": row.get("doubles") or 0,
             "triples": row.get("triples") or 0, "hr": row.get("home_runs") or 0,
             "rbi": row.get("runs_batted_in") or 0, "r": row.get("runs_scored") or 0,

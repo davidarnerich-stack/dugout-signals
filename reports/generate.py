@@ -460,11 +460,17 @@ def _recap_facts(data, us) -> str:
     bats = data.get("batting_stats") or []
     got_on = [b for b in bats if (b.get("h") or 0) or (b.get("rbi") or 0) or (b.get("bb") or 0)]
     if got_on:
+        # Plate appearances alongside at-bats. Given "0-for-1, 2 BB" and
+        # nothing else, the model tried to reconcile the two and produced
+        # "2 walks in his lone plate appearance that resulted in an at-bat".
+        # A walk is a plate appearance but not an at-bat; stating PA removes
+        # the apparent contradiction instead of inviting an explanation of it.
         lines.append("Batters who reached or drove in a run: " + "; ".join(
-            f"{b['name']} {b['h']}-for-{b['ab']}"
+            f"{b['name']} {b['h']}-for-{b['ab']} in {b.get('pa', b['ab'])} PA"
             + (f", {b['rbi']} RBI" if b.get("rbi") else "")
             + (f", {b['r']} R" if b.get("r") else "")
             + (f", {b['bb']} BB" if b.get("bb") else "")
+            + (f", {b['hbp']} HBP" if b.get("hbp") else "")
             for b in got_on))
 
     sb, cs = data.get("sb_count") or 0, data.get("cs_count") or 0
@@ -473,7 +479,8 @@ def _recap_facts(data, us) -> str:
         who = ", ".join(
             f"{s['name']} ({s['sb']} SB" + (f", {s['cs']} CS" if s.get("cs") else "") + ")"
             for s in (data.get("stealers") or []) if s.get("sb") or s.get("cs"))
-        lines.append(f"Baserunning: {sb} stolen bases, {cs} caught stealing"
+        lines.append(f"Baserunning: {sb} stolen base{'' if sb == 1 else 's'}, "
+                     f"{cs} caught stealing"
                      + (f" — {who}" if who else "") + ".")
 
     tf = data.get("team_fielding") or {}
@@ -482,12 +489,21 @@ def _recap_facts(data, us) -> str:
                      + (f", {tf.get('total_chances')} total chances" if tf.get("total_chances") else "")
                      + ".")
 
-    # `fielding_plays` is {"balls_in_play": n, "by_fielder": [(name, count), …]}.
+    # `fielding_plays` is {"balls_in_play": n, "by_fielder": [(name, count), …]}
+    # and counts where balls were HIT, from play-by-play — which is not the
+    # same as chances fielded. Handing both over unlabelled produced "fielded
+    # 4 balls put in play between left and right field, recording his only
+    # total chance cleanly": one player, two incompatible numbers, welded into
+    # a sentence. The distinction has to be stated, not implied.
     plays = data.get("fielding_plays") or {}
     by_fielder = plays.get("by_fielder") or []
     if by_fielder:
         lines.append(
-            f"Balls in play against the defence: {plays.get('balls_in_play')} — "
+            f"Where batted balls were hit ({plays.get('balls_in_play')} balls in play). "
+            "This is direction off the bat, NOT chances fielded — a ball hit "
+            "toward a fielder is not necessarily a chance charged to them, and "
+            "these counts will not match the TC figures above. Never add them "
+            "together or describe one as the other: "
             + ", ".join(f"{name} {n}" for name, n in by_fielder[:6]))
 
     if not lines:
@@ -899,8 +915,17 @@ def generate_focus_areas(client, system, data) -> list:
                       for b in data["batting_stats"]) or "No batting data recorded."
     pitchers = "; ".join(f"{p['name']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
                           for p in data["pitching_stats"]) or "No pitching data recorded."
-    errs = "; ".join(f"{f['name']} ({f['position']}): {f['e']} E / {f['tc']} TC"
+    # No position here: single-game fielding_stats carries `listed_position`,
+    # one label for the whole game, and a player's error did not necessarily
+    # happen there (DS-108). Reading `position` also raised KeyError after the
+    # rename, which emptied this whole section — the header rendered with
+    # nothing under it, because a failed section degrades to [].
+    errs = "; ".join(f"{f['name']}: {f['e']} E / {f['tc']} TC"
                       for f in data["fielding_stats"] if f["e"] > 0) or "no charged errors"
+    # Where the errors actually happened, when play-by-play recorded it.
+    err_where = "; ".join(
+        f"{e['fielder']}" + (f" in the {_ordinal(e['inning'])}" if e.get("inning") else "")
+        for e in (data.get("error_plays") or []))
     g = data["game"]
     text = _single_game_call(client, system, f"""Generate exactly 3 ranked "Before Next Practice"
 focus areas based on this game's data. Each needs a short title, a 1-2 sentence rationale grounded in
@@ -910,6 +935,7 @@ Final: {g.get('result')} ({g.get('team_runs')}-{g.get('opponent_runs')}).
 Batting lines: {bats}
 Pitching lines: {pitchers}
 Fielding errors: {errs}
+{("Where those errors happened: " + err_where) if err_where else ""}
 
 Every rationale must cite only numbers or events shown above — do not invent a stat, a run total, or
 an in-game sequence (e.g. a "rally") that isn't directly supported by this data.
