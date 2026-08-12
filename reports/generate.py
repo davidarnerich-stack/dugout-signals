@@ -461,9 +461,12 @@ def _recap_facts(data, us) -> str:
 
     sb, cs = data.get("sb_count") or 0, data.get("cs_count") or 0
     if sb or cs:
-        who = ", ".join(data.get("stealers") or [])
+        # `stealers` is a list of {name, sb, cs} dicts, not names.
+        who = ", ".join(
+            f"{s['name']} ({s['sb']} SB" + (f", {s['cs']} CS" if s.get("cs") else "") + ")"
+            for s in (data.get("stealers") or []) if s.get("sb") or s.get("cs"))
         lines.append(f"Baserunning: {sb} stolen bases, {cs} caught stealing"
-                     + (f" ({who})" if who else "") + ".")
+                     + (f" — {who}" if who else "") + ".")
 
     tf = data.get("team_fielding") or {}
     if us.get("e"):
@@ -471,9 +474,13 @@ def _recap_facts(data, us) -> str:
                      + (f", {tf.get('total_chances')} total chances" if tf.get("total_chances") else "")
                      + ".")
 
-    plays = data.get("fielding_plays")
-    if plays:
-        lines.append("Notable fielding plays: " + "; ".join(plays[:6]))
+    # `fielding_plays` is {"balls_in_play": n, "by_fielder": [(name, count), …]}.
+    plays = data.get("fielding_plays") or {}
+    by_fielder = plays.get("by_fielder") or []
+    if by_fielder:
+        lines.append(
+            f"Balls in play against the defence: {plays.get('balls_in_play')} — "
+            + ", ".join(f"{name} {n}" for name, n in by_fielder[:6]))
 
     if not lines:
         return ""
@@ -700,11 +707,18 @@ def _fielding_facts(data, us) -> str:
     # Who caught, and for how long. innings_as_catcher is real data, unlike
     # the single position label — so this is the one defensible statement
     # about where a player was standing.
-    catchers = [f for f in data["fielding_stats"] if (f.get("innings_caught") or 0) > 0]
+    # innings_as_catcher arrives as a string ("2.1", and "0.0" for nobody), so
+    # it needs parsing before comparison — "0.0" is truthy.
+    def _innings(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+    catchers = [f for f in data["fielding_stats"] if _innings(f.get("innings_caught")) > 0]
     if catchers:
         lines.append("Behind the plate: " + "; ".join(
             f"{f['name']} {f['innings_caught']} innings caught"
-            + (f", {f['pb']} passed balls" if f.get("pb") else "")
+            + (f", {_plural(f['pb'], 'passed ball')}" if f.get("pb") else "")
             for f in catchers))
 
     # Where each error happened — from play-by-play, which states it outright
