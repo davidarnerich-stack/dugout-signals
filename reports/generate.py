@@ -232,6 +232,12 @@ scorebook does not record something, that a fuller picture would require more in
 a conclusion is limited by the data — no sentence should begin "Without additional data on…". The
 coach knows what they uploaded; naming the gap tells them nothing and reads as an apology. Write
 what the supplied data does show, and stop there.
+A pitching line does not tell you an inning was clean. Earned runs exclude runs that scored on
+errors, so 0 ER is entirely compatible with runs crossing the plate — read runs allowed (R) for
+that. Likewise, strikeouts do not mean nobody reached: a pitcher can strike out three in an inning
+having faced six batters. Never describe a pitcher as retiring the side "in order", going "1-2-3",
+or throwing a "clean", "perfect" or "spotless" inning unless the data you were given says every
+batter faced was retired. Where a line reports how many batters reached and how, use that.
 When you cite a rate stat, name the window it covers in the same sentence ("over the last 3 games",
 not "recently" or "in the recent stretch"). When you describe something changing, give both the
 starting and ending values, so the reader can judge the size of the change for themselves.
@@ -445,8 +451,10 @@ def _recap_facts(data, us) -> str:
             f"{p['name']}"
             + (f" ({p['innings_label']} inning{'s' if len(p.get('appeared_in_innings') or []) > 1 else ''})"
                if p.get("innings_label") else "")
-            + f" {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
+            + f" {p['ip']} IP, {p['h']} H, {p['r']} R, {p['er']} ER, "
+              f"{p['k']} K, {p['bb']} BB"
             + (f", {p['hbp']} HBP" if p.get("hbp") else "")
+            + (f" — {_reached_base_note(p)}" if _reached_base_note(p) else "")
             for p in pit))
 
     bats = data.get("batting_stats") or []
@@ -593,6 +601,36 @@ def _season_context_block(data: dict, card_key: str, labels: dict) -> str:
             "rather than manufacturing a trend.")
 
 
+def _reached_base_note(p: dict) -> str:
+    """
+    How many batters reached against this pitcher, and how — stated, not left
+    to be worked out.
+
+    Batters faced minus outs recorded is how many reached; hits, walks and hit
+    batters account for some of them, and whatever is left over reached on an
+    error. A pitcher can therefore post 3 K in a 1-inning outing having faced
+    six men, which is not "the side in order" however much the line looks
+    like it. That inference was made on 2026-08-11 and was wrong.
+
+    Returns "" when batters_faced is missing, rather than guessing.
+    """
+    from metrics.compute import parse_innings_to_outs
+    bf = p.get("bf") or 0
+    outs = parse_innings_to_outs(p.get("ip")) or 0
+    if not bf or not outs:
+        return ""
+    reached = bf - outs
+    if reached <= 0:
+        return f"faced {bf} — retired every batter"
+    accounted = (p.get("h") or 0) + (p.get("bb") or 0) + (p.get("hbp") or 0)
+    note = f"faced {bf} for {outs} outs, so {reached} reached base"
+    if reached > accounted:
+        on_error = reached - accounted
+        note += (f" — {on_error} of them on an error"
+                 if accounted else f", all {reached} on errors")
+    return note
+
+
 def _pitcher_line(p: dict) -> str:
     """One pitcher's line for the prompt (DS-103).
 
@@ -601,12 +639,18 @@ def _pitcher_line(p: dict) -> str:
     printing "n/a" — is deliberate: an absent figure cannot be misread as a
     measurement, and the prompt forbids claims about anything not listed.
     """
-    parts = [f"{p['ip']} IP", f"{p['k']} K", f"{p['bb']} BB",
-             f"{p['er']} ER", f"{p['era']} ERA"]
+    # Runs allowed, not just EARNED runs. A pitcher backed by three errors
+    # shows 0 ER while a run scores, and "0 ER" alone reads as a clean inning
+    # — which is how a frame with three men reaching became "struck out the
+    # side in order" in the 2026-08-11 report.
+    parts = [f"{p['ip']} IP", f"{p['h']} H", f"{p['r']} R",
+             f"{p['er']} ER", f"{p['k']} K", f"{p['bb']} BB",
+             f"{p['era']} ERA"]
     if p.get("hbp"):
         parts.append(f"{p['hbp']} hit batters")
-    if p.get("bf"):
-        parts.append(f"{p['bf']} batters faced")
+    reached = _reached_base_note(p)
+    if reached:
+        parts.append(reached)
     optional = [
         ("strike_pct", "{} % strikes"),
         ("fps_pct",    "{} % first-pitch strikes"),
