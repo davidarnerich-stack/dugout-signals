@@ -178,11 +178,14 @@ Note what this says about team speed/aggressiveness, and any coaching comment on
 
 
 def generate_priority_areas(client, data: dict) -> str:
-    errors_by_pos = {}
+    # By player, not by position. A player's stored position is one label for a
+    # whole game, and players move; attributing an error to it invents a fact
+    # the data does not hold (see reports/data.py fielding_stats).
+    errors_by_player = {}
     for f in data["fielding_stats"]:
-        pos = f["position"]
-        errors_by_pos[pos] = errors_by_pos.get(pos, 0) + f["e"]
-    top_pos_errors = sorted(errors_by_pos.items(), key=lambda x: x[1], reverse=True)[:3]
+        if f["e"]:
+            errors_by_player[f["name"]] = errors_by_player.get(f["name"], 0) + f["e"]
+    top_pos_errors = sorted(errors_by_player.items(), key=lambda x: x[1], reverse=True)[:3]
 
     below_hitters = [b["name"] for b in data["batting_stats"] if b.get("trend") == "↓ Below"]
     pit_summary = "; ".join(f"{p['name']}: {p['era']} ERA, {p['whip']} WHIP" for p in data["pitching_stats"])
@@ -224,6 +227,11 @@ not any individual on the roster — a player's actual age is not something you 
 Every figure you cite must appear verbatim in the data supplied with the request. Do not compute,
 sum, average or estimate anything, and do not describe a category of evidence you were not given —
 if swing-and-miss, command or contact quality is not listed, you do not know it.
+Never remark on what the data does not contain. Do not write that detail is unavailable, that the
+scorebook does not record something, that a fuller picture would require more information, or that
+a conclusion is limited by the data — no sentence should begin "Without additional data on…". The
+coach knows what they uploaded; naming the gap tells them nothing and reads as an apology. Write
+what the supplied data does show, and stop there.
 When you cite a rate stat, name the window it covers in the same sentence ("over the last 3 games",
 not "recently" or "in the recent stretch"). When you describe something changing, give both the
 starting and ending values, so the reader can judge the size of the change for themselves.
@@ -303,11 +311,32 @@ def _line_score_note(data, opp, us) -> str:
         running.append(f"after the {_ordinal(label)}: "
                        f"{us['short']} {us_run}, {opp['short']} {opp_run}")
 
+    # Who bats first decides who "answered" whom, and it was never stated.
+    # On the 2026-08-11 report the model had us score first in the 3rd and the
+    # opponent reply — the reverse of what happened, since we were at home —
+    # and the sentence contradicted itself twice over ("pull within 2-1 …
+    # restore their two-run cushion at 2-1"). Sequence within an inning is a
+    # fact we hold; handing it over costs nothing.
+    is_away = data["game"].get("is_away")
+    if is_away is None:
+        order = ""
+    elif is_away:
+        order = (f"{us['label']} batted in the TOP of each inning (away) and "
+                 f"{opp['label']} in the bottom, so within any inning "
+                 f"{us['label']} scored first and {opp['label']} answered.\n")
+    else:
+        order = (f"{opp['label']} batted in the TOP of each inning and "
+                 f"{us['label']} in the bottom (home), so within any inning "
+                 f"{opp['label']} scored first and {us['label']} answered.\n")
+
     return (f"Inning-by-inning ({', '.join(innings)}): "
             f"{us['short']} {us['cells']}, {opp['short']} {opp['cells']}.\n"
+            + order +
             f"Running score — {'; '.join(running)}.\n"
             "These running totals are already computed. Use them exactly as given for any "
-            "statement about the score at a point in the game; do not add up innings yourself.")
+            "statement about the score at a point in the game; do not add up innings yourself. "
+            "When both teams score in the same inning, respect the batting order above before "
+            "writing that either side 'answered' or 'responded'.")
 
 
 def _game_facts_note(data, opp, us) -> str:
@@ -395,6 +424,63 @@ the game and final score. This is the reader's first narrative context, right af
 """)
 
 
+def _recap_facts(data, us) -> str:
+    """
+    The concrete detail "How It Happened" needs to name names.
+
+    It used to receive the final score, the line score and nothing else, so it
+    could only narrate the shape of the scoreboard — no players, no strikeouts,
+    no steals. Every fact below is already computed elsewhere in the report;
+    the recap simply never got handed any of it.
+
+    Only counting stats and figures that are recorded. Nothing here invites a
+    claim about who was on base or which position a play happened at, because
+    neither is in the data.
+    """
+    lines = []
+
+    pit = data.get("pitching_stats") or []
+    if pit:
+        lines.append("Pitchers, in the order they appeared: " + "; ".join(
+            f"{p['name']}"
+            + (f" ({p['innings_label']} inning{'s' if len(p.get('appeared_in_innings') or []) > 1 else ''})"
+               if p.get("innings_label") else "")
+            + f" {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
+            + (f", {p['hbp']} HBP" if p.get("hbp") else "")
+            for p in pit))
+
+    bats = data.get("batting_stats") or []
+    got_on = [b for b in bats if (b.get("h") or 0) or (b.get("rbi") or 0) or (b.get("bb") or 0)]
+    if got_on:
+        lines.append("Batters who reached or drove in a run: " + "; ".join(
+            f"{b['name']} {b['h']}-for-{b['ab']}"
+            + (f", {b['rbi']} RBI" if b.get("rbi") else "")
+            + (f", {b['r']} R" if b.get("r") else "")
+            + (f", {b['bb']} BB" if b.get("bb") else "")
+            for b in got_on))
+
+    sb, cs = data.get("sb_count") or 0, data.get("cs_count") or 0
+    if sb or cs:
+        who = ", ".join(data.get("stealers") or [])
+        lines.append(f"Baserunning: {sb} stolen bases, {cs} caught stealing"
+                     + (f" ({who})" if who else "") + ".")
+
+    tf = data.get("team_fielding") or {}
+    if us.get("e"):
+        lines.append(f"Defence: {us['e']} errors"
+                     + (f", {tf.get('total_chances')} total chances" if tf.get("total_chances") else "")
+                     + ".")
+
+    plays = data.get("fielding_plays")
+    if plays:
+        lines.append("Notable fielding plays: " + "; ".join(plays[:6]))
+
+    if not lines:
+        return ""
+    return ("\nDetail you may draw on — use players' names where they add to the story, and cite "
+            "only what appears here:\n" + "\n".join(lines) + "\n")
+
+
 def generate_how_it_happened(client, system, data, opp, us) -> list:
     line_note = _line_score_note(data, opp, us)
     pbp_note = "" if data["has_pbp"] else ("\nPlay-by-play was not uploaded for this game — you only "
@@ -410,7 +496,12 @@ bullet list.
 
 Final: {us['label']} {us['r']} – {opp['r']} {opp['label']} ({data['game']['result']}).
 {line_note}
+{_recap_facts(data, us)}
 {_season_context_note(data['game_number_in_season'])}{pbp_note}
+
+Name the players involved rather than describing the team in the abstract — who pitched each
+stretch, who drove in the runs, who was on the move. Keep it tight: concrete beats comprehensive,
+and a paragraph naming two players well is better than one listing six.
 
 Return exactly 3 paragraphs separated by a blank line, in order: Early, Middle, Late. No headers,
 no labels — just the 3 paragraphs.
@@ -505,6 +596,10 @@ def _pitcher_line(p: dict) -> str:
     """
     parts = [f"{p['ip']} IP", f"{p['k']} K", f"{p['bb']} BB",
              f"{p['er']} ER", f"{p['era']} ERA"]
+    if p.get("hbp"):
+        parts.append(f"{p['hbp']} hit batters")
+    if p.get("bf"):
+        parts.append(f"{p['bf']} batters faced")
     optional = [
         ("strike_pct", "{} % strikes"),
         ("fps_pct",    "{} % first-pitch strikes"),
@@ -517,7 +612,17 @@ def _pitcher_line(p: dict) -> str:
         val = p.get(key)
         if val is not None:
             parts.append(fmt.format(val))
-    return f"{p['name']} #{p['number']}: " + ", ".join(parts)
+    # The innings each pitcher actually worked, in the order they appeared —
+    # derived from play-by-play, not guessed from the size of the outing.
+    # Without it the narrative invents a sequence: on 2026-08-11 it had the
+    # third pitcher closing a game he opened the middle of.
+    where = ""
+    if p.get("innings_label"):
+        where = f" [worked the {p['innings_label']} inning"
+        where += "s]" if len(p.get("appeared_in_innings") or []) > 1 else "]"
+    elif p.get("gs"):
+        where = " [started]"
+    return f"{p['name']} #{p['number']}{where}: " + ", ".join(parts)
 
 
 def generate_pitching(client, system, data) -> str:
@@ -529,8 +634,13 @@ If there's enough to cover (multiple pitchers, contrasting outings), split it in
 paragraphs separated by a blank line rather than one dense block — a single short paragraph is fine
 when there isn't much to say.
 
-Pitching lines:
+Pitching lines, listed IN THE ORDER THEY APPEARED:
 {pitchers}
+
+Write about them in that order. Where a pitcher's line says which innings they worked, use it —
+that is the record of the game. Where it does not, say nothing about when they entered or left:
+do NOT infer the sequence from how many innings each one threw, and do not describe anyone as
+starting, entering or closing unless the line says so.
 
 Beyond the raw line, each pitcher may carry command and contact-quality figures. Lead with whichever
 one or two actually characterise the outing — a high swing-and-miss rate, a low first-pitch-strike
@@ -585,7 +695,36 @@ def _fielding_facts(data, us) -> str:
     handled = [f for f in data["fielding_stats"] if (f.get("tc") or 0) > 0]
     if handled:
         lines.append("By player: " + "; ".join(
-            f"{f['name']} ({f['position']}) {f['tc']} TC, {f['e']} E" for f in handled))
+            f"{f['name']} {f['tc']} TC, {f['e']} E" for f in handled))
+
+    # Who caught, and for how long. innings_as_catcher is real data, unlike
+    # the single position label — so this is the one defensible statement
+    # about where a player was standing.
+    catchers = [f for f in data["fielding_stats"] if (f.get("innings_caught") or 0) > 0]
+    if catchers:
+        lines.append("Behind the plate: " + "; ".join(
+            f"{f['name']} {f['innings_caught']} innings caught"
+            + (f", {f['pb']} passed balls" if f.get("pb") else "")
+            for f in catchers))
+
+    # Where each error happened — from play-by-play, which states it outright
+    # ("reaches on an error by pitcher A Arnerich"). The stats CSV cannot say,
+    # so before this the position came from a player's single game-long label
+    # and a pitcher's error was reported "at catcher".
+    errs = data.get("error_plays")
+    if errs:
+        lines.append("Errors, with the position each occurred at: " + "; ".join(
+            f"{e['fielder']}" + (f" ({e['position']})" if e["position"] not in (e["fielder"] or "") else "")
+            + (f", {_ordinal(e['inning'])} inning" if e.get("inning") else "")
+            for e in errs))
+
+    # Totals still cannot be split by position: GameChanger gives innings by
+    # position, never chances by position, and players move during a game.
+    lines.append(
+        "Do NOT state the position at which a chance or putout occurred — that "
+        "is not recorded, and a player's listed position covers the whole game. "
+        "Positions may be given ONLY for the errors listed above and for who "
+        "caught; everywhere else, name the player without a position.")
 
     plays = data.get("fielding_plays")
     if plays:

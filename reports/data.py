@@ -504,6 +504,59 @@ def _team_batting_line(sb, game_ids: list) -> dict:
     return {"avg": _fmt_avg(avg), "obp": _fmt_avg(obp), "ops": _fmt_avg(round(obp + slg, 3)), "games": len(game_ids)}
 
 
+def _order_pitchers(sb, game_id, pitching_stats):
+    """
+    Put pitchers in the order they actually appeared, and record the innings
+    each one worked.
+
+    They used to be sorted by innings pitched, descending. That is not an
+    order at all, and the narrative read it as one — on the 2026-08-11 report
+    it had the third pitcher "closing out the game" when he in fact worked the
+    3rd, and the second "entering in the 3rd" when he finished. Nobody had
+    told the model the sequence, so it inferred one from the list it was given.
+
+    The play-by-play knows: every plate appearance carries the inning and the
+    pitcher who threw it. Where there is no play-by-play we fall back to the
+    starter first, then innings descending — and say nothing about sequence,
+    because we do not know it.
+    """
+    pa_rows = (sb.table("plate_appearances")
+               .select("inning, half_inning, pa_sequence, pitcher_player_id")
+               .eq("game_id", game_id).order("pa_sequence").execute().data or [])
+
+    first_seen, innings_for = {}, {}
+    for r in pa_rows:
+        pid = r.get("pitcher_player_id")
+        if not pid:
+            continue                      # opponent's pitcher, or unparsed
+        first_seen.setdefault(pid, r.get("pa_sequence") or 0)
+        innings_for.setdefault(pid, set()).add(r.get("inning"))
+
+    for p in pitching_stats:
+        inns = sorted(i for i in innings_for.get(p["player_id"], set()) if i)
+        p["appeared_in_innings"] = inns          # [] when unknown
+        p["innings_label"] = (
+            f"{_ordinal_int(inns[0])}" if len(inns) == 1 else
+            f"{_ordinal_int(inns[0])}–{_ordinal_int(inns[-1])}" if inns else ""
+        )
+
+    if first_seen:
+        pitching_stats.sort(key=lambda x: first_seen.get(x["player_id"], 10**6))
+    else:
+        from metrics.compute import parse_innings_to_outs
+        pitching_stats.sort(
+            key=lambda x: (0 if x.get("gs") else 1,
+                           -(parse_innings_to_outs(x["ip"]) or 0)))
+
+
+def _ordinal_int(n) -> str:
+    if not n:
+        return ""
+    n = int(n)
+    suf = "th" if 10 <= n % 100 <= 20 else {1:"st",2:"nd",3:"rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
 def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict:
     """
     Return a complete data payload for one game — header block (structured,
@@ -574,6 +627,9 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             "player_id": row["player_id"], "number": number, "name": name,
             "ip": ip, "h": h, "r": row.get("runs_allowed") or 0, "er": er,
             "bb": bb, "k": row.get("strikeouts") or 0, "era": era, "whip": whip,
+            "gs": row.get("games_started") or 0,
+            "hbp": row.get("hit_batters") or 0,
+            "bf":  row.get("batters_faced") or 0,
             # DS-103: command and contact quality. These were captured on
             # upload but never reached the report, which is why a narrative
             # once asserted a pitcher "was generating whiffs" with nothing
@@ -586,8 +642,17 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             "hhb_pct":    row.get("hhb_pct"),      # batted balls hit hard
             "p_per_ip":   row.get("p_per_ip"),     # pitch efficiency
         })
-    pitching_stats.sort(key=lambda x: -(parse_innings_to_outs(x["ip"]) or 0))
+    _order_pitchers(sb, game_id, pitching_stats)
 
+    # `position` is one label per player per game, but players move around —
+    # on 2026-08-11 the catcher's label sat on a player who also played third,
+    # and a pitcher's error was reported "at catcher". GameChanger gives
+    # innings by position, never chances or errors by position, so which
+    # position a given putout or error happened at is simply not in the data.
+    #
+    # So the label is carried as `listed_position` — usable for "who caught"
+    # (innings_as_catcher is real) but never for attributing a play. The
+    # prompt is told not to place a chance or an error at a position.
     fielding_stats = []
     for row in fld_rows:
         name, number = name_of(row["player_id"])
@@ -595,7 +660,9 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         fpct = round((tc - e) / tc, 3) if tc else 1.0
         fielding_stats.append({
             "player_id": row["player_id"], "number": number, "name": name,
-            "position": row.get("position") or "—", "tc": tc, "e": e,
+            "listed_position": row.get("position") or "—",
+            "innings_caught": row.get("innings_as_catcher") or 0,
+            "tc": tc, "e": e,
             "fpct": _fmt_avg(fpct), "pb": row.get("passed_balls") or 0,
             "sb_allowed": row.get("stolen_bases_allowed") or 0,
         })
@@ -790,6 +857,37 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
                 "by_fielder": sorted(by_fielder.items(), key=lambda kv: -kv[1]),
             }
 
+    # Where each error actually happened.
+    #
+    # The stats CSV cannot say — it gives a player one position label for the
+    # whole game and an error count, so a pitcher's error got reported at
+    # whatever position the label held (on 2026-08-11, "at catcher"). The
+    # play-by-play states it outright: "reaches on an error by pitcher
+    # A Arnerich". hit_location is null on these rows, which is why the
+    # existing by-fielder pass misses them entirely.
+    error_plays = None
+    if has_pbp:
+        err_pas = (
+            sb.table("plate_appearances")
+            .select("narrative,inning")
+            .eq("game_id", game_id).eq("batting_team", "opponent")
+            .ilike("narrative", "%error by%")
+            .execute()
+        ).data or []
+        found = []
+        for pa in err_pas:
+            for pos, who in re.findall(
+                    r"error by ([a-z][a-z ]*?) ([A-Z][\w.'-]*(?:\s+[\w.'-]+)*?)"
+                    r"(?=,|\.|\s+on the same|\s*$)", pa.get("narrative") or ""):
+                # The name class allows a period so initials like "J." survive;
+                # strip sentence punctuation so "DeFlorio." doesn't reach the
+                # roster lookup and fail to match.
+                who = who.strip(" .,;")
+                who = _resolve_fielder_name(f"{pos} {who}", pid_to_player.values()) or who
+                found.append({"position": pos.strip(), "fielder": who,
+                              "inning": pa.get("inning")})
+        error_plays = found or None
+
     # ── Signal cards as season context (DS-102) ─────────────────────────
     # The same cards the dashboard shows, keyed so a section can pick up the
     # one that matches it — `fielding_conversion` for Fielding, `pitching`
@@ -832,6 +930,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "stealers": stealers,
         "team_fielding": team_fielding,
         "fielding_plays": fielding_plays,
+        "error_plays": error_plays,
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,
