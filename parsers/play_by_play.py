@@ -274,10 +274,18 @@ def _parse_gc(paras, is_away: bool):
             else:
                 narrative_lines.append(line)
 
-        batter=None
+        # Opposing batters appear as "#13 hits a ground ball…" — a number, not
+        # a name. Storing "Unknown" satisfied the old NOT NULL while asserting
+        # something false, and the same fallback let a failed parse of OUR
+        # batter reach a report looking like a player. Keep the number in a
+        # column that says number; leave the name genuinely absent.
+        batter=None; batter_number=None
         for line in narrative_lines:
-            m=BATTER_RE.match(line.strip())
+            line=line.strip()
+            m=BATTER_RE.match(line)
             if m: batter=m.group(1).strip(); break
+            mn=re.match(r"#(\d+)\s", line)
+            if mn: batter_number=mn.group(1); break
 
         outs_rec=RESULT_META.get(result_type,(0,False,False))[0]
         if outs_rec==1 and "double play" in all_text.lower(): outs_rec=2
@@ -285,6 +293,7 @@ def _parse_gc(paras, is_away: bool):
         pas.append({
             "inning":inning,"half_inning":half,"pa_sequence":pa_sequence,
             "batting_team":batting_team,"batter_name":batter,
+            "batter_number":batter_number,
             "pitcher_name":pitcher,"pitcher_number":pitcher_number,
             "outs_before":min(outs,2),
             "score_our_before":score_storm,"score_opp_before":score_opp,
