@@ -501,18 +501,17 @@ def _base_running_events(block_text, pa_id, game_id, player_map, pa_result=None)
         ev(m.group(1), outcome="scored" if base=="home" else "advanced",
            reason="steal",
            from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base),
-           to_base=bn(m.group(2)), scored=base=="home",
+           to_base=bn(m.group(2)),
            how="steal of home" if base=="home" else "steal", fielder=None)
 
     # An out is not a base: `outcome` carries that, so `to_base` stays NULL.
     for m in CS_RE.finditer(block_text):
-        ev(m.group(1), outcome="out", reason="steal", from_base=None, to_base=None,
-           scored=False, how="caught stealing",
+        ev(m.group(1), outcome="out", reason="steal", from_base=None, to_base=None, how="caught stealing",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
     for m in PICKOFF_RE.finditer(block_text):
         ev(m.group(1), outcome="out", reason="pickoff", from_base=bn(m.group(2)),
-           to_base=None, scored=False, how="picked off",
+           to_base=None, how="picked off",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
     # A pickoff attempt names no runner and nothing happens to one — but it
@@ -524,7 +523,7 @@ def _base_running_events(block_text, pa_id, game_id, player_map, pa_result=None)
             "runner_number":None,"player_id":None,
             "outcome":"held","reason":"pickoff",
             "from_base":base,"to_base":base,
-            "scored":False,"how":"pickoff attempt","fielder":None})
+            "how":"pickoff attempt","fielder":None})
 
     # Advances and runs, walked together in DOCUMENT order so "on the same
     # pitch" can inherit the cause stated before it.
@@ -555,11 +554,11 @@ def _base_running_events(block_text, pa_id, game_id, player_map, pa_result=None)
             prior=reason
         if kind=="advanced":
             ev(m.group(1), outcome="advanced", reason=reason,
-               from_base=None, to_base=bn(m.group(2)), scored=False,
+               from_base=None, to_base=bn(m.group(2)),
                how=cause.lower() or None, fielder=None)
         else:
             ev(m.group(1), outcome="scored", reason=reason,
-               from_base="3b", to_base="home", scored=True,
+               from_base="3b", to_base="home",
                how=cause.lower() or None, fielder=None)
 
     # A runner who did not move. Not the absence of an event — a positive
@@ -568,7 +567,7 @@ def _base_running_events(block_text, pa_id, game_id, player_map, pa_result=None)
     for m in HELD_RE.finditer(block_text):
         base=bn(m.group(2))
         ev(m.group(1), outcome="held", reason="unknown",
-           from_base=base, to_base=base, scored=False,
+           from_base=base, to_base=base,
            how="remains at "+m.group(2).lower(), fielder=None)
 
     return events
