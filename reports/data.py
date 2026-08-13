@@ -885,8 +885,19 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         ).data or []
         surnames = {(p.get("last_name") or "").lower(): p for p in pid_to_player.values()}
 
-        def _clean_batter(name):
+        def _clean_batter(name, narrative=""):
             n = (name or "").strip()
+            # The parser stores "Unknown" when a result phrasing it does not
+            # recognise swallows the name (DS-114) — "R Yamada-Harivandi is out
+            # on foul tip". The name is right there at the start of the
+            # narrative, so recover it rather than printing "Unknown" into a
+            # coach's recap. Two of the eight games contain one.
+            if not n or n == "Unknown":
+                m = re.match(r"([A-Z][\w.'-]*(?:\s+[\w.'-]+)*?)\s+(?:is|was|hits|"
+                             r"singles|doubles|triples|walks|strikes|grounds|flies|"
+                             r"pops|lines|reaches|steals|picked|caught|out|"
+                             r"advances|scores|homers|bunts)\b", narrative or "")
+                n = m.group(1).strip() if m else n
             for tail in (" is", " was"):
                 if n.endswith(tail):
                     n = n[: -len(tail)].strip()
@@ -901,7 +912,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             scored = re.findall(r"([A-Z][\w.'-]*(?:\s+[\w.'-]+)*?)\s+scores",
                                 pa.get("narrative") or "")
             by_inning.setdefault(pa["inning"], []).append({
-                "batter": _clean_batter(pa.get("batter_name")),
+                "batter": _clean_batter(pa.get("batter_name"), pa.get("narrative")),
                 "result": pa.get("result"),
                 "scored": [_clean_batter(s) for s in scored],
             })
