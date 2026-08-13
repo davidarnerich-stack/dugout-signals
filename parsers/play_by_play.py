@@ -41,7 +41,10 @@ BASE_NAMES = {"1st":"1b","2nd":"2b","3rd":"3b","home":"home"}
 # events across the season belonged to Yamada-Harivandi and Mendez-Palos and
 # were attributed to nobody. Requiring capitals also keeps a bare jersey number
 # out of a name column, which is what runner_number is now for.
-RUNNER = r"[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*){0,3}"
+# Tokens are separated by spaces or tabs, never a newline: \s+ would let a
+# name run off the end of its line and swallow the first word of the next
+# ("M Barragan.\nHalf-inning"). A name does not span lines.
+RUNNER = r"[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*(?:[ \t]+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*){0,3}"
 
 # "Top 3rd - Hilighters batting".
 #
@@ -56,6 +59,19 @@ RUNNER = r"[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*)
 # that was worth keeping.
 INNING_RE = re.compile(
     r"^(TOP|BOTTOM)\s+(\d+)(?:ST|ND|RD|TH)?\s*[-–—]\s*(.+?)(?:\s+batting)?$", re.I)
+
+
+# The fielder credited on a pickoff or caught stealing.
+#
+# Both patterns used to accept only "catcher" or "pitcher" and to require a
+# name after it. Neither holds. GameChanger writes "third baseman M Barragan",
+# "shortstop J Carter", "catcher #5", and — twice in PSW's own games —
+# "third baseman" with no name at all. Every one of those was dropped in
+# silence, taking the whole event with it, not just the fielder's name
+# (DS-112).
+POSITION = (r"(?:pitcher|catcher|shortstop"
+            r"|(?:first|second|third)\s+baseman"
+            r"|(?:left|right|cent(?:er|re)|short)\s+fielder)")
 
 
 def _resolve_runner(raw, player_map):
@@ -354,13 +370,19 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
            from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base), to_base=bn(m.group(2)),
            scored=base=="home", how="stolen_base", fielder=None)
 
-    for m in re.finditer(rf"{who}\s+caught stealing\s+(\w+),?\s*catcher\s+({RUNNER})",block_text):
-        ev(m.group(1), event_type="caught_stealing", from_base=None, to_base="out",
-           scored=False, how="caught_stealing", fielder=m.group(3).strip())
+    # The fielder is optional in both. An event that happened is worth
+    # recording even when we cannot say who made the play.
+    fielder = rf"(?:,?\s*({POSITION}(?:\s+(?:#\d+|{RUNNER}))?))?"
 
-    for m in re.finditer(rf"{who}\s+picked off at\s+(\w+),?\s*(?:catcher|pitcher)\s+({RUNNER})",block_text):
+    for m in re.finditer(rf"{who}\s+caught stealing\s+(\w+){fielder}",block_text):
+        ev(m.group(1), event_type="caught_stealing", from_base=None, to_base="out",
+           scored=False, how="caught_stealing",
+           fielder=(m.group(3) or "").strip().rstrip(".,") or None)
+
+    for m in re.finditer(rf"{who}\s+picked off at\s+(\w+){fielder}",block_text):
         ev(m.group(1), event_type="pickoff_out", from_base=bn(m.group(2)), to_base="out",
-           scored=False, how="pickoff", fielder=m.group(3).strip())
+           scored=False, how="pickoff",
+           fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
     # A pickoff attempt names no runner at all. That is a fact about the play,
     # not a parse failure — so the name is NULL rather than the word "unknown".

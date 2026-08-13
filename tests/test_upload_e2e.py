@@ -26,6 +26,8 @@ from conftest import upload, detect, game_files
 GAME_1 = "01_Game"      # 2026-07-15, home, 12 batters, Daniel Garrett unnumbered
 GAME_2 = "02_Game"      # 2026-07-18, away, McClung bats 5th with no number
 GAME_3 = "03_Game"      # 2026-07-23, McClung again, still no number in the CSV
+GAME_4 = "04_Game"      # 2026-07-25, a pickoff and a caught stealing, neither
+                        # credited to a catcher — "third baseman", "pitcher"
 GAME_5 = "05_Game"      # 2026-07-29, home, "17,,Tristan" — no surname
 GAME_9 = "09_Game"      # 2026-08-11, home, 3 errors in one inning
 
@@ -308,6 +310,44 @@ def test_base_running_keeps_hyphenated_names_whole(client, sb, clean_team):
     assert not [e for e in named if e["runner_name"].isdigit()], \
         "runner_name is holding a jersey number again"
     assert not [e for e in named if e["runner_name"].lower() == "unknown"]
+
+
+def test_pickoff_and_caught_stealing_survive_any_fielder(client, sb, clean_team):
+    """
+    Both patterns hard-coded the fielder as "catcher" or "pitcher" and required
+    a name after it. GameChanger writes "third baseman M Barragan", "shortstop
+    J Carter", "catcher #5", and — twice in PSW's own games — "third baseman"
+    with no name at all.
+
+    The cost was not a missing fielder name. The whole event was dropped: five
+    pickoffs and caught stealings across the season simply did not exist. Found
+    while verifying the DS-112 re-upload, when PSW had zero pickoff events and
+    the play-by-play plainly contained two.
+    """
+    upload(client, GAME_4, pbp=True)
+    game = only_game(sb, clean_team["id"])
+    events = rows(sb, "base_running_events", game["game_id"])
+
+    kinds = [e for e in events if e["event_type"] in ("pickoff_out", "caught_stealing")]
+    assert len(kinds) == 2, \
+        f"expected the pickoff and the caught stealing, got {len(kinds)}"
+
+    by_type = {e["event_type"]: e for e in kinds}
+    assert "pickoff_out" in by_type, "the pickoff was dropped again"
+    assert "caught_stealing" in by_type, "the caught stealing was dropped again"
+
+    # A fielder that is a position with no name is still a fielder, and an
+    # event with no fielder at all is still an event.
+    assert by_type["pickoff_out"]["fielder"] == "third baseman", \
+        f"fielder was {by_type['pickoff_out']['fielder']!r}"
+    assert by_type["pickoff_out"]["runner_name"] == "J McFarlane"
+
+    # Never let a name run off the end of its line into the next one.
+    for e in events:
+        name = e["runner_name"] or ""
+        assert "\n" not in name, f"runner name crossed a line break: {name!r}"
+        assert not (e["fielder"] or "").count("\n"), \
+            f"fielder crossed a line break: {e['fielder']!r}"
 
 
 # ── DS-100: a doubleheader stays two games ────────────────────────────────
