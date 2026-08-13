@@ -126,6 +126,22 @@ def client(sb, clean_team, monkeypatch):
     monkeypatch.setattr(A, "_generate_and_record_team_signals_safe",
                         lambda *a, **k: None)
 
+    # Then make the absence enforceable rather than incidental (AC-8).
+    #
+    # Stubbing the two known entry points keeps today's suite quiet, but a
+    # generation path added later would call the model and nothing here would
+    # notice — real money, silently, on every run.
+    #
+    # Raising from the patched constructor does NOT work, and it is worth
+    # saying why: every caller sits behind a `_safe` wrapper whose entire job
+    # is to never break the upload, so it swallows the exception and writes a
+    # status='error' report row. The test then passes. Record the attempt and
+    # assert after the test instead, where nothing can catch it.
+    import anthropic
+    attempts = []
+    monkeypatch.setattr(anthropic, "Anthropic",
+                        lambda *a, **k: attempts.append(1))
+
     c = A.app.test_client()
     with c.session_transaction() as s:
         s["team_id"]    = clean_team["id"]
@@ -133,7 +149,11 @@ def client(sb, clean_team, monkeypatch):
         s["coach_id"]   = _User.id
         s["coach_email"] = _User.email
         s["sport"]      = clean_team["sport"]
-    return c
+    yield c
+
+    assert not attempts, (
+        f"{len(attempts)} Anthropic client(s) constructed during this test — "
+        "a report path is unstubbed and the suite is billing on every run")
 
 
 def game_files(prefix):
