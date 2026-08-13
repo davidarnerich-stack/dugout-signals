@@ -159,6 +159,26 @@ def game_files(prefix):
     return box, box_name, stats, stats_name, pbp
 
 
+def detect(client, prefix):
+    """
+    POST one real game's files to /api/detect exactly as the browser does
+    before the coach sees the review block. Writes nothing.
+
+    This is the step that decides which players the coach is asked about, and
+    it is a different code path from /upload — a player can be written
+    correctly and still be asked about forever.
+    """
+    import io
+    box, box_name, stats, stats_name, _ = game_files(prefix)
+    files = []
+    if box:
+        files.append((io.BytesIO(box), box_name))
+    if stats:
+        files.append((io.BytesIO(stats), stats_name))
+    return client.post("/api/detect", data={"files": files},
+                       content_type="multipart/form-data")
+
+
 def upload(client, prefix, *, pbp=False, **form):
     """POST one real game through /upload exactly as the browser does."""
     import io

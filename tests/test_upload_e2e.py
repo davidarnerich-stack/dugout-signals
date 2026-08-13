@@ -17,7 +17,7 @@ Ticket map:
 """
 import json
 import pytest
-from conftest import upload, game_files
+from conftest import upload, detect, game_files
 
 
 # ── the files, and what is true about them ────────────────────────────────
@@ -25,6 +25,7 @@ from conftest import upload, game_files
 # no jersey number; GAME_5 has one with no surname at all.
 GAME_1 = "01_Game"      # 2026-07-15, home, 12 batters, Daniel Garrett unnumbered
 GAME_2 = "02_Game"      # 2026-07-18, away, McClung bats 5th with no number
+GAME_3 = "03_Game"      # 2026-07-23, McClung again, still no number in the CSV
 GAME_5 = "05_Game"      # 2026-07-29, home, "17,,Tristan" — no surname
 GAME_9 = "09_Game"      # 2026-08-11, home, 3 errors in one inning
 
@@ -210,6 +211,65 @@ def test_play_by_play_names_are_clean(client, sb, clean_team):
         "an our-team plate appearance could not be linked to a player"
     assert not [p for p in pas if (p["pitcher_name"] or "").isdigit()], \
         "pitcher_name is holding a jersey number again"
+
+
+# ── DS-106 AC-5: stop asking about a player who has already been answered ─
+
+def _review_names(resp):
+    """The names /api/detect would put in front of the coach."""
+    body = resp.get_json() or {}
+    return {f"{p.get('first','')} {p.get('last','')}".strip()
+            for p in body.get("review_players", [])}
+
+
+def test_detect_stops_asking_about_an_answered_player(client, sb, clean_team):
+    """
+    DS-105 cause 4. Connor McClung has no jersey number in GameChanger, and
+    GameChanger keeps sending a blank number for as long as nobody enters one
+    there — so the CSV can never say the question is settled. Only the roster
+    can. Tying the review item to the missing number meant the coach was asked
+    about the same player on every single upload, forever.
+
+    This is a different code path from /upload: the player can be written
+    correctly and still be asked about again. AC-3 covers the write, this
+    covers the ask.
+
+    McClung appears with an empty number in games 2, 3, 5 and 7, so game 3 is
+    a genuine "later game whose CSV still lacks the number", not a contrived
+    one.
+    """
+    upload(client, GAME_2)              # creates McClung, numberless
+
+    # Before the answer: he SHOULD be asked about. Without this half, the
+    # assertion below would also pass if the review block were simply broken
+    # and produced nothing at all.
+    assert "Connor McClung" in _review_names(detect(client, GAME_3)), \
+        "a rostered player with no number should still be asked about"
+
+    upload(client, GAME_2, player_choices=json.dumps(
+        [{"first": "Connor", "last": "McClung", "choice": "new", "number": "33"}]))
+
+    roster = sb.table("players").select("number").eq("team_id", clean_team["id"]) \
+        .eq("first_name", "Connor").execute().data
+    assert roster and roster[0]["number"] == 33, "precondition: the answer was applied"
+
+    # After the answer: never again, even though game 3's CSV is still blank.
+    r = detect(client, GAME_3)
+    assert r.status_code == 200, r.data[:400]
+    assert "Connor McClung" not in _review_names(r), \
+        "the coach is being asked about a player they have already answered"
+
+
+def test_detect_still_asks_about_a_genuinely_new_player(client, sb, clean_team):
+    """
+    The other side of the same rule — suppression must not become silence.
+    Tristan arrives in game 5 with a number but no roster entry, and a guest
+    who is never asked about is filed as a regular rostered player (DS-107).
+    """
+    upload(client, GAME_2)              # establishes a roster
+    names = _review_names(detect(client, GAME_5))
+    assert any(n.startswith("Tristan") for n in names), \
+        f"a player new to the roster must be asked about, got {names}"
 
 
 # ── DS-112: a hyphenated surname must survive base-running extraction ─────
