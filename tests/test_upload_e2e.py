@@ -212,6 +212,44 @@ def test_play_by_play_names_are_clean(client, sb, clean_team):
         "pitcher_name is holding a jersey number again"
 
 
+# ── DS-112: a hyphenated surname must survive base-running extraction ─────
+
+def test_base_running_keeps_hyphenated_names_whole(client, sb, clean_team):
+    """
+    The runner pattern was [\\w\\sÀ-ÿ]+?, which contains no hyphen. finditer
+    scans left to right, so "Reuben Yamada-Harivandi steals 2nd" could not
+    match from the start of the name and matched from "Harivandi" instead —
+    storing half a name that resolved to nobody. Nineteen events across the
+    season were attributed to no player.
+
+    Nothing reads this table today (DS-101 moved every count to the CSV), so
+    this guards the input DS-113 is going to build base-state on, before it
+    has a consumer to notice.
+    """
+    upload(client, GAME_9, pbp=True)
+    game = only_game(sb, clean_team["id"])
+    events = rows(sb, "base_running_events", game["game_id"])
+    assert events, "no base-running events were stored"
+
+    named = [e for e in events if e["runner_name"]]
+    assert named, "every runner came through nameless"
+
+    # The specific truncations, by name: never the tail of a hyphenated name.
+    for e in named:
+        assert e["runner_name"] not in ("Harivandi", "Palos", "Polenzani"), \
+            f"{e['runner_name']!r} is the tail of a hyphenated surname, not a name"
+
+    hyphenated = [e for e in named if "-" in e["runner_name"]]
+    assert hyphenated, "this game's play-by-play has hyphenated runners; none survived"
+    assert all(e["player_id"] for e in hyphenated), \
+        "a hyphenated name was kept whole but still resolved to no player"
+
+    # A number is not a name, and an absent runner is not the word "unknown".
+    assert not [e for e in named if e["runner_name"].isdigit()], \
+        "runner_name is holding a jersey number again"
+    assert not [e for e in named if e["runner_name"].lower() == "unknown"]
+
+
 # ── DS-100: a doubleheader stays two games ────────────────────────────────
 
 def test_two_games_on_one_date_stay_separate(client, sb, clean_team):

@@ -32,6 +32,53 @@ HIT_TYPE_MAP = {
 
 BASE_NAMES = {"1st":"1b","2nd":"2b","3rd":"3b","home":"home"}
 
+# A runner's name, as the play-by-play writes it: up to four capitalised tokens.
+#
+# The old pattern was [\w\sÀ-ÿ]+?, which has no hyphen in it. finditer scans
+# left to right, so on "Reuben Yamada-Harivandi steals 2nd" it could not match
+# from the start of the name — the hyphen stopped it — and matched from
+# "Harivandi" instead. It did not fail; it silently stored half a name. Nineteen
+# events across the season belonged to Yamada-Harivandi and Mendez-Palos and
+# were attributed to nobody. Requiring capitals also keeps a bare jersey number
+# out of a name column, which is what runner_number is now for.
+RUNNER = r"[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*){0,3}"
+
+# "Top 3rd - Hilighters batting". One pattern, used by both parse paths.
+#
+# They had two, and the live path had the stricter one: case-sensitive, and a
+# plain ASCII hyphen only. An inning header it cannot read is not skipped in
+# isolation — the inning counter simply does not advance, so every plate
+# appearance after it is filed under the previous inning and its runs land in
+# the wrong half. That reaches the coach as a wrong inning-by-inning line
+# score. Accept what the narrative path already accepted, and count what still
+# fails rather than passing over it (DS-112).
+INNING_RE = re.compile(
+    r"^(TOP|BOTTOM)\s+(\d+)(?:ST|ND|RD|TH)?\s*[-–—]\s*(.+?)(?:\s+batting)?$", re.I)
+
+
+def _resolve_runner(raw, player_map):
+    """
+    Resolve one captured runner to (name, number, player_id).
+
+    RUNNER can over-capture: "on error by pitcher A Arnerich R Yamada-Harivandi
+    scores" has no comma to stop it. So rather than trust the capture, try it
+    whole and then drop leading tokens one at a time, keeping the longest
+    suffix that resolves. A name that never resolves is stored as parsed —
+    unattributed, but not silently truncated to something wrong.
+    """
+    raw = (raw or "").strip().lstrip("#").strip(",.;:").strip()
+    if not raw:
+        return None, None, None
+    if raw.isdigit():
+        return None, int(raw), None
+    tokens = raw.split()
+    for start in range(len(tokens)):
+        candidate = " ".join(tokens[start:])
+        pid = resolve_player(candidate, player_map)
+        if pid:
+            return candidate, None, pid
+    return raw, None, None
+
 NARR_RESULT_PATTERNS = [
     (r"\bhit\s+by\s+pitch\b","Hit By Pitch"),
     (r"\bwalks?\b","Walk"),
@@ -197,6 +244,7 @@ def _batting_team_for(half: str, is_away: bool) -> str:
 # ── GameChanger parser ─────────────────────────────────────────────────────────
 def _parse_gc(paras, is_away: bool):
     pas,inning_scores = [],{}
+    bad_innings=[]
     inning=half=batting_team=pitcher=None
     pitcher_number=None
     outs=score_storm=score_opp=0; pa_sequence=0
@@ -218,13 +266,17 @@ def _parse_gc(paras, is_away: bool):
 
     for result_type,block_paras in blocks:
         if result_type=="__INNING__":
-            m=re.match(r"^(Top|Bottom)\s+(\d+)\w*\s+-\s+(.+)$",block_paras[0])
+            m=INNING_RE.match(block_paras[0].strip())
             if m:
                 half=m.group(1).lower(); inning=int(m.group(2))
                 batting_team=_batting_team_for(half, we_are_away)
                 outs=0
                 inning_scores.setdefault((inning,half,"our_team"),score_storm)
                 inning_scores.setdefault((inning,half,"opponent"),score_opp)
+            else:
+                # Do not pass over this. The inning has not advanced, so
+                # everything below is about to be misfiled.
+                bad_innings.append(block_paras[0].strip()[:80])
             continue
         if result_type=="Inning Ended":
             # Read this block's own score line BEFORE closing the half-inning.
@@ -317,12 +369,13 @@ def _parse_gc(paras, is_away: bool):
                 _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
-    return pas,inning_scores
+    return pas,inning_scores,bad_innings
 
 
 # ── Narrative parser ───────────────────────────────────────────────────────────
 def _parse_narrative(paras, is_away: bool):
     pas,inning_scores=[],{}
+    bad_innings=[]
     inning=half=batting_team=None
     outs=score_storm=score_opp=0; pa_sequence=0; pitcher=None
     closed_innings=set()
@@ -335,8 +388,7 @@ def _parse_narrative(paras, is_away: bool):
             _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
             outs=0; continue
 
-        m=re.match(r"^(TOP|BOTTOM)\s+(\d+)(?:ST|ND|RD|TH)\s*[-–—]\s*(.+?)(?:\s+batting)?$",
-                   para.strip(),re.I)
+        m=INNING_RE.match(para.strip())
         if m:
             half=m.group(1).lower(); inning=int(m.group(2))
             batting_team=_batting_team_for(half, we_are_away)
@@ -391,55 +443,71 @@ def _parse_narrative(paras, is_away: bool):
                 _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
-    return pas,inning_scores
+    return pas,inning_scores,bad_innings
 
 
 # ── Base running events ────────────────────────────────────────────────────────
 def _base_running_events(block_text, pa_id, game_id, player_map):
+    """
+    Pull base-running events out of one plate appearance's text.
+
+    Note what this is and is not. DS-101 moved the season's stolen-base and
+    caught-stealing *counts* onto the official CSV, so nothing here feeds a
+    total the coach sees as a number. What it feeds is play-level detail — who
+    took second, who scored on the passed ball — so a name that resolves to
+    nobody costs a sentence in the report, not a wrong statistic.
+    """
     events=[]
-    def pid(n): return resolve_player(n.strip(),player_map)
     def bn(raw): return BASE_NAMES.get(raw.lower().strip())
 
-    for m in re.finditer(r"([\w\sÀ-ÿ]+?)\s+steals\s+(2nd|3rd|home)",block_text,re.I):
-        r=m.group(1).strip().split(",")[-1].strip()
-        to=bn(m.group(2)); frm={"2nd":"1b","3rd":"2b","home":"3b"}.get(m.group(2).lower())
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":r,"player_id":pid(r),
-            "event_type":"stolen_base","from_base":frm,"to_base":to,
-            "scored":m.group(2).lower()=="home","how":"stolen_base","fielder":None})
+    def ev(raw, **fields):
+        name, number, player_id = _resolve_runner(raw, player_map)
+        if not (name or number):
+            return
+        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":name,
+                       "runner_number":number,"player_id":player_id, **fields})
 
-    for m in re.finditer(r"([\w\sÀ-ÿ]+?)\s+caught stealing\s+(\w+),?\s*catcher\s+([\w\sÀ-ÿ]+?)(?:,|\.|\n|$)",block_text,re.I):
-        r=m.group(1).strip()
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":r,"player_id":pid(r),
-            "event_type":"caught_stealing","from_base":None,"to_base":"out",
-            "scored":False,"how":"caught_stealing","fielder":m.group(3).strip()})
+    # Each pattern accepts either a name or a jersey number, because the
+    # play-by-play writes opposing runners as "#6" and ours by name.
+    who = rf"(#\d+|{RUNNER})"
 
-    for m in re.finditer(r"([\w\sÀ-ÿ]+?)\s+picked off at\s+(\w+),?\s*(?:catcher|pitcher)\s+([\w\sÀ-ÿ]+?)(?:,|\.|\n|$)",block_text,re.I):
-        r=m.group(1).strip()
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":r,"player_id":pid(r),
-            "event_type":"pickoff_out","from_base":bn(m.group(2)),"to_base":"out",
-            "scored":False,"how":"pickoff","fielder":m.group(3).strip()})
+    for m in re.finditer(rf"{who}\s+steals\s+(2nd|3rd|home)",block_text):
+        base=m.group(2).lower()
+        ev(m.group(1), event_type="stolen_base",
+           from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base), to_base=bn(m.group(2)),
+           scored=base=="home", how="stolen_base", fielder=None)
 
+    for m in re.finditer(rf"{who}\s+caught stealing\s+(\w+),?\s*catcher\s+({RUNNER})",block_text):
+        ev(m.group(1), event_type="caught_stealing", from_base=None, to_base="out",
+           scored=False, how="caught_stealing", fielder=m.group(3).strip())
+
+    for m in re.finditer(rf"{who}\s+picked off at\s+(\w+),?\s*(?:catcher|pitcher)\s+({RUNNER})",block_text):
+        ev(m.group(1), event_type="pickoff_out", from_base=bn(m.group(2)), to_base="out",
+           scored=False, how="pickoff", fielder=m.group(3).strip())
+
+    # A pickoff attempt names no runner at all. That is a fact about the play,
+    # not a parse failure — so the name is NULL rather than the word "unknown".
     for m in re.finditer(r"Pickoff attempt at\s+(\w+)",block_text,re.I):
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":"unknown","player_id":None,
+        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":None,
+            "runner_number":None,"player_id":None,
             "event_type":"pickoff_attempt","from_base":bn(m.group(1)),"to_base":None,
             "scored":False,"how":"pickoff_attempt","fielder":None})
 
-    for m in re.finditer(r"([\w\sÀ-ÿ]+?)\s+advances? to\s+(\w+)\s+on\s+(wild pitch|passed ball|error by[^,\.]*|the (?:same )?(?:error|throw)|throw)",block_text,re.I):
-        r=m.group(1).strip(); how=m.group(3).strip().lower()
+    for m in re.finditer(
+            rf"{who}\s+advances? to\s+(\w+)\s+on\s+"
+            r"(wild pitch|passed ball|error by[^,\.]*|the (?:same )?(?:error|throw)|throw)",
+            block_text):
+        how=m.group(3).strip().lower()
         if "wild pitch" in how: et="advance_wild_pitch"
         elif "passed ball" in how: et="advance_passed_ball"
         elif "error" in how: et="advance_error"
         else: et="advance_throw"
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":r,"player_id":pid(r),
-            "event_type":et,"from_base":None,"to_base":bn(m.group(2)),
-            "scored":False,"how":how,"fielder":None})
+        ev(m.group(1), event_type=et, from_base=None, to_base=bn(m.group(2)),
+           scored=False, how=how, fielder=None)
 
-    for m in re.finditer(r"([\w\sÀ-ÿ]+?)\s+scores?(?: on\s+(.+?))?(?:,|\.|\n|$)",block_text,re.I):
-        r=m.group(1).strip()
-        if not r or r.lower() in ("half-inning","inning"): continue
-        events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":r,"player_id":pid(r),
-            "event_type":"scored","from_base":"3b","to_base":"home",
-            "scored":True,"how":(m.group(2) or "").strip() or "unknown","fielder":None})
+    for m in re.finditer(rf"{who}\s+scores?(?:\s+on\s+(.+?))?(?:,|\.|\n|$)",block_text):
+        ev(m.group(1), event_type="scored", from_base="3b", to_base="home",
+           scored=True, how=(m.group(2) or "").strip() or None, fielder=None)
 
     return events
 
@@ -494,8 +562,9 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
             "game first, then add the play-by-play."
         )
 
-    pa_dicts, inning_scores = (_parse_narrative(paras, is_away) if _is_narrative(paras)
-                               else _parse_gc(paras, is_away))
+    pa_dicts, inning_scores, bad_innings = (
+        _parse_narrative(paras, is_away) if _is_narrative(paras)
+        else _parse_gc(paras, is_away))
 
     # Clear existing
     sb.table("inning_scores").delete().eq("game_id",game_id).execute()
@@ -555,9 +624,18 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
                     f"{'' if len(unresolved) == 1 else 's'} could not be matched to a "
                     f"player ({'; '.join(unresolved[:5])}"
                     f"{f' and {len(unresolved) - 5} more' if len(unresolved) > 5 else ''}).")
+    if bad_innings:
+        # Worth saying loudly: this one does not lose a single row, it misfiles
+        # every row after it, and the wrong inning shows up in the line score.
+        message += (f" {len(bad_innings)} inning header"
+                    f"{'' if len(bad_innings) == 1 else 's'} could not be read "
+                    f"({'; '.join(bad_innings[:3])}) — plays after "
+                    f"{'it' if len(bad_innings) == 1 else 'them'} may be "
+                    f"recorded in the wrong inning.")
     return {
         "message": message,
         "details": [f"PA #{p['pa_sequence']}: {p['batter_name']} — {p['result']}"
                     for p in pa_dicts if p["batting_team"]=="our_team"][:20],
         "unresolved_batters": unresolved,
+        "bad_innings": bad_innings,
     }
