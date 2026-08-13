@@ -5,6 +5,10 @@ Returns a structured dict that gets passed to the AI and rendered into tables.
 
 import re
 
+# A ball in play is one struck into fair territory. Imported from the parser
+# so the report and the parse cannot disagree about what counts as one.
+from parsers.play_by_play import BALL_IN_PLAY_RESULTS
+
 _FIELDER_ABBREV = re.compile(r"^(?P<pos>.*?)\s+(?P<initial>[A-Za-zÀ-ÿ])\.?\s+(?P<last>[A-Za-zÀ-ÿ'’\-]+)$")
 
 
@@ -852,15 +856,30 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
             .eq("game_id", game_id).eq("batting_team", "opponent")
             .execute()
         ).data or []
+
+        # A ball in play is one struck into fair territory — every one of them,
+        # not only the ones whose location we could pin to a player.
+        #
+        # This used to be sum(by_fielder.values()), i.e. the count of opposing
+        # plate appearances whose hit_location happened to resolve to someone on
+        # the roster. That is a parsing success rate wearing the name of a
+        # baseball statistic. On 2026-08-11 it printed 13, which read as if it
+        # were the 13 putouts and was neither.
+        balls_in_play = sum(
+            1 for pa in opp_pas if pa.get("result") in BALL_IN_PLAY_RESULTS)
+
         by_fielder = {}
         for pa in opp_pas:
             loc = _resolve_fielder_name(
                 (pa.get("hit_location") or "").strip(), pid_to_player.values())
             if loc:
                 by_fielder[loc] = by_fielder.get(loc, 0) + 1
-        if by_fielder:
+        if balls_in_play:
             fielding_plays = {
-                "balls_in_play": sum(by_fielder.values()),
+                "balls_in_play": balls_in_play,
+                # Deliberately separate: this is a subset, and the difference
+                # between the two is balls we could not place.
+                "located": sum(by_fielder.values()),
                 "by_fielder": sorted(by_fielder.items(), key=lambda kv: -kv[1]),
             }
 

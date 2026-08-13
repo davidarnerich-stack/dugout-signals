@@ -362,12 +362,20 @@ def _baserunning(bat_totals):
 def _fielding_conversion(fld_totals, pit_totals, team_context, games):
     def_eff = compute_team_metrics(team_context).get("def_eff")
     errors = fld_totals["errors"]
+    # A season TOTAL cannot be compared to a single game's total, and offering
+    # one next to the other invites exactly that. On 2026-08-11 a 4-error game
+    # alongside "9 errors" across 8 games produced "that error total matches the
+    # team's 9 errors across the full 8-game season in a single contest" — a
+    # sentence with no true reading. The per-game rate is the commensurable
+    # figure, so supply it and let the total stay context.
+    errors_per_game = safe_div(errors, games)
     runs_allowed_per_game = safe_div(pit_totals["runs_allowed"], games)
     state = "complete" if def_eff is not None else "missing_data"
     return {
         "key": "fielding_conversion", "bucket": "Fielding", "state": state,
         "facts": {
             "def_eff": def_eff, "errors": errors,
+            "errors_per_game": errors_per_game,
             "runs_allowed_per_game": runs_allowed_per_game, "games": games,
         },
     }

@@ -829,11 +829,34 @@ def _fielding_facts(data, us) -> str:
         "Positions may be given ONLY for the errors listed above and for who "
         "caught; everywhere else, name the player without a position.")
 
+    # Balls in play and total chances are different things and must never be
+    # swapped. TC = assists + putouts + errors: the plays the defence was
+    # *credited* with. Balls in play is every ball struck into fair territory,
+    # including the hits nobody got to. A clean single is a ball in play and
+    # not a chance, which is why TC understates what the defence faced.
     plays = data.get("fielding_plays")
     if plays:
-        where = ", ".join(f"{loc} ({n})" for loc, n in plays["by_fielder"])
-        lines.append(f"Balls put in play against this defence: {plays['balls_in_play']}. "
-                     f"Where they went: {where}.")
+        bip = plays["balls_in_play"]
+        located = plays.get("located") or 0
+        line = (f"Balls put in play against this defence: {bip} — every ball hit "
+                f"into fair territory, including hits that fell in. This is NOT "
+                f"total chances ({tc if tc is not None else 'n/a'}), which counts "
+                f"only assists, putouts and errors; do not equate them or use one "
+                f"figure for the other.")
+        if plays["by_fielder"]:
+            where = ", ".join(f"{loc} ({n})" for loc, n in plays["by_fielder"])
+            line += (f" Of those, {located} could be placed with a fielder: {where}. "
+                     f"The remaining {bip - located} were not located, so do not "
+                     f"describe the distribution as complete.")
+        lines.append(line)
+    elif tc is not None:
+        # No play-by-play: total chances is the honest fallback, named as
+        # chances rather than dressed up as balls in play.
+        lines.append(
+            f"No play-by-play was provided, so how many balls were put in play "
+            f"is not known. You may say the defence handled {_plural(tc, 'chance')} "
+            f"— chances, not balls in play. Do not remark on the absence of "
+            f"play-by-play; write what the numbers support and stop there.")
     else:
         lines.append("No play-by-play was provided for this game, so there is no "
                      "ball-by-ball detail. Do not remark on its absence — write "
@@ -850,9 +873,13 @@ than one dense block — a single short paragraph is fine when there isn't much 
 {_fielding_facts(data, us)}
 {_season_context_block(data, "fielding_conversion", {
     "def_eff":               "defensive efficiency {}",
-    "errors":                "{} errors",
+    "errors_per_game":       "{} errors per game",
+    "errors":                "{} errors in total",
     "runs_allowed_per_game": "{} runs allowed per game",
 })}
+Compare this game's error count to the season's errors PER GAME, never to the season
+total — a single game's 4 errors cannot "match" a season's 9. If you cite the season
+total, say plainly that it spans every game played so far.
 An error is the scorekeeper's judgement that the play should have been made — that is what
 distinguishes it from a hit. Do not speculate about whether a charged error was a hard chance.
 """)
