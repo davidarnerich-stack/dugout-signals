@@ -227,6 +227,10 @@ not any individual on the roster — a player's actual age is not something you 
 Every figure you cite must appear verbatim in the data supplied with the request. Do not compute,
 sum, average or estimate anything, and do not describe a category of evidence you were not given —
 if swing-and-miss, command or contact quality is not listed, you do not know it.
+This includes counting. Do not total figures across players ("three of those walks belonged to
+X (2) and Y (2)" — which is four, and was published), do not count how many players did something,
+and do not restate a team total you have worked out yourself. Team totals are supplied; use those
+exact numbers and no others.
 Never remark on what the data does not contain. Do not write that detail is unavailable, that the
 scorebook does not record something, that a fuller picture would require more information, or that
 a conclusion is limited by the data — no sentence should begin "Without additional data on…". The
@@ -270,9 +274,15 @@ def _season_context_note(game_number: int) -> str:
         return ("This is the team's SECOND game. You may make LIGHT comparisons to the first game, "
                 "but explicitly acknowledge the sample size is still small (two games is not a trend "
                 "yet) — keep any comparison tentative.")
-    return ("This is game {n} of the season. Use full intra-season trending — compare the last 3 "
-            "games' aggregate performance against the season-to-date aggregate, and call out "
-            "whether recent performance is ahead of, behind, or in line with the season average."
+    return ("This is the team's {n}th game uploaded so far. Use full intra-season trending — "
+            "compare the last 3 games' aggregate performance against the season-to-date "
+            "aggregate, and call out whether recent performance is ahead of, behind, or in "
+            "line with the season average. "
+            "How many games remain is NOT known to you — the count above is games played, not "
+            "a season length. Never describe where the team is in its season (\"the middle "
+            "stretch\", \"early in the campaign\", \"with games left\") or how many games are "
+            "left; on 2026-08-11 that produced \"the middle stretch of their eight-game season\" "
+            "when the season was nearly over."
             ).format(n=game_number)
 
 
@@ -482,6 +492,25 @@ def _recap_facts(data, us) -> str:
         lines.append(f"Baserunning: {sb} stolen base{'' if sb == 1 else 's'}, "
                      f"{cs} caught stealing"
                      + (f" — {who}" if who else "") + ".")
+
+    # What actually happened, inning by inning. Without this the recap has
+    # only game totals and must guess when anything occurred — which is how a
+    # hit-by-pitch in the 3rd became "drove in the first run with a hit".
+    for blk in (data.get("inning_events") or []):
+        parts = []
+        for e in blk["events"]:
+            bit = f"{e['batter']} {(e['result'] or '').lower()}"
+            if e["scored"]:
+                bit += f" ({', '.join(e['scored'])} scored)"
+            parts.append(bit)
+        if parts:
+            lines.append(f"Our {_ordinal(blk['inning'])} inning, in order: " + "; ".join(parts))
+    if data.get("inning_events"):
+        lines.append(
+            "The above is the actual sequence. Place every batting event in the "
+            "inning shown here — do not infer from season or game totals which "
+            "inning something happened in, and do not credit a run to a batter "
+            "unless a runner is shown scoring on their plate appearance.")
 
     tf = data.get("team_fielding") or {}
     if us.get("e"):
@@ -911,8 +940,16 @@ per line, 3 to 5 lines total.
 
 
 def generate_focus_areas(client, system, data) -> list:
-    bats = "; ".join(f"{b['name']}: {b['h']}-for-{b['ab']}, {b['bb']} BB, {b['k']} K"
+    bats = "; ".join(f"{b['name']}: {b['h']}-for-{b['ab']} in {b.get('pa', b['ab'])} PA, "
+                      f"{b['bb']} BB, {b['k']} K"
                       for b in data["batting_stats"]) or "No batting data recorded."
+    # Team totals supplied so they are never re-derived. The 2026-08-11 focus
+    # areas claimed 7 team strikeouts against an actual 6, having counted them.
+    tot_k  = sum(b.get("k") or 0 for b in data["batting_stats"])
+    tot_bb = sum(b.get("bb") or 0 for b in data["batting_stats"])
+    tot_h  = sum(b.get("h") or 0 for b in data["batting_stats"])
+    totals = (f"Team totals (use these exact figures, do not recount): "
+              f"{tot_h} hits, {tot_bb} walks, {tot_k} strikeouts.")
     pitchers = "; ".join(f"{p['name']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
                           for p in data["pitching_stats"]) or "No pitching data recorded."
     # No position here: single-game fielding_stats carries `listed_position`,
@@ -933,6 +970,7 @@ what happened this game, and one concrete drill cue a coach could run at the nex
 
 Final: {g.get('result')} ({g.get('team_runs')}-{g.get('opponent_runs')}).
 Batting lines: {bats}
+{totals}
 Pitching lines: {pitchers}
 Fielding errors: {errs}
 {("Where those errors happened: " + err_where) if err_where else ""}
@@ -947,7 +985,11 @@ Do not add numbering, headers, or any other text — exactly 3 lines, pipe-delim
     for i, line in enumerate(text.splitlines()):
         parts = [p.strip() for p in line.split("|")]
         if len(parts) == 3:
-            focus.append({"rank": str(i + 1), "title": parts[0], "rationale": parts[1], "cue": parts[2]})
+            # Rank by position among the items KEPT, not by line number. The
+            # model separates items with blank lines, so the line index gave
+            # ranks 1, 3, 5 on the 2026-08-11 report.
+            focus.append({"rank": str(len(focus) + 1), "title": parts[0],
+                          "rationale": parts[1], "cue": parts[2]})
     return focus[:3]
 
 

@@ -864,6 +864,49 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
                 "by_fielder": sorted(by_fielder.items(), key=lambda kv: -kv[1]),
             }
 
+    # What happened in each of our half-innings, in order.
+    #
+    # Until now the recap received only per-player game totals, and was asked
+    # to narrate innings. With no way to know WHEN anything happened it placed
+    # events wherever it was writing: on 2026-08-11 it had Arnerich driving in
+    # the first run with a hit in the 3rd, when he was hit by a pitch in the
+    # 3rd, scored on Salisian's single, and got his hit in the 4th.
+    #
+    # Batter names come from the play-by-play and can carry a trailing verb
+    # ("A Arnerich is" — DS-114), so they are trimmed against the roster here
+    # rather than passed through.
+    inning_events = None
+    if has_pbp:
+        our_pas = (
+            sb.table("plate_appearances")
+            .select("inning,half_inning,pa_sequence,batter_name,result,narrative")
+            .eq("game_id", game_id).eq("batting_team", "our_team")
+            .order("pa_sequence").execute()
+        ).data or []
+        surnames = {(p.get("last_name") or "").lower(): p for p in pid_to_player.values()}
+
+        def _clean_batter(name):
+            n = (name or "").strip()
+            for tail in (" is", " was"):
+                if n.endswith(tail):
+                    n = n[: -len(tail)].strip()
+            m = _FIELDER_ABBREV.match(f"x {n}")
+            if m and m.group("last").lower() in surnames:
+                p = surnames[m.group("last").lower()]
+                return f"{p['first_name']} {p['last_name']}"
+            return n
+
+        by_inning = {}
+        for pa in our_pas:
+            scored = re.findall(r"([A-Z][\w.'-]*(?:\s+[\w.'-]+)*?)\s+scores",
+                                pa.get("narrative") or "")
+            by_inning.setdefault(pa["inning"], []).append({
+                "batter": _clean_batter(pa.get("batter_name")),
+                "result": pa.get("result"),
+                "scored": [_clean_batter(s) for s in scored],
+            })
+        inning_events = [{"inning": i, "events": by_inning[i]} for i in sorted(by_inning)]
+
     # Where each error actually happened.
     #
     # The stats CSV cannot say — it gives a player one position label for the
@@ -938,6 +981,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "team_fielding": team_fielding,
         "fielding_plays": fielding_plays,
         "error_plays": error_plays,
+        "inning_events": inning_events,
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,
