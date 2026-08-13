@@ -43,15 +43,17 @@ BASE_NAMES = {"1st":"1b","2nd":"2b","3rd":"3b","home":"home"}
 # out of a name column, which is what runner_number is now for.
 RUNNER = r"[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'’.\-]*){0,3}"
 
-# "Top 3rd - Hilighters batting". One pattern, used by both parse paths.
+# "Top 3rd - Hilighters batting".
 #
-# They had two, and the live path had the stricter one: case-sensitive, and a
-# plain ASCII hyphen only. An inning header it cannot read is not skipped in
-# isolation — the inning counter simply does not advance, so every plate
-# appearance after it is filed under the previous inning and its runs land in
-# the wrong half. That reaches the coach as a wrong inning-by-inning line
-# score. Accept what the narrative path already accepted, and count what still
-# fails rather than passing over it (DS-112).
+# There were once two of these, one per parse path, and the live one was the
+# stricter: case-sensitive, plain ASCII hyphen only. An inning header this
+# cannot read is not skipped in isolation — the inning counter simply does not
+# advance, so every plate appearance after it is filed under the previous
+# inning and its runs land in the wrong half, which reaches the coach as a
+# wrong inning-by-inning line score. This is the tolerant version, and a header
+# that still fails is counted rather than passed over (DS-112). The second
+# parse path is gone (DS-120); this pattern outliving it is the only part of it
+# that was worth keeping.
 INNING_RE = re.compile(
     r"^(TOP|BOTTOM)\s+(\d+)(?:ST|ND|RD|TH)?\s*[-–—]\s*(.+?)(?:\s+batting)?$", re.I)
 
@@ -79,40 +81,8 @@ def _resolve_runner(raw, player_map):
             return candidate, None, pid
     return raw, None, None
 
-NARR_RESULT_PATTERNS = [
-    (r"\bhit\s+by\s+pitch\b","Hit By Pitch"),
-    (r"\bwalks?\b","Walk"),
-    (r"\bsingles?\b","Single"),
-    (r"\bdoubles?\b","Double"),
-    (r"\btriples?\b","Triple"),
-    (r"\bhome\s+run\b|\bhomers?\b","Home Run"),
-    (r"\bstrikes?\s+out\b|\bout\s+at\s+first\s+on\s+dropped","Strikeout"),
-    (r"\bpops?\s+out\b","Pop Out"),
-    (r"\bflies?\s+out\b","Fly Out"),
-    (r"\bgrounds?\s+out\b","Ground Out"),
-    (r"\blines?\s+out\b","Line Out"),
-    (r"\breaches?\s+on\s+(?:dropped\s+3rd|dropped\s+third)","Dropped 3rd Strike"),
-    (r"\bhits?.*reaches?\s+on\s+error|\breaches?\s+on\s+error","Error"),
-    (r"\bdouble\s+play\b","Double Play"),
-    (r"\bhits?\s+into\s+(?:a\s+)?fielder.s\s+choice","Fielder's Choice"),
-    (r"\bsacrifices?\b|\bsacrifice\s+bunt\b","Sacrifice Bunt"),
-]
-
 SCORE_RE = re.compile(r"([A-Z0-9]{2,6})\s+(\d+)\s*-\s*([A-Z0-9]{2,6})\s+(\d+)(?:\s*\|\s*(\d+)\s*Out)?",re.I)
 OUTS_RE  = re.compile(r"^(\d)\s+Outs?$",re.I)
-# KNOWN GAP (DS-92): still keyed to one team's abbreviation, so it only
-# resolves scores for that team. Left as-is deliberately — this pattern is
-# only reached by the narrative format (pasted text whose first paragraphs
-# contain "PLAY-BY-PLAY"), which GameChanger's current export does not
-# produce, and no real sample exists to verify which side it prints first.
-# Guessing a convention here would risk writing wrong scores where today it
-# simply no-ops. Fix when a real sample is available.
-NARR_SCORE_RE = re.compile(r"STRM\s+(\d+)\s*[-–]\s*\w+\s+(\d+)|(\w+)\s+(\d+)\s*[-–]\s*STRM\s+(\d+)",re.I)
-NARR_VERB_RE  = re.compile(
-    r"\b(singles?|doubles?|triples?|home\s+run|walks?|hit\s+by\s+pitch|"
-    r"strikes?\s+out|pops?\s+out|flies?\s+out|grounds?\s+out|lines?\s+out|"
-    r"reaches?\s+on|hits?\s+(?:a\s+)?(?:ground|fly|line|into)|hits?\s+by|"
-    r"sacrifices?|out\s+at\s+first|double\s+play|fielder.s\s+choice)\b",re.I)
 
 # Two defects lived here (DS-114), and they compound.
 #
@@ -151,9 +121,6 @@ def _get_paras_from_text(raw_text: str):
             lines.append(line)
     return lines
 
-def _is_narrative(paras):
-    return any("PLAY-BY-PLAY" in p.upper() for p in paras[:3])
-
 def _parse_score(text, we_are_away: bool):
     """
     Score lines carry GameChanger's auto-generated per-team abbreviation
@@ -186,22 +153,6 @@ def _hit_location(text):
 
 def _count_rbi(text):
     return len(re.findall(r"\w[\w\s]+?\s+scores",text,re.I))
-
-def _extract_batter_narr(para):
-    m = NARR_VERB_RE.search(para)
-    if not m or m.start()==0: return None
-    raw = para[:m.start()].strip().rstrip(".,; ")
-    raw = re.sub(r"\s*\(#?\d+\)","",raw).strip()
-    raw = re.sub(r"(?<=[A-Z])\.","",raw).strip()
-    # Same trailing-verb trap as BATTER_RE had (DS-114): the verb pattern can
-    # match at "hit by pitch", leaving "W Salisian is" as the name. Names do
-    # not end in a copula.
-    words = [w for w in raw.split() if w]
-    while words and words[-1].lower() in ("is", "was", "has", "had", "gets", "got"):
-        words.pop()
-    raw = " ".join(words)
-    if 1<=len(words)<=4 and words[0][0].isupper(): return raw
-    return None
 
 def _update_inning(inning_scores, inning, half, score_storm, score_opp, closed):
     """
@@ -372,81 +323,7 @@ def _parse_gc(paras, is_away: bool):
     return pas,inning_scores,bad_innings
 
 
-# ── Narrative parser ───────────────────────────────────────────────────────────
-def _parse_narrative(paras, is_away: bool):
-    pas,inning_scores=[],{}
-    bad_innings=[]
-    inning=half=batting_team=None
-    outs=score_storm=score_opp=0; pa_sequence=0; pitcher=None
-    closed_innings=set()
-    we_are_away = bool(is_away)
-
-    for para in paras:
-        if any(k in para.upper() for k in ("PLAY-BY-PLAY","FINAL:","STRM:")):
-            if not re.match(r"^(TOP|BOTTOM)",para,re.I): continue
-        if re.match(r"^FINAL\s+(TOP|BOTTOM)",para,re.I):
-            _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
-            outs=0; continue
-
-        m=INNING_RE.match(para.strip())
-        if m:
-            half=m.group(1).lower(); inning=int(m.group(2))
-            batting_team=_batting_team_for(half, we_are_away)
-            outs=0
-            inning_scores.setdefault((inning,half,"our_team"),score_storm)
-            inning_scores.setdefault((inning,half,"opponent"),score_opp)
-            continue
-
-        if inning is None: continue
-
-        batter=_extract_batter_narr(para)
-        if not batter: continue
-
-        result=None
-        for pattern,res in NARR_RESULT_PATTERNS:
-            if re.search(pattern,para,re.I): result=res; break
-        if not result: continue
-
-        sm=NARR_SCORE_RE.search(para)
-        new_storm=new_opp=None
-        if sm:
-            if sm.group(1) is not None: new_storm,new_opp=int(sm.group(1)),int(sm.group(2))
-            else: new_opp,new_storm=int(sm.group(4)),int(sm.group(5))
-
-        outs_m=re.search(r"\((\d)\s+Outs?\)",para,re.I)
-        outs_after=int(outs_m.group(1)) if outs_m else None
-
-        pit_m=re.search(r"\(([A-Z]\.?\s*[A-Za-z]+)\s+pitching\)",para)
-        if pit_m: pitcher=re.sub(r"\.\s*"," ",pit_m.group(1)).strip()
-
-        outs_rec=RESULT_META.get(result,(0,False,False))[0]
-        pa_sequence+=1
-        pas.append({
-            "inning":inning,"half_inning":half,"pa_sequence":pa_sequence,
-            "batting_team":batting_team,"batter_name":batter,"pitcher_name":pitcher,
-            "outs_before":min(outs,2),"score_our_before":score_storm,
-            "score_opp_before":score_opp,"runner_on_1b":None,"runner_on_2b":None,
-            "runner_on_3b":None,"result":result,"hit_type":_hit_type(para),
-            "hit_location":_hit_location(para),"rbi":_count_rbi(para),
-            "outs_recorded":outs_rec,"pitch_sequence":None,"narrative":para,
-        })
-
-        if new_storm is not None: score_storm,score_opp=new_storm,new_opp
-        if outs_after is not None:
-            if outs_after>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
-                outs=0
-            else: outs=outs_after
-        else:
-            outs=min(outs+outs_rec,3)
-            if outs>=3:
-                _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
-                outs=0
-
-    return pas,inning_scores,bad_innings
-
-
-# ── Base running events ────────────────────────────────────────────────────────
+# ── Base running ───────────────────────────────────────────────────────────────
 def _base_running_events(block_text, pa_id, game_id, player_map):
     """
     Pull base-running events out of one plate appearance's text.
@@ -562,9 +439,7 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
             "game first, then add the play-by-play."
         )
 
-    pa_dicts, inning_scores, bad_innings = (
-        _parse_narrative(paras, is_away) if _is_narrative(paras)
-        else _parse_gc(paras, is_away))
+    pa_dicts, inning_scores, bad_innings = _parse_gc(paras, is_away)
 
     # Clear existing
     sb.table("inning_scores").delete().eq("game_id",game_id).execute()
