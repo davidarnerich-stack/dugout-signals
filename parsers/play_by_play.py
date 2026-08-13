@@ -67,11 +67,28 @@ NARR_VERB_RE  = re.compile(
     r"reaches?\s+on|hits?\s+(?:a\s+)?(?:ground|fly|line|into)|hits?\s+by|"
     r"sacrifices?|out\s+at\s+first|double\s+play|fielder.s\s+choice)\b",re.I)
 
+# Two defects lived here (DS-114), and they compound.
+#
+# re.IGNORECASE silently voided the capitalisation guard: with it, [A-ZÀ-Ÿ]
+# matches lowercase, so "is" could be absorbed into a name and "W Salisian is
+# hit by pitch" stored the batter as "W Salisian is". Names in GameChanger's
+# output are always capitalised, so the flag bought nothing and cost that.
+#
+# Removing it alone is not enough — it turns the same line into no match at
+# all, because "is hit by pitch", "is out on…", "picked off" and "caught
+# stealing" were never listed. An unmatched line stored the batter as
+# "Unknown", which then reached a coach's recap. Longer phrasings come first
+# so "is hit by pitch" wins over a bare "hits".
+# Periods belong in the name class: "N Smith Jr. triples…" is a real batter,
+# and without them the suffix broke the match and the plate appearance lost
+# its batter entirely.
 BATTER_RE = re.compile(
-    r"^([A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-]*(?:\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-]*){0,3})"
-    r"\s+(singles?|doubles?|triples?|homers?|walks?|strikes? out|grounds? out|"
-    r"flies? out|pops? out|lines? out|hits?|reaches?|pops? into|lines? into|"
-    r"flies? into|grounds? into|sacrifices?|at bat)",re.I)
+    r"^([A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-'.]*(?:\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-'.]*){0,3})"
+    r"\s+(?:is\s+hit\s+by\s+pitch|is\s+out|picked\s+off|caught\s+stealing|"
+    r"strikes?\s+out|grounds?\s+out|flies?\s+out|pops?\s+out|lines?\s+out|"
+    r"pops?\s+into|lines?\s+into|flies?\s+into|grounds?\s+into|"
+    r"singles?|doubles?|triples?|homers?|walks?|steals?|scores?|advances?|"
+    r"hits?|reaches?|sacrifices?|at\s+bat)\b")
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _get_paras_from_docx(docx_bytes):
@@ -129,7 +146,13 @@ def _extract_batter_narr(para):
     raw = para[:m.start()].strip().rstrip(".,; ")
     raw = re.sub(r"\s*\(#?\d+\)","",raw).strip()
     raw = re.sub(r"(?<=[A-Z])\.","",raw).strip()
-    words = raw.split()
+    # Same trailing-verb trap as BATTER_RE had (DS-114): the verb pattern can
+    # match at "hit by pitch", leaving "W Salisian is" as the name. Names do
+    # not end in a copula.
+    words = [w for w in raw.split() if w]
+    while words and words[-1].lower() in ("is", "was", "has", "had", "gets", "got"):
+        words.pop()
+    raw = " ".join(words)
     if 1<=len(words)<=4 and words[0][0].isupper(): return raw
     return None
 
@@ -175,6 +198,7 @@ def _batting_team_for(half: str, is_away: bool) -> str:
 def _parse_gc(paras, is_away: bool):
     pas,inning_scores = [],{}
     inning=half=batting_team=pitcher=None
+    pitcher_number=None
     outs=score_storm=score_opp=0; pa_sequence=0
     closed_innings=set()
     we_are_away = bool(is_away)
@@ -222,8 +246,16 @@ def _parse_gc(paras, is_away: bool):
             if "Lineup changed" in line and "pitcher" in line.lower():
                 m=re.search(r"Lineup changed:\s+([\w\sÀ-ÿ]+?)\s+in at pitcher",line,re.I)
                 if m: pitcher=m.group(1).strip()
-        pt=re.search(r"([\w\s]+?)\s+pitching",all_text,re.I)
-        if pt: pitcher=pt.group(1).strip()
+        # The opposing pitcher is identified only by number ("#11 pitching"),
+        # and \w matched the digits — so pitcher_name held "11", a value of a
+        # different kind from the column's name. Keep the number, but in a
+        # field that says number.
+        pt_num=re.search(r"#(\d+)\s+pitching",all_text,re.I)
+        if pt_num:
+            pitcher_number=pt_num.group(1); pitcher=None
+        else:
+            pt=re.search(r"([A-ZÀ-Ÿ][\w.'\-]*(?:\s+[A-ZÀ-Ÿ][\w.'\-]*)*)\s+pitching",all_text)
+            if pt: pitcher=pt.group(1).strip(); pitcher_number=None
 
         new_storm=new_opp=None; outs_after=None
         for line in block_paras:
@@ -252,8 +284,9 @@ def _parse_gc(paras, is_away: bool):
 
         pas.append({
             "inning":inning,"half_inning":half,"pa_sequence":pa_sequence,
-            "batting_team":batting_team,"batter_name":batter or "Unknown",
-            "pitcher_name":pitcher,"outs_before":min(outs,2),
+            "batting_team":batting_team,"batter_name":batter,
+            "pitcher_name":pitcher,"pitcher_number":pitcher_number,
+            "outs_before":min(outs,2),
             "score_our_before":score_storm,"score_opp_before":score_opp,
             "runner_on_1b":None,"runner_on_2b":None,"runner_on_3b":None,
             "result":result_type,"hit_type":_hit_type(all_text),
@@ -460,11 +493,21 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
     sb.table("base_running_events").delete().eq("game_id",game_id).execute()
     sb.table("plate_appearances").delete().eq("game_id",game_id).execute()
 
+    # A batter we cannot place is reported, never swallowed. Storing "Unknown"
+    # meant a name the parser failed on reached a coach's recap looking like a
+    # player (DS-114); a miss is a parsing problem and should read as one.
+    unresolved = []
     for pa in pa_dicts:
         pa["game_id"] = game_id
         pa["team_id"] = team_id
-        pa["batter_player_id"]  = (resolve_player(pa["batter_name"],player_map)
-                                    if pa["batting_team"]=="our_team" else None)
+        if pa["batting_team"] == "our_team":
+            pa["batter_player_id"] = resolve_player(pa["batter_name"], player_map)
+            if not pa["batter_player_id"]:
+                unresolved.append(
+                    f"inning {pa.get('inning')} {pa.get('half_inning')}: "
+                    f"{pa.get('batter_name') or '(no name parsed)'} — {pa.get('result')}")
+        else:
+            pa["batter_player_id"] = None
         pa["pitcher_player_id"] = resolve_player(pa.get("pitcher_name"),player_map)
 
     BATCH=50
@@ -496,9 +539,16 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
         sb.table("inning_scores").insert(is_rows).execute()
 
     storm_pas=sum(1 for p in pa_dicts if p["batting_team"]=="our_team")
+    message = (f"{len(inserted)} plate appearances, {len(all_bre)} base running events, "
+               f"{len(is_rows)} inning score rows. {team_name} PAs: {storm_pas}.")
+    if unresolved:
+        message += (f" {len(unresolved)} plate appearance"
+                    f"{'' if len(unresolved) == 1 else 's'} could not be matched to a "
+                    f"player ({'; '.join(unresolved[:5])}"
+                    f"{f' and {len(unresolved) - 5} more' if len(unresolved) > 5 else ''}).")
     return {
-        "message": (f"{len(inserted)} plate appearances, {len(all_bre)} base running events, "
-                    f"{len(is_rows)} inning score rows. {team_name} PAs: {storm_pas}."),
+        "message": message,
         "details": [f"PA #{p['pa_sequence']}: {p['batter_name']} — {p['result']}"
                     for p in pa_dicts if p["batting_team"]=="our_team"][:20],
+        "unresolved_batters": unresolved,
     }
