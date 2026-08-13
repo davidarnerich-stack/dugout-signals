@@ -5,24 +5,58 @@ from docx import Document
 from .common import build_player_map, resolve_player
 
 # ── Constants ──────────────────────────────────────────────────────────────────
+# A result type here is a block header: seeing one starts a new plate
+# appearance. A header NOT in this set does not start one — it falls through to
+# the block body and is appended to the plate appearance above it, dragging its
+# narrative and every base-running event with it. The surviving row then looks
+# complete and internally consistent while describing two different batters,
+# which is why this is worse than dropping it (DS-122).
+#
+# Three were missing, all found in real files:
+#   Catcher's Interference   Yankees x2, Mischief x1
+#   Sacrifice Fly            Yankees playoff — GameChanger does emit this
+#   Infield Fly              Woodpeckers — its line carried three "remains at"
+#
+# _unknown_headers() below reports anything header-shaped that is still not
+# listed, so the next one announces itself instead of corrupting a row.
 RESULT_TYPES = {
     "Single","Double","Triple","Home Run","Walk","Strikeout",
     "Ground Out","Fly Out","Pop Out","Line Out","Fielder's Choice",
     "Double Play","Triple Play","Error","Dropped 3rd Strike",
-    "Sacrifice Bunt","Runner Out","Inning Ended","Hit By Pitch",
+    "Sacrifice Bunt","Sacrifice Fly","Infield Fly","Runner Out",
+    "Inning Ended","Hit By Pitch","Catcher's Interference",
 }
 
+# (outs recorded, is a hit, batter reached base)
 RESULT_META = {
     "Single":(0,True,True),"Double":(0,True,True),"Triple":(0,True,True),
     "Home Run":(0,True,True),"Walk":(0,False,True),"Hit By Pitch":(0,False,True),
     "Dropped 3rd Strike":(0,False,True),"Error":(0,False,True),
+    # Awarded first base, no at-bat charged, error to the catcher.
+    "Catcher's Interference":(0,False,True),
     "Fielder's Choice":(1,False,True),"Sacrifice Bunt":(1,False,False),
+    # Batter is out; the run scoring is the point of the play.
+    "Sacrifice Fly":(1,False,False),
+    # Batter is out on the umpire's call whether or not the ball is caught.
+    "Infield Fly":(1,False,False),
     "Strikeout":(1,False,False),"Ground Out":(1,False,False),
     "Fly Out":(1,False,False),"Pop Out":(1,False,False),
     "Line Out":(1,False,False),"Double Play":(2,False,False),
     "Triple Play":(3,False,False),"Runner Out":(1,False,False),
     "Inning Ended":(0,False,False),
 }
+
+# Which plate-appearance results put a ball in fair territory, and which
+# compel a runner without one. Used to say WHY a runner moved when the text
+# does not (DS-122). Anything not listed resolves to 'unknown' rather than
+# being assigned a reason — a strikeout with a runner advancing could be a
+# steal or a wild pitch, and guessing between them is what this work removes.
+BALL_IN_PLAY_RESULTS = {
+    "Single","Double","Triple","Home Run","Ground Out","Fly Out","Pop Out",
+    "Line Out","Fielder's Choice","Error","Double Play","Triple Play",
+    "Sacrifice Bunt","Sacrifice Fly","Infield Fly",
+}
+FORCED_RESULTS = {"Walk","Hit By Pitch","Catcher's Interference"}
 
 HIT_TYPE_MAP = {
     "hard line drive":"line_drive","line drive":"line_drive",
@@ -87,10 +121,30 @@ STEAL_RE   = re.compile(rf"{_WHO}\s+steals\s+(2nd|3rd|home)")
 CS_RE      = re.compile(rf"{_WHO}\s+caught stealing\s+(\w+){_FIELDER}")
 PICKOFF_RE = re.compile(rf"{_WHO}\s+picked off at\s+(\w+){_FIELDER}")
 PICKOFF_ATTEMPT_RE = re.compile(r"Pickoff attempt at\s+(\w+)", re.I)
+# The cause is OPTIONAL, and that is the whole point. Requiring "on <cause>"
+# dropped 516 of the 1,415 advances in the corpus — every runner who moved up
+# because the batter walked, was hit, or put a ball in play. Those are not
+# uncaused; the cause is the plate appearance itself, which _reason_for() reads
+# from pa.result rather than guessing (DS-122).
 ADVANCE_RE = re.compile(
-    rf"{_WHO}\s+advances? to\s+(\w+)\s+on\s+"
-    r"(wild pitch|passed ball|error by[^,\.]*|"
-    r"the (?:same )?(?:error|throw)|throw)")
+    rf"{_WHO}\s+advances? to\s+(\w+)(?:\s+on\s+([^,;.\]]+))?")
+
+# "M Barragan walks, A Arkapaw remains at 2nd." 761 of these in the corpus and
+# the parser read none of them. A runner who did not move is not the absence of
+# an event — it is a positive statement about where they are standing, which is
+# exactly the evidence base-state reconstruction needs (DS-113).
+HELD_RE = re.compile(rf"{_WHO}\s+remains? at\s+(\w+)")
+
+# A block header is short, title-shaped and carries no sentence punctuation.
+# Used only to notice one we do not recognise — never to accept it, since
+# acting on a guessed result type is how the wrong thing gets stored.
+HEADER_SHAPED = re.compile(r"^[A-Z][A-Za-z'’0-9]*(?:\s+[A-Za-z0-9'’]+){0,3}$")
+# Lines that are legitimately short and title-shaped but are not headers: the
+# outs counter, a lone pitch call, the "N Surname at bat" form some scorers
+# use, and the half-inning closer.
+_KNOWN_NON_HEADER = re.compile(
+    r"^(?:\d+\s+Outs?|Foul|In play|Ball\s*\d*|Strike\s*\d*|Half-inning"
+    r"|.*\bat bat)\b", re.I)
 # A run is the event that matters most, so this is the pattern that can least
 # afford to be fussy about punctuation. It used to end at "," "." or a line
 # break only, which dropped "M Y scores]" inside a bracketed play and
@@ -100,6 +154,49 @@ ADVANCE_RE = re.compile(
 # was dropped entirely (DS-112 pass 2).
 SCORED_RE  = re.compile(
     rf"{_WHO}\s+scores?(?:\s+(?:on|after)\s+(.+?))?(?:[,;.\]]|\n|$)")
+
+
+def _reason_for(cause, pa_result=None, prior=None):
+    """
+    Why a runner moved: from the text when it says, from the plate appearance
+    when it does not, and 'unknown' when neither can tell us.
+
+    `prior` is the reason of the previous movement in the same block, for the
+    "same" forms. "A Zhang advances to 3rd on wild pitch, E Cazzulino advances
+    to 2nd on the same pitch" is ONE wild pitch moving two runners — 95 of
+    these in the corpus, and the second runner was dropped every time.
+
+    Never falls through to a default. The old classifier ended in
+    `else: advance_throw`, which asserted a defensive throw on any phrase it
+    did not recognise — including defensive indifference, whose defining fact
+    is that no play was made.
+    """
+    c = (cause or "").strip().lower().rstrip(".")
+
+    if c:
+        # "the same pitch/error/throw" — inherit rather than re-classify.
+        if "same" in c:
+            if prior:
+                return prior
+            if "error" in c:  return "error"
+            if "throw" in c:  return "throw"
+            return "unknown"          # "the same pitch" with nothing before it
+        if "defensive indifference" in c:      return "defensive_indifference"
+        if "wild pitch" in c:                  return "wild_pitch"
+        if "passed ball" in c or c == "pb":    return "passed_ball"
+        if "catcher's interference" in c or "catchers interference" in c:
+            return "catcher_interference"
+        if "error" in c:                       return "error"
+        if "steal" in c:                       return "steal"
+        if "throw" in c:                       return "throw"
+        if "out" in c or "fly" in c or "hit" in c or "single" in c:
+            return "batted_ball"               # "on the groundout", "on the fly"
+        return "unknown"                       # said something, we cannot read it
+
+    # Nothing stated. The plate appearance knows.
+    if pa_result in FORCED_RESULTS:        return "forced"
+    if pa_result in BALL_IN_PLAY_RESULTS:  return "batted_ball"
+    return "unknown"
 
 
 def _resolve_runner(raw, player_map):
@@ -240,6 +337,7 @@ def _batting_team_for(half: str, is_away: bool) -> str:
 def _parse_gc(paras, is_away: bool):
     pas,inning_scores = [],{}
     bad_innings=[]
+    unknown_headers=[]
     inning=half=batting_team=pitcher=None
     pitcher_number=None
     outs=score_storm=score_opp=0; pa_sequence=0
@@ -256,6 +354,13 @@ def _parse_gc(paras, is_away: bool):
             if cur_result: blocks.append((cur_result,cur_block))
             cur_result=p; cur_block=[]
         else:
+            # A line shaped like a block header but not in RESULT_TYPES does
+            # not start a plate appearance — it lands in the one above, which
+            # then silently describes two batters. Catcher's Interference,
+            # Sacrifice Fly and Infield Fly each did this. Say so rather than
+            # let the next unlisted result type do it again (DS-122).
+            if HEADER_SHAPED.match(p) and not _KNOWN_NON_HEADER.match(p):
+                unknown_headers.append(p)
             cur_block.append(p)
     if cur_result: blocks.append((cur_result,cur_block))
 
@@ -364,19 +469,22 @@ def _parse_gc(paras, is_away: bool):
                 _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
-    return pas,inning_scores,bad_innings
+    return pas,inning_scores,bad_innings,unknown_headers
 
 
 # ── Base running ───────────────────────────────────────────────────────────────
-def _base_running_events(block_text, pa_id, game_id, player_map):
+def _base_running_events(block_text, pa_id, game_id, player_map, pa_result=None):
     """
-    Pull base-running events out of one plate appearance's text.
+    Every runner movement — and non-movement — in one plate appearance.
 
-    Note what this is and is not. DS-101 moved the season's stolen-base and
-    caught-stealing *counts* onto the official CSV, so nothing here feeds a
-    total the coach sees as a number. What it feeds is play-level detail — who
-    took second, who scored on the passed ball — so a name that resolves to
-    nobody costs a sentence in the report, not a wrong statistic.
+    Recorded as `outcome` (what happened to the runner: advanced, held, out,
+    scored) and `reason` (why). Splitting them is the point: the old
+    `event_type` folded the cause into the type name, so "all advances" meant
+    enumerating four values and undercounting the day a fifth appeared.
+
+    `pa_result` is the plate appearance's own result, used to say why a runner
+    moved when the text does not — which is most of the time, because the cause
+    is the batter's at-bat and is already recorded there.
     """
     events=[]
     def bn(raw): return BASE_NAMES.get(raw.lower().strip())
@@ -390,40 +498,78 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
 
     for m in STEAL_RE.finditer(block_text):
         base=m.group(2).lower()
-        ev(m.group(1), event_type="stolen_base",
-           from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base), to_base=bn(m.group(2)),
-           scored=base=="home", how="stolen_base", fielder=None)
+        ev(m.group(1), outcome="scored" if base=="home" else "advanced",
+           reason="steal",
+           from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base),
+           to_base=bn(m.group(2)), scored=base=="home",
+           how="steal of home" if base=="home" else "steal", fielder=None)
 
+    # An out is not a base: `outcome` carries that, so `to_base` stays NULL.
     for m in CS_RE.finditer(block_text):
-        ev(m.group(1), event_type="caught_stealing", from_base=None, to_base="out",
-           scored=False, how="caught_stealing",
+        ev(m.group(1), outcome="out", reason="steal", from_base=None, to_base=None,
+           scored=False, how="caught stealing",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
     for m in PICKOFF_RE.finditer(block_text):
-        ev(m.group(1), event_type="pickoff_out", from_base=bn(m.group(2)), to_base="out",
-           scored=False, how="pickoff",
+        ev(m.group(1), outcome="out", reason="pickoff", from_base=bn(m.group(2)),
+           to_base=None, scored=False, how="picked off",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
-    # A pickoff attempt names no runner at all. That is a fact about the play,
-    # not a parse failure — so the name is NULL rather than the word "unknown".
+    # A pickoff attempt names no runner and nothing happens to one — but it
+    # asserts a runner WAS on that base, which is the evidence DS-113 needs.
+    # `held` says that; the old `pickoff_attempt` type did not.
     for m in PICKOFF_ATTEMPT_RE.finditer(block_text):
+        base = bn(m.group(1))
         events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":None,
             "runner_number":None,"player_id":None,
-            "event_type":"pickoff_attempt","from_base":bn(m.group(1)),"to_base":None,
-            "scored":False,"how":"pickoff_attempt","fielder":None})
+            "outcome":"held","reason":"pickoff",
+            "from_base":base,"to_base":base,
+            "scored":False,"how":"pickoff attempt","fielder":None})
 
-    for m in ADVANCE_RE.finditer(block_text):
-        how=m.group(3).strip().lower()
-        if "wild pitch" in how: et="advance_wild_pitch"
-        elif "passed ball" in how: et="advance_passed_ball"
-        elif "error" in how: et="advance_error"
-        else: et="advance_throw"
-        ev(m.group(1), event_type=et, from_base=None, to_base=bn(m.group(2)),
-           scored=False, how=how, fielder=None)
+    # Advances and runs, walked together in DOCUMENT order so "on the same
+    # pitch" can inherit the cause stated before it.
+    #
+    # They have to share one pass. One wild pitch commonly moves three runners
+    # and the first clause is the one that names it:
+    #
+    #   J McFarlane scores on wild pitch, A Arkapaw advances to 3rd on the
+    #   same pitch, W Salisian advances to 2nd on the same pitch
+    #
+    # Running the two patterns in separate loops left the advances unable to
+    # see that the cause had been stated on a `scores` clause, so both inherited
+    # nothing. Fourteen advances in the PSW games alone.
+    moves = sorted(
+        [(m.start(), "advanced", m) for m in ADVANCE_RE.finditer(block_text)] +
+        [(m.start(), "scored",   m) for m in SCORED_RE.finditer(block_text)])
 
-    for m in SCORED_RE.finditer(block_text):
-        ev(m.group(1), event_type="scored", from_base="3b", to_base="home",
-           scored=True, how=(m.group(2) or "").strip() or None, fielder=None)
+    prior=None
+    for _, kind, m in moves:
+        cause=(m.group(3) if kind=="advanced" else m.group(2)) or ""
+        cause=cause.strip()
+        reason=_reason_for(cause, pa_result, prior)
+        # Only a *stated* cause is inheritable. "the same pitch" refers to a
+        # wild pitch or passed ball, never to the walk a reason would otherwise
+        # have been derived from — letting a PA-derived reason become `prior`
+        # had advances inheriting `forced` from a walk.
+        if cause:
+            prior=reason
+        if kind=="advanced":
+            ev(m.group(1), outcome="advanced", reason=reason,
+               from_base=None, to_base=bn(m.group(2)), scored=False,
+               how=cause.lower() or None, fielder=None)
+        else:
+            ev(m.group(1), outcome="scored", reason=reason,
+               from_base="3b", to_base="home", scored=True,
+               how=cause.lower() or None, fielder=None)
+
+    # A runner who did not move. Not the absence of an event — a positive
+    # statement about where they are standing. The reason a runner *stayed* is
+    # not something the text asserts, so do not invent one.
+    for m in HELD_RE.finditer(block_text):
+        base=bn(m.group(2))
+        ev(m.group(1), outcome="held", reason="unknown",
+           from_base=base, to_base=base, scored=False,
+           how="remains at "+m.group(2).lower(), fielder=None)
 
     return events
 
@@ -478,7 +624,7 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
             "game first, then add the play-by-play."
         )
 
-    pa_dicts, inning_scores, bad_innings = _parse_gc(paras, is_away)
+    pa_dicts, inning_scores, bad_innings, unknown_headers = _parse_gc(paras, is_away)
 
     # Clear existing
     sb.table("inning_scores").delete().eq("game_id",game_id).execute()
@@ -514,7 +660,8 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
         pa_id=pa_id_map.get(pa["pa_sequence"])
         if not pa_id: continue
         txt=" ".join(filter(None,[pa.get("pitch_sequence"),pa.get("narrative")]))
-        all_bre.extend(_base_running_events(txt,pa_id,game_id,player_map))
+        all_bre.extend(_base_running_events(
+            txt,pa_id,game_id,player_map,pa_result=pa.get("result")))
 
     for bre in all_bre:
         bre["team_id"] = team_id
@@ -546,10 +693,20 @@ def process(sb, source, team_id, team_name, game_id=None, filename=None, is_text
                     f"({'; '.join(bad_innings[:3])}) — plays after "
                     f"{'it' if len(bad_innings) == 1 else 'them'} may be "
                     f"recorded in the wrong inning.")
+    if unknown_headers:
+        # Loud, because this one does not lose a row — it merges two, and the
+        # survivor looks complete while describing two different batters.
+        seen = sorted(set(unknown_headers))
+        message += (f" {len(seen)} unrecognised result type"
+                    f"{'' if len(seen) == 1 else 's'} "
+                    f"({', '.join(seen[:5])}) — those plate appearances were "
+                    f"folded into the one before them. Add them to "
+                    f"RESULT_TYPES and re-upload.")
     return {
         "message": message,
         "details": [f"PA #{p['pa_sequence']}: {p['batter_name']} — {p['result']}"
                     for p in pa_dicts if p["batting_team"]=="our_team"][:20],
         "unresolved_batters": unresolved,
         "bad_innings": bad_innings,
+        "unknown_headers": sorted(set(unknown_headers)),
     }

@@ -328,19 +328,23 @@ def test_pickoff_and_caught_stealing_survive_any_fielder(client, sb, clean_team)
     game = only_game(sb, clean_team["id"])
     events = rows(sb, "base_running_events", game["game_id"])
 
-    kinds = [e for e in events if e["event_type"] in ("pickoff_out", "caught_stealing")]
+    # Outs on the basepaths, whatever put the runner out — one predicate, not
+    # an enumeration of type names (DS-122).
+    kinds = [e for e in events if e["outcome"] == "out"]
     assert len(kinds) == 2, \
         f"expected the pickoff and the caught stealing, got {len(kinds)}"
 
-    by_type = {e["event_type"]: e for e in kinds}
-    assert "pickoff_out" in by_type, "the pickoff was dropped again"
-    assert "caught_stealing" in by_type, "the caught stealing was dropped again"
+    by_reason = {e["reason"]: e for e in kinds}
+    assert "pickoff" in by_reason, "the pickoff was dropped again"
+    assert "steal" in by_reason, "the caught stealing was dropped again"
 
     # A fielder that is a position with no name is still a fielder, and an
     # event with no fielder at all is still an event.
-    assert by_type["pickoff_out"]["fielder"] == "third baseman", \
-        f"fielder was {by_type['pickoff_out']['fielder']!r}"
-    assert by_type["pickoff_out"]["runner_name"] == "J McFarlane"
+    assert by_reason["pickoff"]["fielder"] == "third baseman", \
+        f"fielder was {by_reason['pickoff']['fielder']!r}"
+    assert by_reason["pickoff"]["runner_name"] == "J McFarlane"
+    # An out is not a base.
+    assert by_reason["pickoff"]["to_base"] is None
 
     # Never let a name run off the end of its line into the next one.
     for e in events:
@@ -348,6 +352,67 @@ def test_pickoff_and_caught_stealing_survive_any_fielder(client, sb, clean_team)
         assert "\n" not in name, f"runner name crossed a line break: {name!r}"
         assert not (e["fielder"] or "").count("\n"), \
             f"fielder crossed a line break: {e['fielder']!r}"
+
+
+def test_every_runner_movement_is_recorded_with_a_reason(client, sb, clean_team):
+    """
+    DS-122. The old model required an explicit cause, so it kept only the
+    advances that named one — 516 of the corpus's 1,415 advances were dropped
+    because the runner simply moved up on the play, and all 761 "remains at"
+    statements were ignored entirely.
+
+    A runner who did not move is not the absence of an event. It is a
+    statement about where they are standing, and it is what base-state
+    reconstruction reads (DS-113).
+    """
+    upload(client, GAME_4, pbp=True)
+    game = only_game(sb, clean_team["id"])
+    events = rows(sb, "base_running_events", game["game_id"])
+    assert events
+
+    outcomes = {e["outcome"] for e in events}
+    assert "held" in outcomes, '"remains at" is being ignored again'
+    assert "advanced" in outcomes
+
+    # Every event says why, and never by guessing.
+    VOCAB = {"steal","wild_pitch","passed_ball","error","throw","pickoff",
+             "defensive_indifference","forced","batted_ball",
+             "catcher_interference","unknown"}
+    for e in events:
+        assert e["outcome"] in {"advanced","held","out","scored"}, e["outcome"]
+        assert e["reason"] in VOCAB, f"{e['reason']!r} is outside the vocabulary"
+
+    # A forced advance is the commonest kind and used to be invisible: the
+    # batter walks and the runners ahead have nowhere to stand.
+    #
+    # Must be specific to outcome='advanced'. Asserting on reason alone passes
+    # even with every advance broken, because a bases-loaded walk also forces a
+    # RUN home — the mutation that restored the old cause-required pattern slid
+    # straight through the looser version of this check.
+    assert [e for e in events
+            if e["outcome"] == "advanced" and e["reason"] == "forced"], \
+        "no forced advances — an advance with no stated cause is being dropped"
+
+    # And the advances with no stated cause at all are the bulk of them.
+    no_cause = [e for e in events if e["outcome"] == "advanced" and not e["how"]]
+    assert len(no_cause) >= 5, \
+        f"only {len(no_cause)} advances without a stated cause; the pattern " \
+        f"is requiring one again"
+
+    # A held runner's `how` is the text of the hold ("remains at 2nd"), not a
+    # cause — the text never says why a runner stayed, so 'unknown' is the
+    # honest answer and this check must not demand otherwise.
+    assert all(e["reason"] == "unknown"
+               for e in events if e["outcome"] == "held" and e["reason"] != "pickoff")
+
+    # An advance or run whose cause the text DOES state must not be recorded
+    # as 'unknown', and one it does not state must not be invented.
+    stated = [e for e in events
+              if e["outcome"] in ("advanced", "scored")
+              and e["how"] and "same" not in e["how"]]
+    assert all(e["reason"] != "unknown" for e in stated), \
+        f"a stated cause was not classified: " \
+        f"{[(e['how'], e['reason']) for e in stated if e['reason']=='unknown'][:3]}"
 
 
 # ── DS-100: a doubleheader stays two games ────────────────────────────────

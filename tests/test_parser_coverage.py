@@ -14,14 +14,20 @@ Any line where the trigger fires but the full pattern does not is a candidate
 silent miss — the parser saw something it was meant to understand, did not,
 and said nothing.
 
-The baselines below are a ratchet, not a target. They record what the parser
+The ceilings below are a ratchet, not a target. They record what the parser
 misses today so that a change which makes it miss *more* fails here. Lowering
-a number is always welcome; raising one needs a reason in the commit message.
+a ceiling is always welcome; raising one needs a reason in the commit message.
 
-Runs against every play-by-play on this machine — 55 files, ~10k lines,
-across four teams and three seasons — not just the 8 PSW games the other
-tests use. Skips when that corpus is absent, so CI on another machine does
-not fail for lack of a coach's documents.
+They are **rates, not counts**, and that matters. The corpus is a live folder
+on a coach's machine — it grew from 55 files to 65 during the session that
+wrote this test, because more games get played and files sync down. Absolute
+miss counts move with corpus size and would fail for reasons that have nothing
+to do with the parser, which is a test that cries wolf until someone stops
+reading it.
+
+Runs against every play-by-play on this machine, across four teams and three
+seasons — not just the 8 PSW games the other tests use. Skips when that corpus
+is absent, so this does not fail on another machine.
 """
 import os
 import re
@@ -53,34 +59,34 @@ BATTER_VERBS = re.compile(
     r"picked off|caught stealing|steals?|advances?|scores?)\b", re.I)
 
 
-# name -> (trigger, full pattern, anchored?, max misses allowed)
+# name -> (trigger, full pattern, anchored?, max miss RATE in percent)
 CHECKS = {
     "stolen_base": (
-        re.compile(r"\bsteals\b", re.I), STEAL_RE, False, 1),
+        re.compile(r"\bsteals\b", re.I), STEAL_RE, False, 0.6),
     "caught_stealing": (
-        re.compile(r"\bcaught stealing\b", re.I), CS_RE, False, 0),
+        re.compile(r"\bcaught stealing\b", re.I), CS_RE, False, 0.0),
     "pickoff_out": (
-        re.compile(r"\bpicked off\b", re.I), PICKOFF_RE, False, 0),
+        re.compile(r"\bpicked off\b", re.I), PICKOFF_RE, False, 0.0),
     "pickoff_attempt": (
-        re.compile(r"\bpickoff attempt\b", re.I), PICKOFF_ATTEMPT_RE, False, 0),
-    # KNOWN GAP, tracked not accepted: the pattern requires an explicit cause
-    # ("on a wild pitch", "on an error"), and most advances have none — the
-    # runner simply moved up on the play. That is ~42% of all advances in the
-    # corpus. Nothing reads them today, but DS-113 cannot reconstruct base
-    # state without them. See the DS-112 pass-2 comment.
+        re.compile(r"\bpickoff attempt\b", re.I), PICKOFF_ATTEMPT_RE, False, 0.0),
+    # Was 42.5% when the pattern demanded an explicit cause. DS-122 made the
+    # cause optional and derives it from the plate appearance, taking this to
+    # ~1%. The remainder are advances whose subject is elided across clauses
+    # ("[R M advances on passed ball, steals 3rd, scores...]"), which needs
+    # clause tracking rather than a better pattern.
     "advance": (
-        re.compile(r"\badvances? to\b", re.I), ADVANCE_RE, False, 455),
+        re.compile(r"\badvances? to\b", re.I), ADVANCE_RE, False, 1.5),
     "scored": (
-        re.compile(r"\bscores\b", re.I), SCORED_RE, False, 2),
+        re.compile(r"\bscores\b", re.I), SCORED_RE, False, 0.8),
     "inning_header": (
-        re.compile(r"^\s*(top|bottom)\s+\d", re.I), INNING_RE, True, 0),
+        re.compile(r"^\s*(top|bottom)\s+\d", re.I), INNING_RE, True, 0.0),
     "batter": (
-        re.compile(r"^[A-Z#]"), BATTER_RE, False, 91),
+        re.compile(r"^[A-Z#]"), BATTER_RE, False, 4.0),
     "score_line": (
         re.compile(r"^[A-Z0-9]{2,6}\s+\d+\s*-\s*[A-Z0-9]{2,6}\s+\d+", re.I),
-        SCORE_RE, False, 0),
+        SCORE_RE, False, 0.0),
     "outs_line": (
-        re.compile(r"^\d\s+Outs?\s*$", re.I), OUTS_RE, True, 0),
+        re.compile(r"^\d\s+Outs?\s*$", re.I), OUTS_RE, True, 0.0),
 }
 
 
@@ -142,7 +148,7 @@ def corpus():
 
 @pytest.mark.parametrize("name", sorted(CHECKS))
 def test_pattern_does_not_silently_miss_more_than_baseline(name, corpus):
-    trigger, full, anchored, allowed = CHECKS[name]
+    trigger, full, anchored, max_rate = CHECKS[name]
     misses = []
     triggered = 0
     for label, lines in corpus:
@@ -157,12 +163,13 @@ def test_pattern_does_not_silently_miss_more_than_baseline(name, corpus):
     assert triggered, f"{name}: trigger never fired — the corpus or the " \
                       f"trigger is wrong, so this check proves nothing"
 
-    if len(misses) > allowed:
+    rate = 100.0 * len(misses) / triggered
+    if rate > max_rate:
         by_file = collections.Counter(f for f, _ in misses)
         sample = "\n".join(f"    {l[:120]}" for _, l in misses[:5])
         pytest.fail(
             f"{name}: {len(misses)} silent misses out of {triggered} "
-            f"triggers (baseline {allowed}).\n"
+            f"triggers = {rate:.2f}% (ceiling {max_rate}%).\n"
             f"  These lines are about a {name} and the parser did not "
             f"understand them, without recording that it failed.\n"
             f"  worst files: {by_file.most_common(3)}\n{sample}")
