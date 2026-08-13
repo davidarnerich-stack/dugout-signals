@@ -73,6 +73,34 @@ POSITION = (r"(?:pitcher|catcher|shortstop"
             r"|(?:first|second|third)\s+baseman"
             r"|(?:left|right|cent(?:er|re)|short)\s+fielder)")
 
+# The base-running patterns live at module level so the coverage ratchet in
+# tests/test_parser_coverage.py can import the *same objects* the parser uses.
+# Rebuilding equivalent patterns in the test was the obvious shortcut and the
+# wrong one: it guards a replica, so the parser can change and the test stays
+# green describing code that no longer exists.
+_WHO = rf"(#\d+|{RUNNER})"
+# The fielder is optional in both plays below. An event that happened is worth
+# recording even when we cannot say who made the play (DS-112).
+_FIELDER = rf"(?:,?\s*(?:by\s+)?({POSITION}(?:\s+(?:#\d+|{RUNNER}))?))?"
+
+STEAL_RE   = re.compile(rf"{_WHO}\s+steals\s+(2nd|3rd|home)")
+CS_RE      = re.compile(rf"{_WHO}\s+caught stealing\s+(\w+){_FIELDER}")
+PICKOFF_RE = re.compile(rf"{_WHO}\s+picked off at\s+(\w+){_FIELDER}")
+PICKOFF_ATTEMPT_RE = re.compile(r"Pickoff attempt at\s+(\w+)", re.I)
+ADVANCE_RE = re.compile(
+    rf"{_WHO}\s+advances? to\s+(\w+)\s+on\s+"
+    r"(wild pitch|passed ball|error by[^,\.]*|"
+    r"the (?:same )?(?:error|throw)|throw)")
+# A run is the event that matters most, so this is the pattern that can least
+# afford to be fussy about punctuation. It used to end at "," "." or a line
+# break only, which dropped "M Y scores]" inside a bracketed play and
+# "Peyton L scores; Adelaide J advances to 3rd" — a semicolon separates clauses
+# in exactly the multi-runner plays where a run is easiest to lose. "after"
+# joins "on" as a cause: "scores after tagging up" is a sacrifice fly, and it
+# was dropped entirely (DS-112 pass 2).
+SCORED_RE  = re.compile(
+    rf"{_WHO}\s+scores?(?:\s+(?:on|after)\s+(.+?))?(?:[,;.\]]|\n|$)")
+
 
 def _resolve_runner(raw, player_map):
     """
@@ -360,42 +388,31 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
         events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":name,
                        "runner_number":number,"player_id":player_id, **fields})
 
-    # Each pattern accepts either a name or a jersey number, because the
-    # play-by-play writes opposing runners as "#6" and ours by name.
-    who = rf"(#\d+|{RUNNER})"
-
-    for m in re.finditer(rf"{who}\s+steals\s+(2nd|3rd|home)",block_text):
+    for m in STEAL_RE.finditer(block_text):
         base=m.group(2).lower()
         ev(m.group(1), event_type="stolen_base",
            from_base={"2nd":"1b","3rd":"2b","home":"3b"}.get(base), to_base=bn(m.group(2)),
            scored=base=="home", how="stolen_base", fielder=None)
 
-    # The fielder is optional in both. An event that happened is worth
-    # recording even when we cannot say who made the play.
-    fielder = rf"(?:,?\s*({POSITION}(?:\s+(?:#\d+|{RUNNER}))?))?"
-
-    for m in re.finditer(rf"{who}\s+caught stealing\s+(\w+){fielder}",block_text):
+    for m in CS_RE.finditer(block_text):
         ev(m.group(1), event_type="caught_stealing", from_base=None, to_base="out",
            scored=False, how="caught_stealing",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
-    for m in re.finditer(rf"{who}\s+picked off at\s+(\w+){fielder}",block_text):
+    for m in PICKOFF_RE.finditer(block_text):
         ev(m.group(1), event_type="pickoff_out", from_base=bn(m.group(2)), to_base="out",
            scored=False, how="pickoff",
            fielder=(m.group(3) or "").strip().rstrip(".,") or None)
 
     # A pickoff attempt names no runner at all. That is a fact about the play,
     # not a parse failure — so the name is NULL rather than the word "unknown".
-    for m in re.finditer(r"Pickoff attempt at\s+(\w+)",block_text,re.I):
+    for m in PICKOFF_ATTEMPT_RE.finditer(block_text):
         events.append({"pa_id":pa_id,"game_id":game_id,"runner_name":None,
             "runner_number":None,"player_id":None,
             "event_type":"pickoff_attempt","from_base":bn(m.group(1)),"to_base":None,
             "scored":False,"how":"pickoff_attempt","fielder":None})
 
-    for m in re.finditer(
-            rf"{who}\s+advances? to\s+(\w+)\s+on\s+"
-            r"(wild pitch|passed ball|error by[^,\.]*|the (?:same )?(?:error|throw)|throw)",
-            block_text):
+    for m in ADVANCE_RE.finditer(block_text):
         how=m.group(3).strip().lower()
         if "wild pitch" in how: et="advance_wild_pitch"
         elif "passed ball" in how: et="advance_passed_ball"
@@ -404,7 +421,7 @@ def _base_running_events(block_text, pa_id, game_id, player_map):
         ev(m.group(1), event_type=et, from_base=None, to_base=bn(m.group(2)),
            scored=False, how=how, fielder=None)
 
-    for m in re.finditer(rf"{who}\s+scores?(?:\s+on\s+(.+?))?(?:,|\.|\n|$)",block_text):
+    for m in SCORED_RE.finditer(block_text):
         ev(m.group(1), event_type="scored", from_base="3b", to_base="home",
            scored=True, how=(m.group(2) or "").strip() or None, fielder=None)
 
