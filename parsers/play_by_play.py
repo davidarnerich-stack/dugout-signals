@@ -469,6 +469,27 @@ def _parse_gc(paras, is_away: bool):
                 _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
                 outs=0
 
+    # Close the last half-inning.
+    #
+    # Each half-inning's entry is SEEDED with the cumulative score at its start
+    # (setdefault above) and only becomes that inning's runs when
+    # _update_inning subtracts the baseline. That happens on the third out — so
+    # a half-inning ended by the clock or the run rule never gets there, and its
+    # entry keeps the running score, which then reads as if the team had scored
+    # its entire game total in that one inning.
+    #
+    # Sixteen of nineteen games were affected, most of them summing to exactly
+    # twice the final score: the real innings, plus the game total again from
+    # the unclosed last one.
+    _update_inning(inning_scores,inning,half,score_storm,score_opp,closed_innings)
+
+    # Any half-inning still uncommitted is one we cannot reconstruct — its
+    # entry is a running score, not a delta, and the score at its end is gone.
+    # Drop it. A missing inning is visibly missing; a cumulative score sitting
+    # in an inning column is not.
+    for key in [k for k in inning_scores if (k[0],k[1]) not in closed_innings]:
+        del inning_scores[key]
+
     return pas,inning_scores,bad_innings,unknown_headers
 
 
