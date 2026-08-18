@@ -895,6 +895,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
     # ("A Arnerich is" — DS-114), so they are trimmed against the roster here
     # rather than passed through.
     inning_events = None
+    opponent_innings = None
     if has_pbp:
         our_pas = (
             sb.table("plate_appearances")
@@ -936,6 +937,49 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
                 "scored": [_clean_batter(s) for s in scored],
             })
         inning_events = [{"inning": i, "events": by_inning[i]} for i in sorted(by_inning)]
+
+        # The other half of the game.
+        #
+        # inning_events covers only OUR batting, so the recap had no facts at
+        # all about the innings our pitchers threw — and filled the gap: on
+        # 2026-08-11 it wrote "DeFlorio retired the side in the 5th" when that
+        # half-inning ended on TIME with two outs and four runs in. Nothing in
+        # the prompt contradicted it because nothing in the prompt mentioned it.
+        #
+        # Outs are what makes "retired the side" true or false, so they are the
+        # figure to carry. An inning that did not reach three outs was stopped
+        # by the clock or the run rule, not by the defence.
+        # Outs and batters faced only — deliberately NOT runs.
+        #
+        # `inning_scores` is derived from the running score in the play-by-play,
+        # and GameChanger's scorers correct that score mid-game with a line the
+        # parser does not understand: "Score changed to 6-4". For this very game
+        # the play-by-play climbs to 9 before being corrected back to 6, so the
+        # per-inning runs sum to 12 in a 6-4 game. See DS-125.
+        #
+        # Nothing read inning_scores before this function did, so feeding those
+        # runs into the recap would have made a wrong figure user-facing for the
+        # first time — while fixing a different wrong figure. Outs come from
+        # outs_recorded on each plate appearance and are unaffected.
+        opp_pas_seq = (
+            sb.table("plate_appearances")
+            .select("inning,outs_recorded")
+            .eq("game_id", game_id).eq("batting_team", "opponent")
+            .order("pa_sequence").execute()
+        ).data or []
+
+        opp_by_inning = {}
+        for pa in opp_pas_seq:
+            slot = opp_by_inning.setdefault(pa["inning"], {"outs": 0, "batters": 0})
+            slot["outs"] += (pa.get("outs_recorded") or 0)
+            slot["batters"] += 1
+        opponent_innings = [
+            {"inning": i,
+             "outs": opp_by_inning[i]["outs"],
+             "batters": opp_by_inning[i]["batters"],
+             "reached_three_outs": opp_by_inning[i]["outs"] >= 3}
+            for i in sorted(opp_by_inning)
+        ]
 
     # Where each error actually happened.
     #
@@ -1012,6 +1056,7 @@ def get_single_game_data(sb, game_id: str, team_id: str, team_name: str) -> dict
         "fielding_plays": fielding_plays,
         "error_plays": error_plays,
         "inning_events": inning_events,
+        "opponent_innings": opponent_innings,
         "team_h": team_h, "team_e": team_e,
         "season_to_date": season_to_date,
         "last3": last3,

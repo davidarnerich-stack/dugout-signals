@@ -242,12 +242,26 @@ that. Likewise, strikeouts do not mean nobody reached: a pitcher can strike out 
 having faced six batters. Never describe a pitcher as retiring the side "in order", going "1-2-3",
 or throwing a "clean", "perfect" or "spotless" inning unless the data you were given says every
 batter faced was retired. Where a line reports how many batters reached and how, use that.
+If R is greater than 0, that pitcher did NOT hold the opposition scoreless and did NOT keep them
+"off the scoreboard" — a run is a run whoever is charged with it. Say what happened instead: runs
+scored, and they were unearned. Never write a sentence that concedes in its second half what it
+claimed in its first ("kept them off the scoreboard … though a run did cross"); if you find
+yourself adding "though" or "however" to qualify a claim, the claim was wrong — delete it and
+state the fact plainly.
+Where a figure has been given to you, print the figure. "The team drew 7 walks" — never "a healthy
+number of walks", "several walks" or "a number of free passes". A vague quantity is strictly worse
+than the number it replaces: the coach cannot check it, cannot compare it, and cannot act on it.
+This applies to every count you were handed — hits, walks, strikeouts, errors, innings, chances.
 When you cite a rate stat, name the window it covers in the same sentence ("over the last 3 games",
 not "recently" or "in the recent stretch"). When you describe something changing, give both the
 starting and ending values, so the reader can judge the size of the change for themselves.
 Never begin a section by restating its own title (e.g. don't start the "Hitting" subsection with
 the word "Hitting") — the title is already displayed as a heading directly above your text. Start
 straight into the analysis.
+Every rule above constrains what you may CLAIM, not how you may write. They are here so the facts
+come out right, not to make the prose careful or hedged. Within them, write for a coach reading on
+their phone after a game: plain, warm, specific, and in full flowing sentences. Do not let the
+constraints turn the writing clipped or defensive.
 When referencing innings, follow sportswriting convention: use ordinals like "1st inning" or "3rd
 inning", not "the first inning". Say "inning" more often than "frame" — "frame" is fine as an
 occasional variation, not the default word. When describing a stretch of the game, name the actual
@@ -511,6 +525,24 @@ def _recap_facts(data, us) -> str:
             "inning shown here — do not infer from season or game totals which "
             "inning something happened in, and do not credit a run to a batter "
             "unless a runner is shown scoring on their plate appearance.")
+
+    # The innings our pitchers threw. Without these the recap has no facts about
+    # half the game and fills the gap — "DeFlorio retired the side in the 5th"
+    # for an inning that ended on time with two outs and seven batters up.
+    opp = data.get("opponent_innings") or []
+    if opp:
+        lines.append("Innings our pitchers threw — outs recorded and batters faced: "
+                     + "; ".join(
+                         f"{_ordinal(o['inning'])}: {o['outs']} out"
+                         f"{'' if o['outs'] == 1 else 's'}, {o['batters']} batters"
+                         + ("" if o["reached_three_outs"] else " (did NOT reach three outs)")
+                         for o in opp))
+        lines.append(
+            "An inning that did not reach three outs was stopped by the clock or "
+            "the run rule, not by our defence. Never write that a pitcher "
+            "\"retired the side\", \"set them down\", \"worked a 1-2-3 inning\" or "
+            "\"got out of it\" for such an inning. Runs per inning are NOT given; "
+            "do not state or estimate them.")
 
     tf = data.get("team_fielding") or {}
     if us.get("e"):
@@ -805,10 +837,19 @@ def _fielding_facts(data, us) -> str:
             return 0.0
     catchers = [f for f in data["fielding_stats"] if _innings(f.get("innings_caught")) > 0]
     if catchers:
-        lines.append("Behind the plate: " + "; ".join(
+        lines.append("Who caught, for context only: " + "; ".join(
             f"{f['name']} {f['innings_caught']} innings caught"
             + (f", {_plural(f['pb'], 'passed ball')}" if f.get("pb") else "")
             for f in catchers))
+        # A separate Catching section follows this one and covers the same
+        # ground. On 2026-08-11 both sections recited the identical innings and
+        # passed-ball counts, one after the other.
+        lines.append(
+            "A dedicated Catching section appears immediately after this one and "
+            "covers innings caught, passed balls and the throwing game. Do NOT "
+            "restate those here — no innings-caught figures, no passed-ball "
+            "counts. Mention a catcher only where it bears on a fielding play or "
+            "an error. This section is about the defence in the field.")
 
     # Where each error happened — from play-by-play, which states it outright
     # ("reaches on an error by pitcher A Arnerich"). The stats CSV cannot say,
@@ -838,25 +879,21 @@ def _fielding_facts(data, us) -> str:
     if plays:
         bip = plays["balls_in_play"]
         located = plays.get("located") or 0
-        line = (f"Balls put in play against this defence: {bip} — every ball hit "
-                f"into fair territory, including hits that fell in. This is NOT "
-                f"total chances ({tc if tc is not None else 'n/a'}), which counts "
-                f"only assists, putouts and errors; do not equate them or use one "
-                f"figure for the other.")
+        lines.append(f"Balls put into fair play against this defence: {bip}. "
+                     f"(Not the same as total chances — a hit that falls in is a "
+                     f"ball in play but not a chance.)")
         if plays["by_fielder"]:
             where = ", ".join(f"{loc} ({n})" for loc, n in plays["by_fielder"])
-            line += (f" Of those, {located} could be placed with a fielder: {where}. "
-                     f"The remaining {bip - located} were not located, so do not "
-                     f"describe the distribution as complete.")
-        lines.append(line)
+            lines.append(f"Where {located} of those {bip} went: {where}. "
+                         f"The other {bip - located} could not be placed, so this "
+                         f"is a partial picture — do not present it as the whole.")
     elif tc is not None:
         # No play-by-play: total chances is the honest fallback, named as
         # chances rather than dressed up as balls in play.
         lines.append(
-            f"No play-by-play was provided, so how many balls were put in play "
-            f"is not known. You may say the defence handled {_plural(tc, 'chance')} "
-            f"— chances, not balls in play. Do not remark on the absence of "
-            f"play-by-play; write what the numbers support and stop there.")
+            f"How many balls were put in play is not recorded for this game. You "
+            f"may say the defence handled {_plural(tc, 'chance')} — chances, not "
+            f"balls in play. Do not remark on what is missing.")
     else:
         lines.append("No play-by-play was provided for this game, so there is no "
                      "ball-by-ball detail. Do not remark on its absence — write "
@@ -877,9 +914,7 @@ than one dense block — a single short paragraph is fine when there isn't much 
     "errors":                "{} errors in total",
     "runs_allowed_per_game": "{} runs allowed per game",
 })}
-Compare this game's error count to the season's errors PER GAME, never to the season
-total — a single game's 4 errors cannot "match" a season's 9. If you cite the season
-total, say plainly that it spans every game played so far.
+Compare this game's errors to the season's errors PER GAME, never to the season total.
 An error is the scorekeeper's judgement that the play should have been made — that is what
 distinguishes it from a hit. Do not speculate about whether a charged error was a hard chance.
 """)
@@ -975,8 +1010,18 @@ def generate_focus_areas(client, system, data) -> list:
     tot_k  = sum(b.get("k") or 0 for b in data["batting_stats"])
     tot_bb = sum(b.get("bb") or 0 for b in data["batting_stats"])
     tot_h  = sum(b.get("h") or 0 for b in data["batting_stats"])
-    totals = (f"Team totals (use these exact figures, do not recount): "
-              f"{tot_h} hits, {tot_bb} walks, {tot_k} strikeouts.")
+    # Fielding totals belong here for the same reason. The errors list below
+    # names only players WHO MADE an error, with their individual chances; the
+    # 2026-08-11 focus areas summed those four lines to "4 errors on 11 total
+    # chances" while the Fielding section of the same report said 17. A subset
+    # offered without its total will be added up and presented as the total.
+    _tf     = data.get("team_fielding") or {}
+    tot_tc  = _tf.get("total_chances")
+    tot_e   = sum(f.get("e") or 0 for f in data["fielding_stats"])
+    totals = (f"Team totals (use these exact figures, do not recount and do not "
+              f"sum the per-player lines below): "
+              f"{tot_h} hits, {tot_bb} walks, {tot_k} strikeouts, {tot_e} errors"
+              + (f", {tot_tc} total chances" if tot_tc is not None else "") + ".")
     pitchers = "; ".join(f"{p['name']}: {p['ip']} IP, {p['k']} K, {p['bb']} BB, {p['er']} ER"
                           for p in data["pitching_stats"]) or "No pitching data recorded."
     # No position here: single-game fielding_stats carries `listed_position`,
@@ -1004,6 +1049,11 @@ Fielding errors: {errs}
 
 Every rationale must cite only numbers or events shown above — do not invent a stat, a run total, or
 an in-game sequence (e.g. a "rally") that isn't directly supported by this data.
+Each error listed is a SEPARATE play unless the data says otherwise. Two errors in the same inning
+are not "on the same play", and nothing above tells you whether a ball was hit back to the mound or
+who was covering. Do not diagnose a cause you cannot see — no "communication broke down", no
+"timing issue", no relay or cutoff you were not shown. Name what happened and make the drill about
+the skill, not about an interaction you inferred.
 
 Format each item on its own line EXACTLY as: TITLE | RATIONALE | DRILL CUE
 Do not add numbering, headers, or any other text — exactly 3 lines, pipe-delimited as shown.
