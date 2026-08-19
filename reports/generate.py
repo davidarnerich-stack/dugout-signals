@@ -210,6 +210,11 @@ Be specific to the data. No generic coaching platitudes.
 # ── DS-11: Single Game Analysis Report ──────────────────────────────────────
 SINGLE_GAME_SYSTEM_TEMPLATE = """You are an analytical assistant for a youth {sport} coaching staff.
 Team: {team_name} ({age_level}, {governing_body}).
+{outcome_line}
+That result is a fact about the game every section you write is describing. Never state or imply a
+different one — not as encouragement, not as consolation, not in passing. A rough individual line
+inside a win and the same line inside a loss are different stories, and the coach knows which they
+watched. Do not reach for a silver lining that contradicts the scoreboard.
 You write direct, data-driven game analysis in the style of a professional analytics department,
 but the audience is a VOLUNTEER coach working with YOUTH players — observations must be
 developmental and encouraging, never evaluative or harsh. Calibrate language to age-appropriate
@@ -222,6 +227,13 @@ unless a section explicitly asks for a different format. Do not use markdown syn
 Refer to the team as "{team_name}" throughout, or as "the team". Do not shorten it, expand it, or
 alternate between forms within a report — a reader seeing two different names assumes they are two
 different teams.
+Name the opposition too — use their team name, or "the opponent". Never call either side "the
+visitors", "the home side", "the road team" or similar. Which dugout a team occupied is rarely the
+point, the reader has to stop and work out who is meant, and if the venue was recorded wrongly the
+epithet is simply false.
+Say "inning". "Frame" is a fine bit of baseball colour once in a while, but it reads as a tic when
+it arrives four or five times in one report — and each section is written separately, so assume the
+others have already used it. Use it at most once, and only where it genuinely reads better.
 Never state or imply a player's age. The team plays at {age_level}, which describes an age bracket,
 not any individual on the roster — a player's actual age is not something you are given.
 Every figure you cite must appear verbatim in the data supplied with the request. Do not compute,
@@ -1070,6 +1082,62 @@ Do not add numbering, headers, or any other text — exactly 3 lines, pipe-delim
     return focus[:3]
 
 
+def _thin_repeated_slang(sections: dict, word: str = "frame", limit: int = 1) -> None:
+    """
+    Keep the first "frame" in a report and turn the rest into "inning".
+
+    Asking the model not to overuse it cannot work on its own: the sections are
+    generated concurrently and independently, so none of them knows the others
+    have already reached for the same bit of slang. The 2026-08-11 report used
+    it five times across four sections, each of which was individually
+    reasonable. This is a whole-report property, so it is enforced where the
+    whole report exists.
+
+    Sections are visited in display order so the one the reader meets first is
+    the one that keeps the flourish. Capitalisation is preserved; plurals are
+    handled; nothing else in the sentence is touched.
+    """
+    import re as _re
+    # Capture any preceding indefinite article: "a frame" must become "an
+    # inning", not "a inning". Swapping a word without minding the grammar
+    # around it produces a sentence no human wrote and no rule caught.
+    pattern = _re.compile(rf"\b(an?\s+)?({word}|{word}s)\b", _re.IGNORECASE)
+    replacement = {"frame": "inning", "frames": "innings"}
+    seen = 0
+
+    def _sub(text):
+        nonlocal seen
+        def one(m):
+            nonlocal seen
+            seen += 1
+            article, target = m.group(1), m.group(2)
+            if seen <= limit:
+                return m.group(0)
+            out = replacement.get(target.lower(), target)
+            if target[0].isupper():
+                out = out.capitalize()
+            if article:
+                fixed = "an " if out.lower()[0] in "aeiou" else "a "
+                if article[0].isupper():
+                    fixed = fixed.capitalize()
+                return fixed + out
+            return out
+        return pattern.sub(one, text)
+
+    # Display order, so the first surviving use is the first the coach reads.
+    for key in ("headline", "snapshot", "how_it_happened", "hitting", "baserunning",
+                "pitching", "fielding", "catching", "signals", "focus_areas"):
+        val = sections.get(key)
+        if isinstance(val, str):
+            sections[key] = _sub(val)
+        elif isinstance(val, list):
+            sections[key] = [
+                {k: (_sub(v) if isinstance(v, str) else v) for k, v in item.items()}
+                if isinstance(item, dict) else (_sub(item) if isinstance(item, str) else item)
+                for item in val
+            ]
+
+
 def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: str,
                                  team_name: str, sport: str, age_level: str, governing_body: str) -> dict:
     """
@@ -1079,9 +1147,28 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
     from .data import get_single_game_data
     data = get_single_game_data(sb, game_id, team_id, team_name)
 
+    # The result belongs in the SYSTEM prompt, not in one section's facts.
+    #
+    # It reached the recap and the focus areas and nowhere else, so the Pitching
+    # section — which never saw a score — wrote that a rough outing "came in a
+    # game where PSW Hilighters still won comfortably" about a 6-4 loss. Every
+    # section is describing the same game; every section needs to know how it
+    # ended.
+    _g = data.get("game") or {}
+    _verdict = {"W": "WON", "L": "LOST", "T": "TIED"}.get(_g.get("result"))
+    if _verdict and _g.get("team_runs") is not None:
+        outcome_line = (
+            f"RESULT OF THIS GAME: {team_name} {_verdict} "
+            f"{_g.get('team_runs')}-{_g.get('opponent_runs')} "
+            f"against {_g.get('opponent_name') or 'the opponent'}.")
+    else:
+        outcome_line = ("The result of this game is not recorded. Do not say who won "
+                        "or lost, and do not imply it.")
+
     system = SINGLE_GAME_SYSTEM_TEMPLATE.format(
         sport=sport or "baseball", team_name=team_name,
         age_level=age_level or "youth", governing_body=governing_body or "youth league",
+        outcome_line=outcome_line,
     )
     client = anthropic.Anthropic(api_key=anthropic_key)
 
@@ -1157,6 +1244,7 @@ def generate_single_game_report(sb, game_id: str, anthropic_key: str, team_id: s
                            if "signals" in errors else raw["signals"])
     sections["focus_areas"] = [] if "focus_areas" in errors else raw["focus_areas"]
 
+    _thin_repeated_slang(sections)
     return {"data": data, "sections": sections, "headline": headline}
 
 
