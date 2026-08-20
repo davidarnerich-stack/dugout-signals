@@ -371,14 +371,46 @@ def _line_score_note(data, opp, us) -> str:
                  f"{us['label']} in the bottom (home), so within any inning "
                  f"{opp['label']} scored first and {us['label']} answered.\n")
 
+    # The score after every HALF-inning, not just every inning.
+    #
+    # Inning boundaries alone leave the middle of an inning unstated, and the
+    # middle is where both teams scoring gets narrated. On 2026-08-11 the score
+    # went 2-1, then 6-1 after the top of the 4th, then 6-4 after the bottom.
+    # Given only "after the 3rd: 1-2" and "after the 4th: 4-6", the model wrote
+    # that PSW "rallied for 3 runs in the 4th to tie the game at 4-4, but Team
+    # Burgundy answered immediately with 4 runs in the top of the 4th" — the
+    # halves in the wrong order and a tie that never happened. Nothing on the
+    # page contradicted 4-4, because 4-4 sat in the gap we did not fill.
+    #
+    # Telling it the order was not enough; that asks it to reason. This hands
+    # over the answer, which is the DS-98 rule: if we hold the fact, give it.
+    half = []
+    us_c = opp_c = 0
+    for i, label in enumerate(innings):
+        u = us["cells"][i]  if i < len(us["cells"])  else ""
+        o = opp["cells"][i] if i < len(opp["cells"]) else ""
+        first_is_us = bool(is_away)
+        for is_us_half in ([True, False] if first_is_us else [False, True]):
+            cell = u if is_us_half else o
+            if not isinstance(cell, int):
+                continue          # "X" — that side did not bat in this half
+            if is_us_half:
+                us_c += cell
+            else:
+                opp_c += cell
+            side = "top" if (is_us_half == first_is_us) else "bottom"
+            half.append(f"after the {side} of the {_ordinal(label)}: "
+                        f"{us['short']} {us_c}, {opp['short']} {opp_c}")
+
     return (f"Inning-by-inning ({', '.join(innings)}): "
             f"{us['short']} {us['cells']}, {opp['short']} {opp['cells']}.\n"
             + order +
-            f"Running score — {'; '.join(running)}.\n"
-            "These running totals are already computed. Use them exactly as given for any "
-            "statement about the score at a point in the game; do not add up innings yourself. "
-            "When both teams score in the same inning, respect the batting order above before "
-            "writing that either side 'answered' or 'responded'.")
+            f"Score after each half-inning — {'; '.join(half)}.\n"
+            "That list is every score this game actually passed through, in order. "
+            "Any score you state must appear in it. If a scoreline is not on that list "
+            "— a tie, a lead change, a one-run game — it did not happen, however "
+            "natural it would be to write. Do not add up innings yourself, and respect "
+            "the batting order above before writing that either side 'answered'.")
 
 
 def _game_facts_note(data, opp, us) -> str:
