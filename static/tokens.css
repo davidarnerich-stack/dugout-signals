@@ -1,0 +1,52 @@
+/* Dugout Signals — design tokens. ONE source of truth for both surfaces.
+ *
+ * The app serves this at /static/tokens.css. The marketing site is a static
+ * Cloudflare Pages deploy that cannot read Flask's static folder at runtime,
+ * so its build step copies this exact file into the published output. One
+ * physical file, copied at deploy time — no sync script, no diff test, and
+ * no way for the two to hold different values.
+ *
+ * Adding a color? Add it here. If it is only ever used once, it does not
+ * need a token — the point is the values used everywhere, not all of them.
+ */
+:root {
+  /* Surfaces */
+  --bg:            #0d1117;
+  --surface:       #161b22;
+  --surface-raised: #1c2330;   /* was --surface2 in onboarding.html */
+  --border:        #30363d;
+
+  /* Text. Two deliberate weights, not an accident: the app already used
+   * both. --text is body copy; --text-bright is headings and emphasis.
+   * Naming the distinction is what stops it drifting again. */
+  --text:          #e6edf3;
+  --text-bright:   #f0f6fc;
+  --muted:         #8b949e;
+  --muted-dim:     #6e7681;
+
+  /* Brand + actions */
+  --accent:        #38bdf8;
+  --accent-glow:   rgba(56, 189, 248, .12);
+  --btn:           #0ea5e9;
+  --btn-hover:     #0284c7;
+  --purple:        #a371f7;
+  --error:         #f85149;
+
+  /* Type */
+  --font-head:     'Orbitron', sans-serif;
+  --font-body:     'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Shape */
+  --radius-sm:     6px;
+  --radius-md:     8px;
+
+  /* Aliases: the marketing page's CSS was written against these names before
+   * there was a shared file. Pointing them at the canonical tokens means that
+   * CSS keeps working untouched while there is still only one real value. */
+  --blue:           var(--accent);
+  --blue-btn:       var(--btn);
+  --blue-btn-hover: var(--btn-hover);
+  --blue-glow:      var(--accent-glow);
+  --muted2:         var(--muted-dim);
+  --surface2:       var(--surface-raised);
+}

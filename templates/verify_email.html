@@ -6,12 +6,8 @@
 <title>Dugout Signals — Check Your Inbox</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0d1117; --surface: #161b22; --border: #30363d; --accent: #38bdf8;
-    --text: #e6edf3; --muted: #8b949e;
-    --font-head: 'Orbitron', sans-serif; --font-body: 'Inter', sans-serif;
-  }
+<link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
+  <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; }
   .stage { display: flex; justify-content: center; min-height: 100vh; }

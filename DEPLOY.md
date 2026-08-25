@@ -89,3 +89,20 @@ The upload order matters if it's a brand-new game:
 **Stats CSV first** → Box Score PDF → Play-by-Play DOCX
 
 (Box Score and Play-by-Play look up the game_id created by the Stats CSV.)
+
+## Marketing site (dugoutsignals.ai)
+
+Deploys from this repo too, on the same `git push origin main`. Cloudflare
+Pages is connected to the GitHub repo; there is no manual upload step any more.
+
+| Setting | Value |
+|---|---|
+| Build command | `cp static/tokens.css marketing/tokens.css` |
+| Build output directory | `marketing` |
+
+`static/tokens.css` is the one design-token file shared by the app and the
+marketing site. The build copies it into the marketing output because a static
+site on another host cannot read Flask's static folder at runtime. Change
+colors there and both surfaces move together.
+
+See [marketing/README.md](marketing/README.md) for the full picture.

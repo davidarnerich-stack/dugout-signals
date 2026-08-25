@@ -11,3 +11,8 @@ dist/
 *.csv
 *.docx
 uploads/
+
+# Generated at deploy time by the Cloudflare Pages build command
+# (cp static/tokens.css marketing/tokens.css). Never commit it — a committed
+# copy is a second source of truth, which is the whole problem we removed.
+marketing/tokens.css
