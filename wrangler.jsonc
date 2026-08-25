@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers static-asset config for the marketing site
+  // (dugoutsignals.ai). Lives in git on purpose: with Workers Builds, the
+  // "what do I publish" decision belongs in a versioned file rather than a
+  // dashboard field nobody can review. The dashboard only needs the build
+  // command; everything else is here.
+  //
+  // The app (Flask on Render) ignores this file entirely.
+  "name": "dugoutsignals-marketing",
+  "compatibility_date": "2026-08-24",
+
+  // No "main" script — this is a pure static site, so Workers serves the
+  // directory directly. `directory` is the equivalent of what Cloudflare
+  // Pages called "Build output directory".
+  "assets": {
+    "directory": "./marketing"
+  }
+}

@@ -11,13 +11,27 @@ That happened on 2026-08-24 — an HTML-only upload took the logos down.
 `git push origin main` deploys this, the same push that deploys the app.
 Cloudflare Pages is connected to the GitHub repo and builds on push.
 
-Cloudflare Pages settings:
+Cloudflare Workers Builds settings (dashboard):
 
 | Setting | Value |
 |---|---|
+| Repository | `davidarnerich-stack/dugout-signals` |
+| Production branch | `main` |
 | Build command | `cp static/tokens.css marketing/tokens.css` |
-| Build output directory | `marketing` |
-| Root directory | *(repo root — leave blank)* |
+| Deploy command | `npx wrangler deploy` |
+| Path | `/` |
+
+Note the build command takes a **space**, not a comma — `cp SOURCE DEST`.
+
+Everything else — crucially *which directory gets published* — lives in
+[`wrangler.jsonc`](../wrangler.jsonc) at the repo root, not in the dashboard.
+That is deliberate: it is reviewable and revertable there.
+
+This is Workers, not Pages. Cloudflare steers new git connections to Workers
+now, and the Workers flow has no "Build output directory" field — that concept
+is `assets.directory` in `wrangler.jsonc` instead.
+
+`.assetsignore` keeps this README out of the published output.
 
 Nothing is dragged into a dashboard any more. If a file is in this folder and
 committed, it ships; if it is not, the build is identical to what you can see

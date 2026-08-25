@@ -98,7 +98,12 @@ Pages is connected to the GitHub repo; there is no manual upload step any more.
 | Setting | Value |
 |---|---|
 | Build command | `cp static/tokens.css marketing/tokens.css` |
-| Build output directory | `marketing` |
+| Deploy command | `npx wrangler deploy` |
+| Path | `/` |
+
+Which directory is published is set in [wrangler.jsonc](wrangler.jsonc)
+(`assets.directory`), not in the dashboard. This is Cloudflare **Workers**,
+not Pages — the Workers flow has no "Build output directory" field.
 
 `static/tokens.css` is the one design-token file shared by the app and the
 marketing site. The build copies it into the marketing output because a static
