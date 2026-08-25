@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Dugout Signals — OG card source</title>
+<!--
+  Source for marketing/og-card.png (DS-132). Rendered at exactly 1200x630 with:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=1200,630 --screenshot=marketing/og-card.png \
+      --virtual-time-budget=4000 design/og/og-card.html
+
+  Committed so the card can be regenerated when the mark or the wording changes,
+  rather than being a one-off export nobody can reproduce. Option A per DS-132:
+  the card carries the wordmark, because a preview with no name relies on the
+  link title, which is the part that gets truncated.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../static/tokens.css">
+<style>
+  /* No margins, no scrollbars: the viewport IS the card. */
+  html,body{margin:0;padding:0;width:1200px;height:630px;overflow:hidden}
+  .card{width:1200px;height:630px;background:var(--bg);
+        display:flex;align-items:center;justify-content:center;gap:56px;padding:0 80px;
+        /* Centred, not left-aligned: platforms crop this card to their own
+           aspect ratios, and an off-centre composition loses the wrong half. */
+        box-sizing:border-box;position:relative;overflow:hidden}
+  /* same radial wash as the homepage hero panel */
+  .card::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(circle at 30% 50%, var(--accent-glow), transparent 60%)}
+  .card > *{position:relative}
+  .mark{width:300px;height:300px;flex:none}
+  /* Wordmark is LIVE TYPE, never baked into the SVG — design/logo/LOGO-STANDARD.md */
+  .wordmark{font-family:var(--font-head);font-weight:700;font-size:76px;
+            letter-spacing:.1em;line-height:1.12;white-space:nowrap}
+  .d{color:var(--text-bright)}
+  .s{color:var(--accent)}
+  .tag{font-family:var(--font-body);font-size:30px;color:var(--muted);
+       margin-top:22px;letter-spacing:.01em}
+</style></head>
+<body>
+  <div class="card">
+    <img class="mark" src="../../marketing/Logo_Dugout-Signals__baseball-softball_.svg" alt="">
+    <div>
+      <div class="wordmark"><span class="d">DUGOUT</span></div>
+      <div class="wordmark"><span class="s">SIGNALS</span></div>
+      <div class="tag">Coach smarter. Not harder.</div>
+    </div>
+  </div>
+</body></html>
