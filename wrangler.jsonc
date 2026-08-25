@@ -6,7 +6,12 @@
   // command; everything else is here.
   //
   // The app (Flask on Render) ignores this file entirely.
-  "name": "dugoutsignals-marketing",
+  "name": "polished-hall-6f6b",
+  // Cloudflare auto-generated this name when the Worker was created, and a
+  // Worker's name is its identity — deploying under any other name would
+  // target a different Worker than the dashboard is wired to. Cosmetic only:
+  // once dugoutsignals.ai fronts it, the name is never public. If it gets
+  // renamed in the dashboard, change it here in the same sitting.
   "compatibility_date": "2026-08-24",
 
   // No "main" script — this is a pure static site, so Workers serves the
