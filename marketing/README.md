@@ -33,6 +33,29 @@ is `assets.directory` in `wrangler.jsonc` instead.
 
 `.assetsignore` keeps this README out of the published output.
 
+## Do not change `name` in wrangler.jsonc
+
+It must stay `polished-hall-6f6b` — the Worker Cloudflare created, and the one
+holding the `dugoutsignals.ai` custom domain and the `www.dugoutsignals.ai/*`
+route.
+
+A Worker's name is its identity. Change it and `npx wrangler deploy` starts
+deploying to a *different* Worker under the new name. The live site keeps
+serving the last good build, so nothing appears broken — but every future push
+silently stops reaching it. That failure is invisible until someone notices the
+site has not changed in weeks.
+
+The name is cosmetic: visitors only ever see `dugoutsignals.ai`. It is not
+worth a domain move to make it prettier. If it ever does get renamed, the
+correct order is: create the new Worker, verify it on its `workers.dev` URL,
+move the custom domain and the `www` route, confirm, then delete the old one —
+and update this file in the same sitting.
+
+Live URLs:
+- `https://dugoutsignals.ai` (custom domain)
+- `https://polished-hall-6f6b.davidarnerich.workers.dev` (direct, for testing
+  a build before it is fronted by the domain)
+
 Nothing is dragged into a dashboard any more. If a file is in this folder and
 committed, it ships; if it is not, the build is identical to what you can see
 in git.
