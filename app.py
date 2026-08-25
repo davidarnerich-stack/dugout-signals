@@ -1,6 +1,8 @@
 """Dugout Signals — file upload web app."""
+import hashlib
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -686,6 +688,117 @@ def dashboard():
         defence_module=bucket_hierarchy["defence"],
         metric_explainers=metric_explainers,
     )
+
+
+# ── DS-128: public waitlist capture ────────────────────────────────────────────
+# The only unauthenticated write endpoint in the app. Everything else under
+# /api is @auth_required; this one is deliberately open because it is called
+# from the marketing site by people who by definition do not have accounts.
+# That makes it the one route where input validation and abuse limits are the
+# app's own job rather than the session's.
+
+# Origins allowed to call it. The marketing site is a separate Cloudflare
+# Pages deploy on a different host, so this cannot ride on same-origin.
+# Comma-separated override so a new marketing surface (or a local test of the
+# real page against a real server) does not need a code change to be allowed.
+WAITLIST_ALLOWED_ORIGINS = {
+    o.strip() for o in os.environ.get(
+        "WAITLIST_ALLOWED_ORIGINS",
+        "https://dugoutsignals.ai,https://www.dugoutsignals.ai",
+    ).split(",") if o.strip()
+}
+
+# Cheap per-IP throttle. In-memory, so with 2 gunicorn workers the real
+# ceiling is 2x this per worker — it is a speed bump against a bored person
+# with curl, not a defence against a real flood. Cloudflare in front of the
+# marketing site is where a serious limit belongs if this ever matters.
+_waitlist_hits = {}
+WAITLIST_RATE_LIMIT  = 5           # submissions ...
+WAITLIST_RATE_WINDOW = 3600        # ... per hour, per IP
+
+# Deliberately permissive: the job is to reject obvious junk, not to argue
+# with anyone about what a valid address looks like. Real delivery is the
+# only true test, and rejecting a coach's unusual-but-valid address costs
+# more than storing one bad row.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
+
+
+def _client_ip():
+    """Render sits behind a proxy, so remote_addr is the proxy. Trust the
+    first X-Forwarded-For hop for throttling only — never for identity."""
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return fwd.split(",")[0].strip() if fwd else (request.remote_addr or "")
+
+
+def _waitlist_cors_headers(response):
+    origin = request.headers.get("Origin", "")
+    if origin in WAITLIST_ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
+
+@app.route("/api/waitlist", methods=["POST", "OPTIONS"])
+def api_waitlist():
+    """Record an early-access request from the marketing site.
+
+    Replaces a mailto: that showed "You're on the list" unconditionally and
+    then captured nothing (DS-128). The contract that matters: this returns
+    2xx **only** when a row is actually durable, because the page now shows
+    its success state only on 2xx. Never return success on a write that
+    did not happen — that is the exact bug this replaces.
+    """
+    if request.method == "OPTIONS":
+        return _waitlist_cors_headers(app.make_default_options_response())
+
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email or len(email) > 254 or not _EMAIL_RE.match(email):
+        return _waitlist_cors_headers(
+            jsonify({"ok": False, "error": "Please enter a valid email address."})
+        ), 400
+
+    ip  = _client_ip()
+    now = datetime.now(timezone.utc).timestamp()
+    hits = [t for t in _waitlist_hits.get(ip, []) if now - t < WAITLIST_RATE_WINDOW]
+    if len(hits) >= WAITLIST_RATE_LIMIT:
+        return _waitlist_cors_headers(
+            jsonify({"ok": False, "error": "Too many requests. Try again later."})
+        ), 429
+    hits.append(now)
+    _waitlist_hits[ip] = hits
+
+    # Salted so the stored value cannot be reversed to an IP by anyone who
+    # gets the table. FLASK_SECRET_KEY is already a per-deploy secret.
+    ip_hash = hashlib.sha256(
+        (app.secret_key + ip).encode("utf-8")
+    ).hexdigest() if ip else None
+
+    try:
+        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+        sb.table("waitlist").insert({
+            "email":      email,
+            "source":     (data.get("source") or "homepage")[:120],
+            "user_agent": (request.headers.get("User-Agent") or "")[:500],
+            "ip_hash":    ip_hash,
+        }).execute()
+    except Exception as e:
+        # A repeat submission is a success from the coach's point of view —
+        # they are on the list, which is all the success message claims. Any
+        # other failure must surface, so the page can tell the truth instead
+        # of repeating DS-128's false confirmation.
+        if "waitlist_email_lower_key" in str(e) or "duplicate key" in str(e).lower():
+            return _waitlist_cors_headers(jsonify({"ok": True, "already": True}))
+        app.logger.exception("waitlist insert failed for %s", email)
+        return _waitlist_cors_headers(
+            jsonify({"ok": False, "error": "Something went wrong. Please try again."})
+        ), 500
+
+    return _waitlist_cors_headers(jsonify({"ok": True}))
 
 
 @app.route("/api/bucket-tap", methods=["POST"])
