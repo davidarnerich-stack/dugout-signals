@@ -24,3 +24,12 @@ services:
       - key: SITE_URL
         value: https://app.dugoutsignals.ai
         # Base URL for Supabase email-confirmation redirect links (DS-52)
+      - key: SIGNUPS_OPEN
+        value: "false"
+        # DS-126: private beta. "true" reopens self-service signup — but only
+        # after re-enabling signups in Supabase (Authentication -> Sign In /
+        # Providers), which is the actual lock. Flipping this alone does
+        # nothing except send coaches to a Supabase error.
+      - key: WAITLIST_URL
+        value: https://dugoutsignals.ai/#waitlist
+        # Where /signup sends anyone without an account while the beta is closed

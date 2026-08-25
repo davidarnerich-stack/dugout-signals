@@ -113,7 +113,11 @@
   </form>
 
   <div class="footer-link">
+    {% if signups_open %}
     New to Dugout Signals? <a href="{{ url_for('signup') }}">Create an account</a>
+    {% else %}
+    Dugout Signals is in private beta. <a href="{{ waitlist_url }}">Request early access</a>
+    {% endif %}
   </div>
 </div>
 <script>

@@ -42,6 +42,17 @@ SUPABASE_ANON_KEY = os.environ.get(
 SITE_URL         = os.environ.get("SITE_URL",         "https://app.dugoutsignals.ai")
 MAX_FILE_MB      = 20
 
+# ── DS-126: private-beta signup gate ───────────────────────────────────────────
+# Self-service signup is closed while Dugout Signals is in private beta. This
+# flag is NOT the lock — the anon key above is public, so anyone holding it can
+# POST straight to Supabase's /auth/v1/signup and never touch this app. The
+# real lock is Supabase's own "allow new users to sign up" setting. This gate
+# exists so a coach who lands on /signup gets the waitlist instead of a raw
+# Supabase error, and so opening the doors later is a Render env change rather
+# than a code deploy.
+SIGNUPS_OPEN = os.environ.get("SIGNUPS_OPEN", "false").strip().lower() == "true"
+WAITLIST_URL = os.environ.get("WAITLIST_URL", "https://dugoutsignals.ai/#waitlist")
+
 
 def get_anon_client():
     """Supabase client using the anon key, for self-service Auth operations."""
@@ -221,6 +232,12 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.context_processor
+def inject_signup_state():
+    """Every template needs to know whether the front door is open (DS-126)."""
+    return {"signups_open": SIGNUPS_OPEN, "waitlist_url": WAITLIST_URL}
+
+
 @app.after_request
 def add_no_cache_headers(response):
     # Prevents the browser back button from showing cached authenticated
@@ -239,6 +256,13 @@ def signup():
     # redirect to /reports if they already have games.
     if session.get("email_verified"):
         return redirect("/dashboard")
+
+    # Private beta: no new accounts. Checked before the method split so a
+    # hand-rolled POST to this route is turned away too, not just the form.
+    # An existing coach is sent to /dashboard above, so this only ever
+    # catches someone who does not have an account yet.
+    if not SIGNUPS_OPEN:
+        return redirect(WAITLIST_URL)
 
     if request.method == "POST":
         email    = (request.form.get("email") or "").strip()
