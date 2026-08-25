@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Dugout Signals">
   <title>Dugout Signals</title>
-  <g fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round">
+  <g fill="none" stroke="#0d1117" stroke-width="5" stroke-linecap="round">
     <path d="M92.14 21.7A50 50 0 0 1 92.14 98.3" opacity=".3"></path>
     <path d="M85.71 29.36A40 40 0 0 1 85.71 90.64" opacity=".55"></path>
     <path d="M79.28 37.02A30 30 0 0 1 79.28 82.98" opacity=".85"></path>
@@ -8,13 +8,13 @@
     <path d="M34.29 29.36A40 40 0 0 0 34.29 90.64" opacity=".55"></path>
     <path d="M40.72 37.02A30 30 0 0 0 40.72 82.98" opacity=".85"></path>
   </g>
-  <circle cx="60" cy="60" r="19" fill="#e6edf3"></circle>
+  <circle cx="60" cy="60" r="19" fill="none" stroke="#0d1117" stroke-width="3"></circle>
   <g transform="rotate(40 60 60)">
-    <g fill="none" stroke="#c9403a" stroke-width=".85" stroke-linecap="round" opacity=".42">
+    <g fill="none" stroke="#0d1117" stroke-width="1" stroke-linecap="round" opacity=".5">
       <path d="M50.5 43.5C57.2 51.5 57.2 68.5 50.5 76.5"></path>
       <path d="M69.5 43.5C62.8 51.5 62.8 68.5 69.5 76.5"></path>
     </g>
-    <g fill="none" stroke="#c9403a" stroke-width="1.15" stroke-linecap="round">
+    <g fill="none" stroke="#0d1117" stroke-width="1.3" stroke-linecap="round">
       <path d="M51.92 46.01L49.51 45.54 M52.42 45.67L52.92 43.27 M53.80 50.27L51.07 49.12 M54.36 50.06L55.60 47.38 M54.85 54.74L52.11 53.02 M55.44 54.61L57.28 51.96 M55.25 59.26L52.67 57.11 M55.85 59.22L58.13 56.76 M55.05 63.74L52.77 61.27 M55.65 63.77L58.24 61.62 M54.27 68.10L52.43 65.44 M54.86 68.22L57.59 66.51 M52.84 72.22L51.59 69.54 M53.40 72.43L56.12 71.28 M50.68 75.86L50.18 73.45 M51.17 76.20L53.59 75.73"></path>
       <path transform="translate(120,0) scale(-1,1)" d="M51.92 46.01L49.51 45.54 M52.42 45.67L52.92 43.27 M53.80 50.27L51.07 49.12 M54.36 50.06L55.60 47.38 M54.85 54.74L52.11 53.02 M55.44 54.61L57.28 51.96 M55.25 59.26L52.67 57.11 M55.85 59.22L58.13 56.76 M55.05 63.74L52.77 61.27 M55.65 63.77L58.24 61.62 M54.27 68.10L52.43 65.44 M54.86 68.22L57.59 66.51 M52.84 72.22L51.59 69.54 M53.40 72.43L56.12 71.28 M50.68 75.86L50.18 73.45 M51.17 76.20L53.59 75.73"></path>
     </g>

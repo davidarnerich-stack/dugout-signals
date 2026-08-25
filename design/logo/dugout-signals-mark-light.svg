@@ -8,7 +8,13 @@
     <path d="M34.29 29.36A40 40 0 0 0 34.29 90.64" opacity=".55"></path>
     <path d="M40.72 37.02A30 30 0 0 0 40.72 82.98" opacity=".85"></path>
   </g>
-  <circle cx="60" cy="60" r="19" fill="#e6edf3"></circle>
+  <defs>
+    <clipPath id="ll"><rect x="41" y="41" width="19" height="38"></rect></clipPath>
+    <clipPath id="rl"><rect x="60" y="41" width="19" height="38"></rect></clipPath>
+  </defs>
+  <circle cx="60" cy="60" r="19" fill="#e6edf3" clip-path="url(#ll)"></circle>
+  <circle cx="60" cy="60" r="19" fill="#facc15" clip-path="url(#rl)"></circle>
+  <circle cx="60" cy="60" r="19" fill="none" stroke="#0f1720" stroke-width="2"></circle>
   <g transform="rotate(40 60 60)">
     <g fill="none" stroke="#c9403a" stroke-width=".85" stroke-linecap="round" opacity=".42">
       <path d="M50.5 43.5C57.2 51.5 57.2 68.5 50.5 76.5"></path>
