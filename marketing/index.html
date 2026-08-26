@@ -28,7 +28,22 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
+/* A11Y: the sticky nav is ~53px, so an anchor target used to land underneath it. */
+html{scroll-padding-top:72px}
+
 body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+/* A11Y: one deliberate focus style for everything. The email input keeps its
+   own richer :focus treatment below. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.skip-link{position:absolute;left:-9999px;top:0;background:var(--surface);color:var(--text);text-decoration:none;font-size:.9rem;padding:10px 16px;border:1px solid var(--border-control);border-radius:6px;z-index:200}
+.skip-link:focus{left:8px;top:8px}
+
+/* Decorative color accent. Was <em> with font-style:normal, which announced
+   emphasis that was never meant. */
+.accent{color:var(--blue)}
 
 nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .brand{display:flex;align-items:center;gap:.6rem;text-decoration:none}
@@ -38,14 +53,14 @@ nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5re
 .nav-links{display:flex;align-items:center;gap:1.5rem}
 .nav-links a{color:#c9d1d9;font-size:.88rem;text-decoration:none;transition:color .15s}
 .nav-links a:hover{color:#fff}
-.nav-login{color:var(--blue) !important;border:1px solid rgba(56,189,248,.4);border-radius:6px;padding:.3rem .9rem;transition:all .15s !important}
+.nav-login{color:var(--blue) !important;border:1px solid rgba(56,189,248,.65);border-radius:6px;padding:.55rem .9rem;transition:all .15s !important}
 .nav-login:hover{border-color:var(--blue) !important;background:var(--blue-glow) !important}
-.hamburger{display:none;flex-direction:column;gap:5px;background:none;border:none;cursor:pointer;padding:4px}
+.hamburger{display:none;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:none;border:none;cursor:pointer;min-width:44px;min-height:44px}
 .hamburger span{display:block;width:22px;height:2px;background:#c9d1d9;border-radius:2px;transition:all .2s}
-.mobile-menu{display:none;position:fixed;top:53px;left:0;right:0;background:#000;border-bottom:1px solid var(--border);padding:1rem 1.5rem;flex-direction:column;gap:1rem;z-index:99}
-.mobile-menu a{color:#c9d1d9;text-decoration:none;font-size:1rem;font-weight:500;transition:color .15s}
+.mobile-menu{display:none;position:fixed;top:57px;left:0;right:0;background:#000;border-bottom:1px solid var(--border);padding:.5rem 1.5rem 1rem;flex-direction:column;gap:0;z-index:99}
+.mobile-menu a{color:#c9d1d9;text-decoration:none;font-size:1rem;font-weight:500;display:flex;align-items:center;min-height:48px;transition:color .15s}
 .mobile-menu a:hover{color:#fff}
-.mobile-menu .nav-login{color:var(--blue) !important;border:1px solid rgba(56,189,248,.4);border-radius:6px;padding:.5rem 1rem;display:inline-block;width:fit-content}
+.mobile-menu .nav-login{color:var(--blue) !important;border:1px solid rgba(56,189,248,.65);border-radius:6px;padding:.5rem 1rem;display:inline-flex;width:fit-content;margin-top:.5rem}
 .mobile-menu.open{display:flex}
 @media(max-width:640px){.nav-links{display:none}.hamburger{display:flex}}
 
@@ -55,7 +70,6 @@ nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5re
 .hero-copy-panel{display:flex;flex-direction:column;justify-content:center;padding:60px 50px}
 .hero-eyebrow{font-size:.78rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);margin-bottom:16px}
 .hero-copy-panel h1{font-family:'Orbitron',sans-serif;font-size:clamp(26px,3.8vw,44px);font-weight:700;letter-spacing:.04em;line-height:1.2;margin-bottom:16px}
-.hero-copy-panel h1 em{font-style:normal;color:var(--blue)}
 .hero-copy-panel p{font-size:1rem;color:var(--muted);line-height:1.8;margin-bottom:28px}
 .hero-copy-panel p strong{color:var(--text)}
 .sport-tags{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:28px;align-items:center}
@@ -63,25 +77,27 @@ nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5re
 .sport-tag span{font-size:15px}
 .sport-tag-divider{color:var(--border);font-size:.8rem}
 .cta-group{display:flex;gap:10px;flex-wrap:wrap}
-.btn-primary{background:var(--blue-btn);color:#fff;font-size:.95rem;font-weight:600;padding:12px 26px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block;transition:background .15s}
+.btn-primary{background:var(--blue-btn);color:var(--btn-label);font-size:.95rem;font-weight:600;padding:12px 26px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block;transition:background .15s}
 .btn-primary:hover{background:var(--blue-btn-hover)}
-.btn-ghost{color:var(--muted);font-size:.9rem;text-decoration:none;border:1px solid var(--border);padding:11px 22px;border-radius:8px;transition:all .15s}
+.btn-ghost{color:var(--muted);font-size:.9rem;text-decoration:none;border:1px solid var(--border-control);padding:11px 22px;border-radius:8px;transition:all .15s}
 .btn-ghost:hover{color:var(--text);border-color:var(--muted)}
 
-/* STAT BAR */
+/* STAT BAR — a <dl>, so each number is associated with its label. */
 .stat-bar{display:flex;border-bottom:1px solid var(--border)}
-.stat-item{flex:1;text-align:center;padding:24px 16px;border-right:1px solid var(--border)}
+.stat-item{flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:24px 16px;border-right:1px solid var(--border)}
 .stat-item:last-child{border-right:none}
-.stat-num{font-family:'Orbitron',sans-serif;font-size:1.8rem;font-weight:700;color:var(--blue);line-height:1}
-.stat-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:5px}
-.stat-item-text .stat-num{font-size:1.05rem;letter-spacing:.03em;text-transform:none}
-.stat-item-text .stat-label{margin-top:3px}
+.stat-num{font-family:'Orbitron',sans-serif;font-size:1.8rem;font-weight:700;color:var(--blue);line-height:1;order:0}
+.stat-label{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:5px;order:1}
+@media(max-width:600px){
+  .stat-bar{flex-direction:column}
+  .stat-item{border-right:none;border-bottom:1px solid var(--border);padding:18px 16px}
+  .stat-item:last-child{border-bottom:none}
+}
 
 .section{padding:64px 1.5rem;max-width:860px;margin:0 auto}
 .section-center{text-align:center}
-.section-eyebrow{font-size:.78rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--purple);margin-bottom:14px}
+.section-eyebrow{display:block;font-family:'Inter',sans-serif;font-size:.78rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--purple);margin-bottom:14px}
 .section h2{font-family:'Orbitron',sans-serif;font-size:clamp(22px,3.2vw,34px);font-weight:700;letter-spacing:.04em;line-height:1.2;margin-bottom:14px}
-.section h2 em{font-style:normal;color:var(--blue)}
 .section p{font-size:1rem;color:var(--muted);line-height:1.85;max-width:640px}
 .section-center p{margin:0 auto}
 .problem-body{display:flex;flex-direction:column;gap:16px;align-items:center}
@@ -90,10 +106,8 @@ nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5re
 .stat-callout .big{font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:700;color:var(--blue);line-height:1}
 .stat-callout .caption{font-size:.82rem;color:var(--muted);margin-top:4px}
 
-/* OPTION B — Numbered list */
-.benefits-grid-b{display:flex;flex-direction:column;gap:14px;margin-top:36px}
-.benefit-card-b{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;display:grid;grid-template-columns:48px 1fr;gap:20px;align-items:start;transition:border-color .2s;cursor:default}
-.benefit-card-b:hover{border-color:var(--blue)}
+.benefits-grid-b{display:flex;flex-direction:column;gap:14px;margin-top:36px;text-align:left}
+.benefit-card-b{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;display:grid;grid-template-columns:48px 1fr;gap:20px;align-items:start}
 .benefit-num{font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:700;line-height:1;padding-top:4px}
 .benefit-card-b:nth-child(1) .benefit-num{color:var(--blue)}
 .benefit-card-b:nth-child(2) .benefit-num{color:var(--purple)}
@@ -101,37 +115,39 @@ nav{background:#161b22;border-bottom:1px solid var(--border);padding:.6rem 1.5re
 .benefit-card-b h3{font-family:'Orbitron',sans-serif;font-size:.92rem;font-weight:700;letter-spacing:.04em;margin-bottom:8px;color:var(--text)}
 .benefit-card-b p{font-size:.95rem;color:var(--muted);line-height:1.75}
 
+.section p.how-closer{font-size:.92rem;color:var(--muted);line-height:1.8;margin:22px auto 0}
+.how-cta{display:flex;justify-content:center;margin-top:32px}
+
 .forwho-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:28px}
 .forwho-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
 .forwho-card h3{font-family:'Orbitron',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px}
-.forwho-card.yes h3{color:var(--blue)}.forwho-card.no h3{color:#8b949e}
+.forwho-card.yes h3{color:var(--blue)}.forwho-card.no h3{color:var(--muted)}
 .forwho-list{list-style:none;display:flex;flex-direction:column;gap:10px}
-.forwho-list li{font-size:.92rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.forwho-list li{font-size:.92rem;color:var(--muted);display:flex;align-items:center;gap:8px;text-align:left}
 .forwho-list li::before{content:'';width:5px;height:5px;border-radius:50%;flex-shrink:0}
 .forwho-card.yes .forwho-list li::before{background:var(--blue)}
-.forwho-card.no .forwho-list li{text-decoration:line-through;color:#6e7681;text-decoration-color:#6e7681}
-.forwho-card.no .forwho-list li::before{background:#6e7681}
+.forwho-card.no .forwho-list li::before{background:var(--muted-dim)}
 
 .cta-section{padding:64px 1.5rem 80px;text-align:center;max-width:580px;margin:0 auto}
 .cta-section h2{font-family:'Orbitron',sans-serif;font-size:clamp(22px,3.5vw,36px);font-weight:700;letter-spacing:.04em;line-height:1.2;margin-bottom:12px}
-.cta-section h2 em{font-style:normal;color:var(--blue)}
 .cta-section p{font-size:.98rem;color:var(--muted);margin-bottom:28px}
 .waitlist-form{display:flex;gap:8px;max-width:440px;margin:0 auto;flex-wrap:wrap;justify-content:center}
-.waitlist-form input{flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:.95rem;color:var(--text);font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}
+.waitlist-form input{flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border-control);border-radius:8px;padding:12px 14px;font-size:.95rem;color:var(--text);font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}
 .waitlist-form input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
 .waitlist-form input::placeholder{color:var(--muted)}
-.waitlist-form button{background:var(--blue-btn);color:#fff;font-weight:600;font-size:.95rem;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;transition:background .15s}
+.waitlist-form button{background:var(--blue-btn);color:var(--btn-label);font-weight:600;font-size:.95rem;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;transition:background .15s}
 .waitlist-form button:hover{background:var(--blue-btn-hover)}
-.form-note{font-size:.78rem;color:var(--muted);margin-top:9px}
+/* Busy, not unavailable: the label stays at full strength. */
+.waitlist-form button[disabled]{background:var(--blue-btn-hover);cursor:progress}
+.form-note{font-size:.8rem;color:var(--muted);margin-top:9px}
 .success-msg{display:none;color:var(--blue);font-size:.95rem;font-weight:600;margin-top:14px}
 .error-msg{display:none;color:var(--error);font-size:.9rem;margin-top:12px;line-height:1.5}
-.error-msg a{color:var(--blue)}
-.waitlist-form button[disabled]{opacity:.6;cursor:progress}
+.error-msg a{color:var(--blue);text-decoration:underline}
 
 footer{border-top:1px solid var(--border);padding:22px 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
 footer p{font-size:.82rem;color:var(--muted)}
-.footer-links{display:flex;gap:18px}
-.footer-links a{color:var(--muted);text-decoration:none;font-size:.82rem;transition:color .15s}
+.footer-links{display:flex;gap:18px;flex-wrap:wrap}
+.footer-links a{color:var(--muted);text-decoration:none;font-size:.82rem;display:inline-flex;align-items:center;min-height:32px;transition:color .15s}
 .footer-links a:hover{color:var(--blue)}
 
 @media(max-width:700px){
@@ -147,6 +163,8 @@ footer p{font-size:.82rem;color:var(--muted)}
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <nav>
   <a class="brand" href="/">
     <img src="logo-icon.svg" alt="Dugout Signals">
@@ -157,29 +175,31 @@ footer p{font-size:.82rem;color:var(--muted)}
     <a href="#for-who">Who it's for</a>
     <a href="https://app.dugoutsignals.ai" class="nav-login">Coach login →</a>
   </div>
-  <button class="hamburger" onclick="toggleMenu()" aria-label="Menu">
+  <button class="hamburger" id="hamburger" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
     <span></span><span></span><span></span>
   </button>
 </nav>
 <div class="mobile-menu" id="mobile-menu">
   <a href="#how-it-works" onclick="toggleMenu()">How it works</a>
   <a href="#for-who" onclick="toggleMenu()">Who it's for</a>
-  <a href="https://app.dugoutsignals.ai" class="nav-login">Coach login →</a>
+  <a href="https://app.dugoutsignals.ai" class="nav-login" onclick="toggleMenu()">Coach login →</a>
 </div>
+
+<main id="main">
 
 <div class="hero-split">
   <div class="hero-logo-panel">
-    <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="Dugout Signals — Baseball and Softball">
+    <img src="Logo_Dugout-Signals__baseball-softball_.svg" alt="">
   </div>
   <div class="hero-copy-panel">
     <div class="hero-eyebrow">AI-powered coaching intelligence</div>
-    <h1>Coach smarter.<br><em>Not harder.</em></h1>
+    <h1>Coach smarter.<br><span class="accent">Not harder.</span></h1>
     <p><strong>Dugout Signals turns your GameChanger data into clear, actionable coaching decisions</strong> — so you know exactly what your team should work on this week and how to plan your next game.</p>
     <div class="sport-tags">
-      <div class="sport-tag"><span>⚾</span> Baseball</div>
-      <span class="sport-tag-divider">·</span>
-      <div class="sport-tag"><span>🥎</span> Softball</div>
-      <span class="sport-tag-divider">·</span>
+      <div class="sport-tag"><span aria-hidden="true">⚾</span> Baseball</div>
+      <span class="sport-tag-divider" aria-hidden="true">·</span>
+      <div class="sport-tag"><span aria-hidden="true">🥎</span> Softball</div>
+      <span class="sport-tag-divider" aria-hidden="true">·</span>
       <div class="sport-tag">Ages 8U–14U</div>
     </div>
     <div class="cta-group">
@@ -190,25 +210,24 @@ footer p{font-size:.82rem;color:var(--muted)}
 </div>
 
 <!-- STAT BAR -->
-<div class="stat-bar">
+<dl class="stat-bar">
   <div class="stat-item">
-    <div class="stat-num">150+</div>
-    <div class="stat-label">Stats captured per player per game</div>
+    <dt class="stat-label">Stats captured per player per game</dt>
+    <dd class="stat-num">150+</dd>
   </div>
   <div class="stat-item">
-    <div class="stat-num">12+</div>
-    <div class="stat-label">Players on a roster</div>
+    <dt class="stat-label">Players on a roster</dt>
+    <dd class="stat-num">12+</dd>
   </div>
   <div class="stat-item">
-    <div class="stat-num">1,800+</div>
-    <div class="stat-label">Total stats — what matters this week</div>
+    <dt class="stat-label">Total stats — what matters this week</dt>
+    <dd class="stat-num">1,800+</dd>
   </div>
-</div>
+</dl>
 
-<!-- PROBLEM: #2 fix -->
-<div class="section section-center" id="how-it-works">
-  <div class="section-eyebrow">The problem</div>
-  <h2>Great data.<br><em>Zero clarity.</em></h2>
+<!-- PROBLEM -->
+<section class="section section-center" id="problem">
+  <h2><span class="section-eyebrow">The problem</span>Great data.<br><span class="accent">Zero clarity.</span></h2>
   <div class="problem-body">
     <p>Every coach knows the traditional stats — AVG, RBI, SO, ERA, etc. Some go deeper with sabermetrics OPS, C%, WHIP, and FIP. But after every game, GameChanger hands you a dashboard and downloadable spreadsheet and leaves the rest to you. Knowing the stats and knowing what to do about them are two very different things.</p>
     <p>These metrics were built for professional baseball. At the youth level, coaches need signals — not just stats — that reflect where their players actually are in their development and what to focus on this week.</p>
@@ -218,43 +237,72 @@ footer p{font-size:.82rem;color:var(--muted)}
     <div class="big">1,800+</div>
     <div class="caption">Stats generated per game for a 12-player roster.<br>Dugout Signals surfaces what matters this week.</div>
   </div>
-</div>
+</section>
 
-<!-- BENEFITS: Option B with #3 fix -->
-<div class="section" id="benefits">
+<!-- HOW IT WORKS -->
+<section class="section section-center" id="how-it-works">
+  <h2><span class="section-eyebrow">How it works</span>All your scorekeeping data.<br><span class="accent">Finally makes sense.</span></h2>
+  <p>No integration to set up. Send us your game data from GameChanger — every number your scorekeeper captured, down to the play-by-play most tools never touch — and the analysis comes back almost immediately.</p>
+  <div class="benefits-grid-b">
+    <div class="benefit-card-b">
+      <div class="benefit-num" aria-hidden="true">01</div>
+      <div>
+        <h3>Pull your game data out of GameChanger</h3>
+        <p>Your stats and box score exports, plus the play-by-play. The same short routine after every game.</p>
+      </div>
+    </div>
+    <div class="benefit-card-b">
+      <div class="benefit-num" aria-hidden="true">02</div>
+      <div>
+        <h3>Send it to Dugout Signals</h3>
+        <p>Send it over and you're done. No tagging, no cleanup, no spreadsheet to maintain on the side.</p>
+      </div>
+    </div>
+    <div class="benefit-card-b">
+      <div class="benefit-num" aria-hidden="true">03</div>
+      <div>
+        <h3>Read your signals</h3>
+        <p>Almost immediately: where your team actually stands, what to work on at Tuesday's practice, what it means for Saturday's lineup. Written to be read in the parking lot, not studied.</p>
+      </div>
+    </div>
+  </div>
+  <p class="how-closer">Every game you add sharpens the next read.</p>
+  <div class="how-cta"><a href="#waitlist" class="btn-primary">Request early access</a></div>
+</section>
+
+<!-- BENEFITS -->
+<section class="section" id="benefits">
   <div class="section-center">
-    <div class="section-eyebrow">What you get</div>
-    <h2>Built for coaches,<br>not analysts.</h2>
+    <h2><span class="section-eyebrow">What you get</span>Built for coaches,<br>not analysts.</h2>
   </div>
   <div class="benefits-grid-b">
     <div class="benefit-card-b">
-      <div class="benefit-num">01</div>
+      <div class="benefit-num" aria-hidden="true">01</div>
       <div>
         <h3>Honest performance signals</h3>
         <p>Know your team's real strengths and development priorities based on actual game data — not just a few stats and gut feel from last Saturday.</p>
       </div>
     </div>
     <div class="benefit-card-b">
-      <div class="benefit-num">02</div>
+      <div class="benefit-num" aria-hidden="true">02</div>
       <div>
         <h3>A narrative you can share</h3>
         <p>Clear, readable analysis of every tournament and game — written for coaches, not statisticians.</p>
       </div>
     </div>
     <div class="benefit-card-b">
-      <div class="benefit-num">03</div>
+      <div class="benefit-num" aria-hidden="true">03</div>
       <div>
         <h3>Decisions, not data dumps</h3>
         <p>Practice planning, lineup decisions, development priorities — connected to what the data actually shows.</p>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<div class="section" id="for-who">
+<section class="section" id="for-who">
   <div class="section-center">
-    <div class="section-eyebrow">Who it's for</div>
-    <h2>Made for your dugout.</h2>
+    <h2><span class="section-eyebrow">Who it's for</span>Made for your dugout.</h2>
   </div>
   <div class="forwho-grid">
     <div class="forwho-card yes">
@@ -277,20 +325,22 @@ footer p{font-size:.82rem;color:var(--muted)}
       </ul>
     </div>
   </div>
-</div>
+</section>
 
 <section class="cta-section" id="waitlist">
-  <div class="section-eyebrow">Early access</div>
-  <h2>Be first<br>on the <em>field.</em></h2>
+  <h2><span class="section-eyebrow">Early access</span>Be first<br>on the <span class="accent">field.</span></h2>
   <p>Dugout Signals is in early access. Join the waitlist and we'll reach out when your spot is ready.</p>
-  <div class="waitlist-form" id="waitlist-form">
-    <input type="email" id="email-input" placeholder="your@email.com"/>
-    <button onclick="handleWaitlist()">Join waitlist</button>
-  </div>
+  <form class="waitlist-form" id="waitlist-form" novalidate onsubmit="event.preventDefault();handleWaitlist()">
+    <label class="sr-only" for="email-input">Email address</label>
+    <input type="email" id="email-input" name="email" required autocomplete="email" aria-describedby="form-note" placeholder="your@email.com"/>
+    <button type="submit">Join waitlist</button>
+  </form>
   <div class="form-note" id="form-note">No spam. No sales calls. Just a heads-up when you're in.</div>
-  <div class="success-msg" id="success-msg">✓ You're on the list. We'll be in touch.</div>
-  <div class="error-msg" id="error-msg"></div>
+  <div class="success-msg" id="success-msg" role="status" tabindex="-1">✓ You're on the list. We'll be in touch.</div>
+  <div class="error-msg" id="error-msg" role="alert"></div>
 </section>
+
+</main>
 
 <footer>
   <p>© 2026 Dugout Signals. Built for baseball and softball coaches.</p>
@@ -303,20 +353,42 @@ footer p{font-size:.82rem;color:var(--muted)}
 <script>
 function toggleMenu(){
   var m=document.getElementById('mobile-menu');
-  m.classList.toggle('open');
+  var btn=document.getElementById('hamburger');
+  var open=m.classList.toggle('open');
+  btn.setAttribute('aria-expanded',String(open));
+  // Focus follows the overlay: into it on open, back to the trigger on close.
+  var target=open?m.querySelector('a'):btn;
+  if(target)target.focus();
 }
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.getElementById('mobile-menu').classList.contains('open'))toggleMenu();
+});
+
 function handleWaitlist(){
   var input=document.getElementById('email-input');
   var btn=document.querySelector('.waitlist-form button');
   var err=document.getElementById('error-msg');
   var email=input.value.trim();
   err.style.display='none';
-  if(!email||!email.includes('@')){input.style.borderColor='var(--error)';return;}
+
+  // A red border was the ONLY failure signal here. Colorblind users saw one
+  // hairline become another, and screen reader users got nothing at all.
+  if(!email||!email.includes('@')){
+    input.style.borderColor='var(--error)';
+    input.setAttribute('aria-invalid','true');
+    input.setAttribute('aria-describedby','error-msg form-note');
+    err.textContent='Enter an email address so we know where to reach you.';
+    err.style.display='block';
+    input.focus();
+    return;
+  }
   input.style.borderColor='';
-  btn.disabled=true;btn.textContent='Joining...';
+  input.removeAttribute('aria-invalid');
+  input.setAttribute('aria-describedby','form-note');
+  btn.disabled=true;btn.textContent='Joining...';btn.setAttribute('aria-busy','true');
 
   function fail(msg){
-    btn.disabled=false;btn.textContent='Join waitlist';
+    btn.disabled=false;btn.textContent='Join waitlist';btn.removeAttribute('aria-busy');
     err.innerHTML=msg+' Or email us directly at '+
       '<a href="mailto:earlyaccess@dugoutsignals.ai?subject=Early%20Access%20Request'+
       '&body='+encodeURIComponent('Please add me to the Dugout Signals waitlist.\n\nEmail: '+email)+
@@ -326,7 +398,10 @@ function handleWaitlist(){
   function win(){
     document.getElementById('waitlist-form').style.display='none';
     document.getElementById('form-note').style.display='none';
-    document.getElementById('success-msg').style.display='block';
+    var msg=document.getElementById('success-msg');
+    msg.style.display='block';
+    // The form that held focus is now display:none — move focus, don't drop it.
+    msg.focus();
   }
 
   // Success is shown only after the row is durable. The previous version
@@ -344,8 +419,6 @@ function handleWaitlist(){
     fail('We could not reach the server.');
   });
 }
-
-document.getElementById('email-input').addEventListener('keydown',function(e){if(e.key==='Enter')handleWaitlist();});
 </script>
 </body>
 </html>

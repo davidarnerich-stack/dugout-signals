@@ -16,6 +16,12 @@
   --surface-raised: #1c2330;   /* was --surface2 in onboarding.html */
   --border:        #30363d;
 
+  /* Control edges. --border at 1.6:1 on --bg is fine for a decorative card
+   * hairline and fails WCAG 1.4.11 for the boundary of a control the user
+   * has to find and click. This is the same value as --muted-dim (4.1:1),
+   * named for the job so an input never quietly gets the hairline again. */
+  --border-control: #6e7681;
+
   /* Text. Two deliberate weights, not an accident: the app already used
    * both. --text is body copy; --text-bright is headings and emphasis.
    * Naming the distinction is what stops it drifting again. */
@@ -24,11 +30,16 @@
   --muted:         #8b949e;
   --muted-dim:     #6e7681;
 
-  /* Brand + actions */
+  /* Brand + actions.
+   * --btn-label is dark on purpose. #fff on --btn measures 2.8:1, which
+   * failed 1.4.3 on the two buttons the whole product depends on. The fill
+   * stays brand blue; the label goes to the page's own near-black at 6.8:1,
+   * and hover BRIGHTENS to --accent (8.8:1) rather than darkening. */
   --accent:        #38bdf8;
   --accent-glow:   rgba(56, 189, 248, .12);
   --btn:           #0ea5e9;
-  --btn-hover:     #0284c7;
+  --btn-hover:     #38bdf8;
+  --btn-label:     #0d1117;
   --purple:        #a371f7;
   --error:         #f85149;
 
@@ -39,6 +50,52 @@
   /* Shape */
   --radius-sm:     6px;
   --radius-md:     8px;
+
+  /* ── Status + extended neutrals (DS-130) ────────────────────────────────
+   * Recovered from 110 hardcoded uses across the app's templates. Only values
+   * used more than once are named; genuine one-offs stay as literals rather
+   * than inflating the palette to look tidy.
+   *
+   * Two design systems are mixed in here: GitHub Primer (--surface-subtle,
+   * --text-soft, --success, --warning, --danger-strong) and Tailwind
+   * (--text-slate, --accent-soft, --success-soft, --danger-soft). They are
+   * named by role, not origin, so the split can be resolved later without
+   * touching a single template again.
+   */
+
+  /* Neutrals beyond the core three surfaces */
+  --surface-subtle:   #21262d;
+  --surface-sunken:   #1a1f26;
+  --text-soft:        #c9d1d9;
+  --text-slate:       #94a3b8;
+  --text-slate-light: #e2e8f0;
+  --white:            #ffffff;
+
+  /* Success */
+  --success:          #3fb950;
+  --success-strong:   #238636;
+  --success-soft:     #86efac;
+  --success-bg:       #0d2e1a;
+
+  /* Warning */
+  --warning:          #d29922;
+  --warning-soft:     #e6c866;
+  --warning-bg:       #6e5a1a;
+
+  /* Danger. Distinct from --error (#f85149): --error is the foreground used
+   * for message text, --danger-strong the heavier fill used for emphasis. */
+  --danger-strong:    #da3633;
+  --danger-soft:      #fca5a5;
+  --danger-bg:        #2e0d0d;
+
+  /* Purple */
+  --purple-strong:    #6e40c9;
+  --purple-bg:        #1c1a2e;
+
+  /* Accent variants */
+  --accent-soft:      #7dd3fc;
+  --accent-bg:        #1e3a5f;
+  --accent-bg-deep:   #04222e;
 
   /* Aliases: the marketing page's CSS was written against these names before
    * there was a shared file. Pointing them at the canonical tokens means that
